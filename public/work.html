@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>My work · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; margin-top: 10px; }
+.cal .h { font-size: 11px; color: var(--muted); text-align: center; }
+.cal button { border: 0; border-radius: 12px; min-height: 46px; padding: 4px 0; font: 700 14px var(--font-body); cursor: pointer; box-shadow: var(--shadow); }
+.cal button small { display: block; font-size: 9px; font-weight: 600; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.cal button.sel { outline: 2px solid var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.legend span { font-size: 11px; border-radius: 999px; padding: 3px 9px; }
+.lines { background: var(--surface); border-radius: 20px; padding: 6px 16px; box-shadow: var(--shadow); }
+.lines div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed var(--sand); font-size: 14px; }
+.lines div:last-child { border-bottom: 0; }
+.lines b { white-space: nowrap; }
+.big { font-size: 30px; font-weight: 800; letter-spacing: -.01em; }
+.codein { font: 700 30px var(--font-body); letter-spacing: .35em; text-align: center; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 520px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 4px; font-size: 19px; }
+.reqrow { background: var(--surface); border-radius: 16px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+@media print { .bnav, .hdr, .noprint { display: none !important; } body { background: #fff; } }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/icons.js"></script>
+<script src="/payroll.js"></script>
+<script src="/att-data.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <header class="hdr topbar">
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+    <div class="hdr-acts"><a class="btn small" id="to-shoots" href="/crew.html" hidden>My shoots</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+  </header>
+  <nav class="bnav" role="tablist" aria-label="Main">
+  <button type="button" role="tab" class="tab on" data-tab="today"><span data-ic="home"></span>Today</button>
+  <button type="button" role="tab" class="tab" data-tab="month"><span data-ic="calendar"></span>Month</button>
+  <button type="button" role="tab" class="tab" data-tab="req"><span data-ic="log"></span>Requests<b class="dot" id="nav-req" hidden></b></button>
+  <button type="button" role="tab" class="tab" data-tab="pay"><span data-ic="money"></span>Pay</button>
+</nav>
+  <section class="hello"><span class="avatar soft" id="av"></span><div><h1 id="hello">My work</h1><p class="sub" id="sub">Loading…</p></div></section>
+  <section id="tab-today"><div id="today"></div><div class="sechead"><h2>This week</h2></div><div id="weekl"></div></section>
+  <section id="tab-month" hidden>
+    <div class="sechead"><button type="button" class="allbtn" id="m-prev" aria-label="Previous month">‹</button><h2 id="m-title"></h2><button type="button" class="allbtn" id="m-next" aria-label="Next month">›</button></div>
+    <div id="m-late"></div><div class="cal" id="cal"></div><div class="legend" id="legend"></div><div id="m-day" style="margin-top:12px"></div>
+  </section>
+  <section id="tab-req" hidden>
+    <div class="sechead"><h2>Requests</h2></div>
+    <div class="tiles three"><button type="button" class="tile main" data-new="leave"><span data-ic="off"></span>Leave</button><button type="button" class="tile" data-new="fix"><span data-ic="clock"></span>Fix my day</button><button type="button" class="tile" data-new="advance"><span data-ic="money"></span>Advance</button></div>
+    <div id="reqs" style="margin-top:14px"></div>
+  </section>
+  <section id="tab-pay" hidden>
+    <div class="sechead"><h2>Salary this month so far</h2></div><div id="pay-now"></div>
+    <div class="sechead"><h2>Payslips</h2></div><div id="slips"></div><div id="slip"></div>
+  </section>
+  <p class="foot" id="foot"></p>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), A = window.MutosAtt, P = window.MutosPay;
+  const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4500); };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  $('out').addEventListener('click', () => window.mutosApp.signOut());
+
+  const app = window.mutosApp; let me, c;
+  try { me = await app.me(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not reach the app. Check your internet and reload.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  c = await app.client();
+  const er = await c.from('employees').select('*').eq('email', me.email).maybeSingle();
+  if (er.error || !er.data || !er.data.active) { $('sub').textContent = er.error ? 'Attendance is not set up yet.' : 'You are not on the employee list. Ask Ravi.'; return; }
+  const emp = er.data;
+  if (me.role === 'crew') $('to-shoots').hidden = false;
+  $('hello').textContent = 'Hello, ' + String(emp.name).split(' ')[0];
+  $('av').textContent = String(emp.name).charAt(0).toUpperCase();
+  $('sub').textContent = 'Your time ' + A.t12(emp.start_time) + ' · weekly off ' + A.WEEK[emp.weekly_off] + (emp.paid_leave > 0 ? ' · ' + emp.paid_leave + ' paid leave a month' : '');
+
+  let viewMonth = A.monthOf(A.todayIST()), data = null, shoots = [], calc = null, selDay = null;
+  async function load() {
+    const today = A.todayIST();
+    data = await A.loadMonth(c, viewMonth, [emp.email]);
+    if (viewMonth !== A.monthOf(today)) { const cur = await A.loadMonth(c, A.monthOf(today), [emp.email]); data.current = cur; }
+    shoots = emp.person_key ? ((await A.loadShoots(c, [emp.person_key])).get(emp.person_key) || []) : [];
+    calc = A.calcFor(emp, data, shoots, { upto: viewMonth === A.monthOf(today) ? today : null });
+  }
+  function curData() { return data.current || data; }
+  function todayCalc() { const t = A.todayIST(); return viewMonth === A.monthOf(t) ? calc : A.calcFor(emp, curData(), shoots, { upto: t }); }
+
+  // ---------- today ----------
+  function nextStep(list) {
+    const last = list.length ? list[list.length - 1].kind : '';
+    return { '': ['in', 'Check in'], in: ['lunch_out', 'Lunch break', 'out', 'Check out'], lunch_out: ['lunch_in', 'Back from lunch'], lunch_in: ['out', 'Check out'], out: [] }[last];
+  }
+  function renderToday() {
+    const t = A.todayIST(), tc = todayCalc(), row = tc.days.find(d => d.date === t) || {};
+    const list = curData().punches.filter(p => p.day === t).sort((a, b) => a.at.localeCompare(b.at));
+    const step = nextStep(list), at = k => { const p = list.filter(x => x.kind === k).pop(); return p ? P.fmtT(P.istMin(p.at)) : ''; };
+    const shootToday = shoots.find(s => s.date === t);
+    let state;
+    if (!list.length) state = row.status === 'off' ? 'Weekly off today' : row.status === 'holiday' ? row.label : shootToday ? 'Shoot today (' + shootToday.slot + ')' : 'Not checked in yet';
+    else if (step[0] === 'lunch_in') state = 'At lunch since ' + at('lunch_out');
+    else if (!step.length) state = 'Checked out at ' + at('out');
+    else state = 'In office since ' + at('in');
+    const mins = (() => { const i = list.find(p => p.kind === 'in'); if (!i) return 0; const end = list.find(p => p.kind === 'out'); const now = end ? P.istMin(end.at) : P.istMin(new Date().toISOString()); const lo = list.find(p => p.kind === 'lunch_out'), li = list.find(p => p.kind === 'lunch_in'); const lunch = lo ? ((li ? P.istMin(li.at) : now) - P.istMin(lo.at)) : 0; return Math.max(0, now - P.istMin(i.at) - lunch); })();
+    $('today').innerHTML = '<section class="hero"><div class="hero-top"><span class="t">Today</span><span class="badge-w">' + esc(new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })) + '</span></div>' +
+      '<h2>' + esc(state) + '</h2>' + (list.length ? '<p>Worked ' + P.fmtH(mins) + ' so far (lunch not counted) · 8 h a day</p>' : '<p>Your time is ' + A.t12(emp.start_time) + ' · 15 minutes grace</p>') +
+      (list.length ? '<div class="chipset">' + list.map(p => '<span>' + { in: 'In', lunch_out: 'Lunch out', lunch_in: 'Back', out: 'Out' }[p.kind] + ' ' + P.fmtT(P.istMin(p.at)) + (p.by_fix ? ' (fixed)' : '') + '</span>').join('') + '</div>' : '') +
+      (step.length ? '<div class="pillrow" style="grid-template-columns:' + (step.length > 2 ? '1fr 1fr' : '1fr') + '">' + '<button type="button" class="pillbtn" data-punch="' + step[0] + '">' + step[1] + '</button>' + (step[2] ? '<button type="button" class="pillbtn light" data-punch="' + step[2] + '">' + step[3] + '</button>' : '') + '</div>' : '') +
+      (row.note ? '<p style="font-size:13px">' + esc(row.note) + '</p>' : '') + '</section>';
+    $('today').querySelectorAll('[data-punch]').forEach(b => b.addEventListener('click', () => punch(b.dataset.punch, b.textContent)));
+    // this week
+    const wk = tc.days.filter(d => d.date <= t && d.status !== 'before').slice(-7).reverse();
+    $('weekl').innerHTML = wk.map(d => { const s = A.STATUS[d.status] || ['', '#fff', '#000']; return '<div class="evrow" style="cursor:default"><span class="dblock"><b>' + Number(d.date.slice(8)) + '</b><span>' + esc(d.day.split(',')[0].slice(0, 3)) + '</span></span><span class="txt"><b>' + esc(d.label || s[0]) + '</b><span>' + esc([d.inAt ? 'In ' + d.inAt : '', d.outAt ? 'Out ' + d.outAt : '', d.note].filter(Boolean).join(' · ')) + '</span></span><span class="pill" style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span></div>'; }).join('');
+  }
+  async function punch(kind, label) {
+    const codeOn = curData().settings.code_on !== false;
+    let code = null;
+    if (codeOn) { code = await askCode(label); if (code == null) return; }
+    toast('Checking your location…');
+    let pos; try { pos = await A.locate(); } catch (e) { toast(e.message, true); return; }
+    const { data: r, error } = await c.rpc('att_punch', { p_kind: kind, p_lat: pos.lat, p_lng: pos.lng, p_acc: pos.acc, p_code: code });
+    if (error || !r || r.error) { toast((r && r.error) || (error && error.message) || 'Could not save.', true); return; }
+    toast({ in: 'Checked in. Have a good day!', lunch_out: 'Enjoy your lunch. 45 minutes.', lunch_in: 'Welcome back.', out: 'Checked out. See you tomorrow!' }[kind] + (r.flag === 'holiday_unasked' ? ' (Today is a holiday: Ravi will be told you came in.)' : ''));
+    await load(); renderAll();
+  }
+  function askCode(label) {
+    return new Promise(done => {
+      const bg = document.createElement('div'); bg.className = 'sheet-bg';
+      bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + esc(label) + '</h3><p class="sub" style="margin-bottom:14px">Type the 6-digit code shown on the office screen. It changes every 30 seconds.</p>' +
+        '<input class="in codein" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">' +
+        '<div class="pillrow" style="margin-top:14px"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">' + esc(label) + '</button></div></div>';
+      document.body.appendChild(bg);
+      const inp = bg.querySelector('#code'); setTimeout(() => inp.focus(), 50);
+      const close = v => { bg.remove(); done(v); };
+      bg.querySelector('#cx').addEventListener('click', () => close(null));
+      bg.addEventListener('click', e => { if (e.target === bg) close(null); });
+      const go = () => { const v = inp.value.replace(/\D/g, ''); if (v.length !== 6) { toast('The code has 6 digits.', true); return; } close(v); };
+      bg.querySelector('#go').addEventListener('click', go);
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    });
+  }
+
+  // ---------- month ----------
+  function renderMonth() {
+    $('m-title').textContent = A.monthLabel(viewMonth);
+    $('m-next').disabled = viewMonth >= A.monthOf(A.todayIST());
+    const first = new Date(viewMonth + '-01T00:00:00Z').getUTCDay(), offset = (first + 6) % 7;
+    let h = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => '<span class="h">' + d + '</span>').join('') + '<span></span>'.repeat(offset);
+    P.monthDays(viewMonth).forEach(d => {
+      const r = calc.days.find(x => x.date === d), s = r ? (A.STATUS[r.status] || ['', '#fff', '#000']) : ['', 'rgba(255,255,255,.5)', '#b9aaae'];
+      h += '<button type="button" data-d="' + d + '" style="background:' + s[1] + ';color:' + s[2] + '"' + (selDay === d ? ' class="sel"' : '') + '>' + Number(d.slice(8)) + '<small>' + esc(r ? s[0] : '') + '</small></button>';
+    });
+    $('cal').innerHTML = h;
+    $('cal').querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => { selDay = b.dataset.d; renderMonth(); }));
+    const used = new Set(calc.days.map(d => d.status));
+    $('legend').innerHTML = Object.entries(A.STATUS).filter(([k]) => used.has(k)).map(([, s]) => '<span style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span>').join('');
+    $('m-late').innerHTML = '<div class="ans ' + (calc.lates % 3 === 2 ? 'wait' : 'ok') + '" style="margin:0">Late marks this month: <b>' + calc.lates + '</b>' + (calc.lateCut ? ' (' + calc.lateCut + ' day cut)' : '') + ' · every 3rd = ½ day cut' + (calc.lates % 3 === 2 ? '. Next one cuts ½ day.' : '') + '</div>';
+    const r = selDay && calc.days.find(x => x.date === selDay);
+    $('m-day').innerHTML = r ? '<div class="evrow" style="cursor:default"><span class="txt"><b>' + esc(r.day + ' · ' + (r.label || '')) + '</b><span>' + esc([r.inAt ? 'In ' + r.inAt : '', r.outAt ? 'Out ' + r.outAt : '', r.note].filter(Boolean).join(' · ') || ' ') + '</span></span>' + (r.status === 'missing' || r.status === 'absent' ? '<button type="button" class="chip" data-fix="' + r.date + '">Fix</button>' : '') + '</div>' : '<p class="sub">Tap a day to see its check-in times.</p>';
+    const fx = $('m-day').querySelector('[data-fix]'); if (fx) fx.addEventListener('click', () => newRequest('fix', fx.dataset.fix));
+  }
+  $('m-prev').addEventListener('click', async () => { viewMonth = A.shiftMonth(viewMonth, -1); selDay = null; await load(); renderMonth(); });
+  $('m-next').addEventListener('click', async () => { viewMonth = A.shiftMonth(viewMonth, 1); selDay = null; await load(); renderMonth(); });
+
+  // ---------- requests ----------
+  const REQ = { leave: 'Leave', fix: 'Fix my day', advance: 'Advance' };
+  const dn = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  function reqText(r) {
+    if (r.kind === 'leave') return (r.half ? 'Half day ' : '') + 'Leave ' + dn(r.day) + (r.day_to && r.day_to !== r.day ? ' to ' + dn(r.day_to) : '');
+    if (r.kind === 'fix') return 'Fix ' + dn(r.day) + ': ' + { in: 'check-in', lunch_out: 'lunch out', lunch_in: 'back from lunch', out: 'check-out' }[r.fix_kind] + ' at ' + A.t12(r.fix_time);
+    return 'Advance ' + A.rs(r.amount) + (r.status === 'approved' ? ' · ' + A.rs(r.per_month) + ' a month · ' + A.rs(r.amount - r.recovered) + ' left' : '');
+  }
+  function renderReq() {
+    const rs = curData().requests;
+    const pend = rs.filter(r => r.status === 'pending').length; $('nav-req').textContent = pend || ''; $('nav-req').hidden = !pend;
+    $('reqs').innerHTML = rs.length ? rs.map(r => '<div class="reqrow"><div><b style="font-size:14px">' + esc(reqText(r)) + '</b><div class="meta">' + esc(r.reason || '') + (r.note ? ' · Ravi: ' + esc(r.note) : '') + '</div></div><div class="awright"><span class="pill ' + ({ pending: 'wait', approved: 'ok', declined: 'no' }[r.status]) + '">' + ({ pending: 'Waiting', approved: 'Approved', declined: 'Declined' }[r.status]) + '</span>' +
+      (r.status === 'pending' ? '<button type="button" class="linkbtn" data-del="' + r.id + '">cancel</button>' : '') + '</div></div>').join('') : '<div class="empty">No requests yet.</div>';
+    $('reqs').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { const { error } = await c.from('att_requests').delete().eq('id', b.dataset.del); if (error) toast(error.message, true); else { await load(); renderReq(); toast('Request cancelled.'); } }));
+  }
+  function newRequest(kind, day) {
+    const t = A.todayIST();
+    const open = curData().requests.filter(r => r.kind === 'advance' && r.status !== 'declined').reduce((s, r) => s + Number(r.amount) - Number(r.recovered), 0);
+    const avail = Math.max(0, Number(emp.monthly_salary) - open);
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    const body = kind === 'leave' ? '<div class="form-grid"><label>From<input type="date" class="in" id="r-day" value="' + t + '"></label><label>To <span class="hint">(optional)</span><input type="date" class="in" id="r-to"></label></div><label style="display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 10px"><input type="checkbox" id="r-half" style="width:20px;height:20px;accent-color:var(--rose)">Half day</label>' + (emp.paid_leave > 0 ? '<p class="sub">You have ' + emp.paid_leave + ' paid leave a month; more is unpaid.</p>' : '<p class="sub">Leave is unpaid for you, but it is recorded so it is not counted as absent.</p>')
+      : kind === 'fix' ? '<div class="form-grid"><label>Day<input type="date" class="in" id="r-day" max="' + t + '" value="' + (day || t) + '"></label><label>What to fix<select class="in" id="r-kind"><option value="out">Check-out</option><option value="in">Check-in</option><option value="lunch_out">Lunch out</option><option value="lunch_in">Back from lunch</option></select></label><label>Real time<input type="time" class="in" id="r-time" value="19:00"></label></div>'
+      : '<p class="sub">You can ask up to one month\'s salary in total. Available now: <b>' + A.rs(avail) + '</b>. Ravi decides how much is cut each month.</p><div class="form-grid"><label>Amount (₹)<input type="number" class="in" id="r-amt" min="1" max="' + avail + '" inputmode="numeric"></label></div>';
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + REQ[kind] + '</h3>' + body + '<label class="form-grid" style="display:block"><span style="font-size:12px;font-weight:600;color:var(--muted)">Reason</span><textarea class="in" id="r-why" rows="2" maxlength="300" placeholder="' + (kind === 'fix' ? 'e.g. phone switched off' : kind === 'leave' ? 'e.g. family function' : 'e.g. medical') + '"></textarea></label>' +
+      '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Send to Ravi</button></div></div>';
+    document.body.appendChild(bg);
+    const v = id => { const el = bg.querySelector('#' + id); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
+    bg.querySelector('#cx').addEventListener('click', () => bg.remove());
+    bg.addEventListener('click', e => { if (e.target === bg) bg.remove(); });
+    bg.querySelector('#go').addEventListener('click', async () => {
+      const row = { kind, reason: (v('r-why') || '').trim() };
+      if (kind === 'leave') { row.day = v('r-day'); row.day_to = v('r-to') || null; row.half = !!v('r-half'); if (!row.day) { toast('Pick the date.', true); return; } if (row.day_to && row.day_to < row.day) { toast('"To" is before "From".', true); return; } }
+      if (kind === 'fix') { row.day = v('r-day'); row.fix_kind = v('r-kind'); row.fix_time = v('r-time'); if (!row.day || !row.fix_time) { toast('Pick the day and time.', true); return; } if (!row.reason) { toast('Write why, so Ravi can approve it.', true); return; } }
+      if (kind === 'advance') { row.amount = Number(v('r-amt')); if (!(row.amount > 0)) { toast('Enter the amount.', true); return; } if (row.amount > avail) { toast('Up to ' + A.rs(avail) + ' is available.', true); return; } }
+      bg.querySelector('#go').disabled = true;
+      const { error } = await c.from('att_requests').insert(row);
+      if (error) { toast(error.message, true); bg.querySelector('#go').disabled = false; return; }
+      bg.remove(); await load(); renderReq(); toast('Sent to Ravi. You will see the answer here.');
+    });
+  }
+  document.querySelectorAll('[data-new]').forEach(b => b.addEventListener('click', () => newRequest(b.dataset.new)));
+
+  // ---------- pay ----------
+  const linesHtml = (lines, net, gross) => '<div class="lines">' + lines.map(([k, v]) => '<div><span>' + esc(k) + '</span><b>' + esc(v) + '</b></div>').join('') + '<div><span><b>To be paid</b></span><span class="big">' + A.rs(net) + '</span></div></div>';
+  async function renderPay() {
+    const tc = todayCalc();
+    $('pay-now').innerHTML = linesHtml(tc.lines, tc.net) + '<p class="sub" style="margin-top:8px">Up to today. Salary is paid on the 5th of next month, after Ravi checks it.</p>';
+    const { data: slips } = await c.from('payslips').select('*').eq('email', emp.email).order('month', { ascending: false });
+    $('slips').innerHTML = (slips || []).length ? slips.map(s => '<button type="button" class="evrow" data-slip="' + s.month + '"><span class="txt"><b>' + esc(A.monthLabel(s.month)) + '</b><span>Paid days ' + esc(s.data.paidDays) + '</span></span><b>' + A.rs(s.data.net) + '</b></button>').join('') : '<div class="empty">Your first payslip shows here after the month is closed.</div>';
+    $('slips').querySelectorAll('[data-slip]').forEach(b => b.addEventListener('click', () => {
+      const s = slips.find(x => x.month === b.dataset.slip);
+      $('slip').innerHTML = '<div class="sechead"><h2>Payslip · ' + esc(A.monthLabel(s.month)) + '</h2><button type="button" class="allbtn noprint" onclick="window.print()">Save as PDF</button></div><p class="sub">' + esc(emp.name) + ' · Muto\'s</p>' + linesHtml(s.data.lines || [], s.data.net);
+      $('slip').scrollIntoView({ behavior: 'smooth' });
+    }));
+  }
+
+  function showTab(t) {
+    document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    ['today', 'month', 'req', 'pay'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    if (t === 'month') renderMonth(); if (t === 'req') renderReq(); if (t === 'pay') renderPay();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  function renderAll() { renderToday(); renderReq(); if (!$('tab-month').hidden) renderMonth(); }
+  try { await load(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not load (' + esc(e.message || e) + ').</span>'; return; }
+  renderAll();
+  setInterval(() => { if (!document.hidden && !document.querySelector('.sheet-bg')) renderToday(); }, 60000);
+  document.addEventListener('visibilitychange', async () => { if (!document.hidden && !document.querySelector('.sheet-bg')) { await load(); renderAll(); } });
+})();
+</script>
+</body>
+</html>

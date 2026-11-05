@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Gear Desk</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.daybar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0 4px; }
+.daybar input { width: auto; min-height: 38px; }
+.daybar .btn.small.on { background: var(--ink); color: #fff; }
+.gsec { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 24px 0 8px; }
+.gcard { background: var(--surface); color: var(--ink); border-radius: 20px; padding: 14px 14px 12px; margin: 10px 0; box-shadow: var(--shadow); }
+.gcard h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.carrier { border-top: 1px solid var(--sand); margin-top: 10px; padding-top: 8px; }
+.carrier-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.carrier-head b { font-size: 14px; }
+.gi { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 14px; border-bottom: 1px dashed var(--sand); flex-wrap: wrap; }
+.gi:last-child { border-bottom: 0; }
+.gi label { display: flex; align-items: center; gap: 8px; flex: 1 1 160px; min-width: 0; cursor: pointer; }
+.gi input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--rose); flex: 0 0 auto; }
+.gi .st, .st { font-size: 12px; color: var(--muted); }
+.tag { font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.tag.ok { background: var(--ok-bg); color: var(--ok-ink); } .tag.warn { background: var(--honey); color: var(--warn-ink); } .tag.bad { background: var(--no-bg); color: var(--no-ink); } .tag.mute { background: var(--sand); color: var(--ink); }
+.bar-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.searchbox { width: 100%; min-height: 46px; border-radius: 14px; border: 0; background: var(--surface); color: var(--ink); padding: 0 14px; font: 14px var(--font-body); margin: 8px 0; box-shadow: var(--shadow); }
+.logrow { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; background: var(--surface); color: var(--ink); border-radius: 16px; padding: 10px 14px; margin: 8px 0; font-size: 13px; box-shadow: var(--shadow); }
+.logrow .when { font-size: 12px; color: var(--muted); grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; }
+.act-out { color: #9a5b00; font-weight: 700; } .act-in { color: var(--ok-ink); font-weight: 700; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); color: var(--ink); width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 24px 24px 0 0; padding: 18px 18px max(18px, env(safe-area-inset-bottom)); }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 4px; font-size: 19px; font-weight: 700; } .sheet .sub2 { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
+.sheet label.f { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0; }
+.conds { display: flex; gap: 6px; flex-wrap: wrap; }
+.conds button { flex: 1 1 100px; min-height: 42px; border-radius: 12px; border: 1px solid var(--sand); background: var(--surface); color: var(--ink); font: 600 13px var(--font-body); cursor: pointer; }
+.conds button.on { outline: 2px solid var(--ink); }
+.conds button[data-c=good].on { background: var(--ok-bg); } .conds button[data-c=minor].on { background: var(--honey); } .conds button[data-c=damaged].on, .conds button[data-c=missing].on { background: var(--no-bg); }
+.sheet .acts { justify-content: flex-end; margin-top: 16px; }
+.sheet .btn { min-height: 44px; box-shadow: none; }
+.sheet .btn.dark { background: var(--ink); color: #fff; }
+.sheet .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--sand); }
+.itemrow { display: flex; justify-content: space-between; gap: 10px; align-items: center; background: var(--surface); color: var(--ink); border-radius: 16px; padding: 12px 14px; margin: 8px 0; flex-wrap: wrap; box-shadow: var(--shadow); }
+.itemrow .nm { font-weight: 600; font-size: 14px; }
+#sum { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.nextrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface); border-radius: 16px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); border: 0; width: 100%; text-align: left; font-family: inherit; color: var(--ink); cursor: pointer; }
+.nextrow b { font-size: 14px; font-weight: 600; }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/icons.js"></script>
+</head>
+<body>
+<main class="wrap wide">
+  <header class="hdr topbar">
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+    <div class="hdr-acts"><span class="badge-w" style="box-shadow:var(--shadow);background:var(--surface)">Gear desk</span><a class="btn small" id="to-board" href="/board.html" hidden>Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+  </header>
+  <nav class="bnav" role="tablist" aria-label="Main">
+  <button type="button" role="tab" class="tab on" data-tab="home" aria-selected="true"><span data-ic="home"></span>Home</button>
+  <button type="button" role="tab" class="tab" data-tab="day" aria-selected="false"><span data-ic="calendar"></span>Day</button>
+  <button type="button" role="tab" class="tab" data-tab="out" aria-selected="false"><span data-ic="box"></span>Out now<b class="dot" id="nav-out-n" hidden></b></button>
+  <button type="button" role="tab" class="tab" data-tab="items" aria-selected="false"><span data-ic="camera"></span>Items</button>
+  <button type="button" role="tab" class="tab" data-tab="log" aria-selected="false"><span data-ic="log"></span>Log</button>
+</nav>
+  <section id="tab-home">
+    <div class="hello" style="display:block"><h1>Gear today</h1><p class="sub" id="status">Loading…</p></div>
+    <div id="sum"></div>
+    <div style="margin-top:16px"><button type="button" class="pillbtn rose" id="free-out" style="width:100%"><span data-ic="add"></span>Hand out any gear</button>
+    <p class="sub" style="text-align:center;margin-top:6px">For instant shoots, repairs, anything not on the board</p></div>
+    <div class="sechead"><h2>Quick menu</h2></div>
+    <div class="tiles" id="qm">
+      <button type="button" class="tile dark" data-q="day"><span data-ic="calendar"></span>Day plan</button>
+      <button type="button" class="tile" data-q="out"><span data-ic="receive"></span>Receive</button>
+      <button type="button" class="tile" data-q="items"><span data-ic="box"></span>All items</button>
+      <button type="button" class="tile" data-q="log"><span data-ic="log"></span>Log</button>
+    </div>
+    <div class="sechead"><h2>Next to go out</h2><button type="button" class="allbtn" data-q="day">All</button></div>
+    <div id="nextout"></div>
+  </section>
+  <section id="tab-day" hidden>
+    <h2 class="h2" style="margin-top:20px">Day plan</h2>
+    <div class="daybar">
+      <button type="button" class="btn small" id="d-prev" aria-label="Previous day">‹</button>
+      <input type="date" class="in" id="d-date">
+      <button type="button" class="btn small" id="d-next" aria-label="Next day">›</button>
+      <button type="button" class="btn small" id="d-today">Today</button>
+      <button type="button" class="btn small" id="d-tmr">Tomorrow</button>
+    </div>
+    <div id="day"></div>
+  </section>
+  <section id="tab-out" hidden><h2 class="h2" style="margin-top:20px">Out now</h2><input type="search" class="searchbox" id="out-q" placeholder="Search person or item"><div id="outlist"></div></section>
+  <section id="tab-items" hidden><h2 class="h2" style="margin-top:20px">All items</h2><input type="search" class="searchbox" id="it-q" placeholder="Search items, e.g. FX3, 24-70, gimbal"><div id="items"></div></section>
+  <section id="tab-log" hidden><h2 class="h2" style="margin-top:20px">Log</h2><input type="search" class="searchbox" id="log-q" placeholder="Search item, person, note"><div id="log"></div></section>
+  <p class="foot" id="foot"></p>
+  <p class="who" style="margin-top:4px">Signed in as <span id="who"></span></p>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const app = window.mutosApp;
+  const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  const pad = n => String(n).padStart(2, '0');
+  const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const today = () => dstr(new Date());
+  const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
+  const dayName = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const stamp = t => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const t12 = t => { if (!t) return ''; const [h, m] = t.split(':').map(Number); return ((h % 12) || 12) + ':' + pad(m || 0) + (h < 12 ? ' am' : ' pm'); };
+  const COND = { good: 'Good', minor: 'Minor issue', damaged: 'Damaged', missing: 'Missing parts' };
+  const COND_TAG = { good: 'ok', minor: 'warn', damaged: 'bad', missing: 'bad' };
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3500); };
+  $('out').addEventListener('click', () => app.signOut());
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+
+  let me, c;
+  try { me = await app.me(); } catch (e) { $('status').innerHTML = '<span class="err">Could not reach the app. Check your internet and reload.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  if (!['gear', 'owner', 'manager'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; }
+  c = await app.client();
+  $('who').textContent = me.email;
+  if (me.role === 'owner' || me.role === 'manager') $('to-board').hidden = false;
+
+  // ---------- data ----------
+  let feed = { items: [], people: [], shoots: [] }, logs = [], date = today();
+  const logName = (field, idField, id) => { for (let i = logs.length - 1; i >= 0; i--) if (logs[i][idField] === id) return logs[i][field]; return null; };
+  // items not on the board's gear list (batteries, a borrowed lens…) and people not on the crew list get ids "other:" / "guest:"
+  const itemOf = id => feed.items.find(i => i.id === id) || { id, name: logName('gear_name', 'gear_id', id) || 'Item (removed)', qty: 99, other: true };
+  const personOf = k => feed.people.find(p => p.key === k) || { key: k, name: logName('person_name', 'person_key', k) || k };
+  // dates an item can't be used (marked on the board: vendor doesn't have it, repair…)
+  const offOn = (gid, d) => { const it = feed.items.find(i => i.id === gid); return it && it.off ? it.off.find(x => x.d === d) || null : null; };
+  const offLabel = (gid, d) => { const o = offOn(gid, d); if (!o) return ''; const q = itemOf(gid).qty; return 'Not available' + (o.n && o.n < q ? ' (' + o.n + ' of ' + q + ')' : '') + (o.why ? ': ' + o.why : ''); };
+  const slug = t => String(t).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+
+  async function load() {
+    const f = await c.from('gear_feed').select('data, updated_at').eq('id', 'main').maybeSingle();
+    if (f.error) throw f.error;
+    feed = f.data ? f.data.data : { items: [], people: [], shoots: [] };
+    feed.updated_at = f.data && f.data.updated_at;
+    const all = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await c.from('gear_log').select('*').order('at', { ascending: true }).range(from, from + 999);
+      if (error) throw error; all.push(...data); if (data.length < 1000) break;
+    }
+    logs = all;
+  }
+
+  // who holds what right now: gear id → person → { qty, since, shoot }
+  function holdings() {
+    const h = new Map();
+    logs.forEach(l => {
+      if (!h.has(l.gear_id)) h.set(l.gear_id, new Map());
+      const m = h.get(l.gear_id), cur = m.get(l.person_key) || { qty: 0, since: null, event_id: null, shoot_date: null, cond: 'good' };
+      if (l.action === 'out') { cur.qty += l.qty; cur.since = l.at; cur.event_id = l.event_id; cur.shoot_date = l.shoot_date; cur.cond = l.condition; cur.note = l.note; }
+      else cur.qty = Math.max(0, cur.qty - l.qty);
+      if (cur.qty > 0) m.set(l.person_key, cur); else m.delete(l.person_key);
+    });
+    return h;
+  }
+  function lastReturn(gid) { for (let i = logs.length - 1; i >= 0; i--) { const l = logs[i]; if (l.gear_id === gid && l.action === 'in') return l; } return null; }
+  const heldBy = (H, gid) => H.get(gid) || new Map();
+  const outCount = (H, gid) => [...heldBy(H, gid).values()].reduce((n, x) => n + x.qty, 0);
+  const inStudio = (H, gid) => Math.max(0, itemOf(gid).qty - outCount(H, gid));
+  // does this person need this item on day d or the next day? (then do not ask for it back yet)
+  const needs = (key, gid, d) => feed.shoots.some(s => (s.date === d || s.date === addDays(d, 1)) && (s.carriers.some(c2 => c2.key === key && c2.gear.includes(gid)) || (s.shared.includes(gid) && s.team.some(t => t.key === key))));
+
+  // ---------- writing entries ----------
+  async function write(entries, msg) {
+    const { error } = await c.from('gear_log').insert(entries);
+    if (error) { toast('Could not save: ' + error.message, true); return false; }
+    await refresh(); toast(msg); return true;
+  }
+  // one sheet for giving out, taking back, and passing on
+  function sheet({ title, sub, mode, rows, people, defaultPerson, onSave }) {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    const nowLocal = (() => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })();
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + esc(title) + '</h3><p class="sub2">' + esc(sub || '') + '</p>' +
+      '<div>' + rows.map((r, i) => '<div class="gi"><label><input type="checkbox" data-i="' + i + '" checked>' + esc(r.label) + '</label>' + (r.max > 1 ? '<input type="number" class="in" data-q="' + i + '" min="1" max="' + r.max + '" value="' + r.qty + '" style="width:70px;min-height:34px">' : '') + '</div>').join('') + '</div>' +
+      (people ? '<label class="f">' + (mode === 'in' ? 'Returned by' : mode === 'pass' ? 'Passed on to' : 'Given to') + '<select class="in" id="sh-person">' + people.map(p => '<option value="' + esc(p.key) + '"' + (p.key === defaultPerson ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></label>' : '') +
+      (mode === 'in' ? '<label class="f">Passed straight on to (optional)<select class="in" id="sh-pass"><option value="">No, back in the studio</option>' + feed.people.map(p => '<option value="' + esc(p.key) + '">' + esc(p.name) + '</option>').join('') + '</select></label>' : '') +
+      '<label class="f">Condition</label><div class="conds">' + Object.entries(COND).map(([k, v]) => '<button type="button" data-c="' + k + '"' + (k === 'good' ? ' class="on"' : '') + '>' + v + '</button>').join('') + '</div>' +
+      '<label class="f">Note (optional)<textarea class="in" id="sh-note" rows="2" maxlength="500" placeholder="' + (mode === 'out' ? 'e.g. 2 batteries, 1 charger, bag' : 'e.g. scratch on LCD, 1 battery short') + '"></textarea></label>' +
+      '<label class="f">When<input type="datetime-local" class="in" id="sh-at" value="' + nowLocal + '"></label>' +
+      '<div class="acts"><button type="button" class="btn ghost" id="sh-cancel">Cancel</button><button type="button" class="btn dark" id="sh-save">' + (mode === 'in' ? 'Mark received' : mode === 'pass' ? 'Mark passed on' : 'Mark handed out') + '</button></div></div>';
+    document.body.appendChild(bg);
+    let cond = 'good';
+    bg.querySelectorAll('.conds button').forEach(b => b.addEventListener('click', () => { cond = b.dataset.c; bg.querySelectorAll('.conds button').forEach(x => x.classList.toggle('on', x === b)); }));
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg) close(); });
+    bg.querySelector('#sh-cancel').addEventListener('click', close);
+    bg.querySelector('#sh-save').addEventListener('click', async () => {
+      const chosen = rows.map((r, i) => { const cb = bg.querySelector('[data-i="' + i + '"]'), q = bg.querySelector('[data-q="' + i + '"]'); return cb.checked ? Object.assign({}, r, { qty: q ? Math.max(1, Math.min(r.max, Number(q.value) || 1)) : r.qty }) : null; }).filter(Boolean);
+      if (!chosen.length) { toast('Tick at least one item.', true); return; }
+      const note = bg.querySelector('#sh-note').value.trim(), atV = bg.querySelector('#sh-at').value, at = atV ? new Date(atV).toISOString() : new Date().toISOString();
+      if ((cond === 'damaged' || cond === 'missing') && !note) { toast('Write what is damaged or missing.', true); return; }
+      const person = bg.querySelector('#sh-person') ? bg.querySelector('#sh-person').value : defaultPerson;
+      const pass = bg.querySelector('#sh-pass') ? bg.querySelector('#sh-pass').value : '';
+      bg.querySelector('#sh-save').disabled = true;
+      const okk = await onSave({ chosen, cond, note, at, person, pass });
+      if (okk) close(); else bg.querySelector('#sh-save').disabled = false;
+    });
+  }
+  const entry = (r, action, person, o) => ({ gear_id: r.gid, gear_name: itemOf(r.gid).name, action, qty: r.qty, person_key: person, person_name: personOf(person).name, event_id: r.event_id || null, shoot_date: r.shoot_date || null, condition: o.cond, note: o.note || null, at: o.at });
+
+  function giveSheet(rows, person, s) {
+    sheet({ title: 'Hand out to ' + personOf(person).name, sub: s ? s.shoot + ' · ' + dayName(s.date) + ' · ' + s.slot : 'Not for a listed shoot', mode: 'out', rows, people: null, defaultPerson: person,
+      onSave: o => write(o.chosen.map(r => entry(r, 'out', person, o)), o.chosen.length + ' item' + (o.chosen.length > 1 ? 's' : '') + ' handed to ' + personOf(person).name + '.') });
+  }
+  function receiveSheet(rows, holder) {
+    sheet({ title: 'Receive from ' + personOf(holder).name, sub: 'Check each item before marking it received.', mode: 'in', rows, people: null, defaultPerson: holder,
+      onSave: async o => {
+        const es = o.chosen.map(r => entry(r, 'in', holder, o));
+        if (o.pass) o.chosen.forEach(r => es.push(entry(Object.assign({}, r, { event_id: null, shoot_date: null }), 'out', o.pass, Object.assign({}, o, { note: 'Passed on from ' + personOf(holder).name + (o.note ? ' · ' + o.note : '') }))));
+        return write(es, o.pass ? 'Passed from ' + personOf(holder).name + ' to ' + personOf(o.pass).name + '.' : 'Received from ' + personOf(holder).name + '.');
+      } });
+  }
+  function passSheet(gid, from, to, s) {
+    const H = holdings(), have = (heldBy(H, gid).get(from) || {}).qty || 1;
+    sheet({ title: 'Pass ' + itemOf(gid).name, sub: 'From ' + personOf(from).name + ' straight to ' + personOf(to).name + ', without coming back to the studio.', mode: 'pass',
+      rows: [{ gid, qty: 1, max: have, label: itemOf(gid).name, event_id: s && s.id, shoot_date: s && s.date }], people: null, defaultPerson: to,
+      onSave: o => write([entry(o.chosen[0], 'in', from, Object.assign({}, o, { note: 'Passed on to ' + personOf(to).name + (o.note ? ' · ' + o.note : '') })), entry(o.chosen[0], 'out', to, Object.assign({}, o, { note: 'Passed on from ' + personOf(from).name + (o.note ? ' · ' + o.note : '') }))], 'Passed to ' + personOf(to).name + '.') });
+  }
+
+  // ---------- hand out anything: any item, any person, any reason ----------
+  function freeSheet(pre) {
+    const H = holdings(), bg = document.createElement('div'); bg.className = 'sheet-bg';
+    const nowLocal = (() => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })();
+    const picked = new Map(); (pre || []).forEach(g => picked.set(g, 1));
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>Hand out gear</h3><p class="sub2">Any item, to anyone, for any reason. Shoots on the board are easier from the Day tab.</p>' +
+      '<label class="f">Given to<select class="in" id="fs-person"><option value="">Choose a person…</option>' + feed.people.map(p => '<option value="' + esc(p.key) + '">' + esc(p.name) + (p.role ? ' · ' + esc(p.role) : '') + '</option>').join('') + '<option value="__new">Someone not on the list…</option></select></label>' +
+      '<input class="in" id="fs-newname" placeholder="Their name (and phone if you like)" hidden style="margin-top:-4px">' +
+      '<label class="f">For<input class="in" id="fs-for" maxlength="120" placeholder="e.g. Instant shoot · Kapoor pre-wedding, Repair at Canon, Office test"></label>' +
+      '<label class="f">Shoot date (optional)<input type="date" class="in" id="fs-date" value="' + esc(date) + '"></label>' +
+      '<label class="f">Items</label><input type="search" class="in" id="fs-q" placeholder="Search: FX3, 70-200, gimbal, battery…"><div id="fs-items" style="max-height:34vh;overflow:auto;margin-top:6px"></div>' +
+      '<div class="acts" style="justify-content:flex-start;margin-top:6px"><input class="in" id="fs-other" placeholder="Item not on the list (e.g. 4 extra batteries)" style="flex:1 1 200px"><button type="button" class="chip" id="fs-addother">Add</button></div>' +
+      '<p class="sub2" id="fs-count" style="margin-top:8px"></p>' +
+      '<label class="f">Condition</label><div class="conds">' + Object.entries(COND).map(([k, v]) => '<button type="button" data-c="' + k + '"' + (k === 'good' ? ' class="on"' : '') + '>' + v + '</button>').join('') + '</div>' +
+      '<label class="f">Note (optional)<textarea class="in" id="fs-note" rows="2" maxlength="400" placeholder="e.g. 2 batteries, charger, bag"></textarea></label>' +
+      '<label class="f">When<input type="datetime-local" class="in" id="fs-at" value="' + nowLocal + '"></label>' +
+      '<div class="acts"><button type="button" class="btn ghost" id="fs-cancel">Cancel</button><button type="button" class="btn dark" id="fs-save">Mark handed out</button></div></div>';
+    document.body.appendChild(bg);
+    const q = bg.querySelector('#fs-q'), box = bg.querySelector('#fs-items');
+    const others = []; // unlisted items typed in
+    function draw() {
+      const t = q.value.trim().toLowerCase();
+      const list = feed.items.filter(i => !t || (i.name + ' ' + i.category).toLowerCase().includes(t) || picked.has(i.id)).sort((a, b) => (picked.has(b.id) - picked.has(a.id)) || a.name.localeCompare(b.name)).slice(0, 80);
+      box.innerHTML = list.map(i => { const free = inStudio(H, i.id), on = picked.has(i.id), holders = [...heldBy(H, i.id).keys()].map(k => personOf(k).name);
+        return '<div class="gi"><label><input type="checkbox" data-it="' + esc(i.id) + '"' + (on ? ' checked' : '') + (free ? '' : ' disabled') + '><span>' + esc(i.name) + '<br><span class="st">' + (free ? free + ' in studio' : 'none in studio') + (holders.length ? ' · with ' + esc(holders.join(', ')) : '') + '</span></span></label>' +
+          (i.qty > 1 && free > 1 && on ? '<input type="number" class="in" data-iq="' + esc(i.id) + '" min="1" max="' + free + '" value="' + picked.get(i.id) + '" style="width:70px;min-height:34px">' : '') + '</div>'; }).join('') +
+        others.map((o, n) => '<div class="gi"><label><input type="checkbox" checked data-oth="' + n + '"><span>' + esc(o) + ' <span class="st">· not on the gear list</span></span></label></div>').join('') || '<p class="sub2">No items match.</p>';
+      box.querySelectorAll('[data-it]').forEach(cb => cb.addEventListener('change', () => { if (cb.checked) picked.set(cb.dataset.it, 1); else picked.delete(cb.dataset.it); draw(); }));
+      box.querySelectorAll('[data-iq]').forEach(inp => inp.addEventListener('change', () => picked.set(inp.dataset.iq, Math.max(1, Math.min(Number(inp.max), Number(inp.value) || 1)))));
+      box.querySelectorAll('[data-oth]').forEach(cb => cb.addEventListener('change', () => { if (!cb.checked) { others.splice(Number(cb.dataset.oth), 1); draw(); } }));
+      const n = picked.size + others.length; bg.querySelector('#fs-count').textContent = n ? n + ' item' + (n > 1 ? 's' : '') + ' selected' : 'Tick the items going out.';
+    }
+    q.addEventListener('input', draw); draw();
+    bg.querySelector('#fs-person').addEventListener('change', e => { bg.querySelector('#fs-newname').hidden = e.target.value !== '__new'; if (e.target.value === '__new') bg.querySelector('#fs-newname').focus(); });
+    bg.querySelector('#fs-addother').addEventListener('click', () => { const v = bg.querySelector('#fs-other').value.trim(); if (!v) return; others.push(v); bg.querySelector('#fs-other').value = ''; draw(); });
+    let cond = 'good';
+    bg.querySelectorAll('.conds button').forEach(b => b.addEventListener('click', () => { cond = b.dataset.c; bg.querySelectorAll('.conds button').forEach(x => x.classList.toggle('on', x === b)); }));
+    const close = () => bg.remove();
+    bg.addEventListener('click', e => { if (e.target === bg) close(); });
+    bg.querySelector('#fs-cancel').addEventListener('click', close);
+    bg.querySelector('#fs-save').addEventListener('click', async () => {
+      let key = bg.querySelector('#fs-person').value, name;
+      if (!key) { toast('Choose who is taking it.', true); return; }
+      if (key === '__new') { name = bg.querySelector('#fs-newname').value.trim(); if (!name) { toast('Type their name.', true); return; } key = 'guest:' + slug(name); }
+      else name = personOf(key).name;
+      if (!picked.size && !others.length) { toast('Tick at least one item.', true); return; }
+      const purpose = bg.querySelector('#fs-for').value.trim(), note = bg.querySelector('#fs-note').value.trim();
+      if ((cond === 'damaged' || cond === 'missing') && !note) { toast('Write what is damaged or missing.', true); return; }
+      const d = bg.querySelector('#fs-date').value || null, atV = bg.querySelector('#fs-at').value, at = atV ? new Date(atV).toISOString() : new Date().toISOString();
+      const fullNote = [purpose ? 'For: ' + purpose : '', note].filter(Boolean).join(' · ') || null;
+      const rows = [...picked.entries()].map(([gid, qty]) => ({ gear_id: gid, gear_name: itemOf(gid).name, qty }))
+        .concat(others.map(o => ({ gear_id: 'other:' + slug(o), gear_name: o, qty: 1 })));
+      bg.querySelector('#fs-save').disabled = true;
+      const okk = await write(rows.map(r => Object.assign(r, { action: 'out', person_key: key, person_name: name, event_id: null, shoot_date: d, condition: cond, note: fullNote, at })), rows.length + ' item' + (rows.length > 1 ? 's' : '') + ' handed to ' + name + '.');
+      if (okk) close(); else bg.querySelector('#fs-save').disabled = false;
+    });
+  }
+  $('free-out').addEventListener('click', () => freeSheet());
+
+  // ---------- Day ----------
+  function renderDay() {
+    const H = holdings(), shoots = feed.shoots.filter(s => s.date === date);
+    let html = '';
+    if (!shoots.length) html += '<div class="empty">No shoots on ' + esc(dayName(date)) + '.</div>';
+    shoots.forEach(s => {
+      html += '<div class="gcard"><h3>' + esc(s.shoot) + '</h3><div class="meta">' + esc([s.slot, s.callTime ? 'Report ' + t12(s.callTime) : '', s.venue].filter(Boolean).join(' · ')) + '</div>';
+      const blocks = s.carriers.map(cr => ({ key: cr.key, name: cr.name, gear: cr.gear, ownKit: cr.ownKit }));
+      if (s.shared.length) blocks.push({ key: '__shared', name: 'Shared on this shoot', gear: s.shared, shared: true });
+      if (!blocks.length) html += '<div class="carrier st">No gear assigned on the board.</div>';
+      blocks.forEach((b, bi) => {
+        const counts = {}; b.gear.forEach(g => { counts[g] = (counts[g] || 0) + 1; });
+        html += '<div class="carrier" data-s="' + esc(s.id) + '" data-b="' + bi + '"><div class="carrier-head"><b>' + esc(b.name) + '</b>' + (b.ownKit ? '<span class="tag mute">own kit</span>' : '') + '</div>';
+        Object.entries(counts).forEach(([gid, need]) => {
+          const it = itemOf(gid), mine = b.shared ? 0 : ((heldBy(H, gid).get(b.key) || {}).qty || 0), free = inStudio(H, gid);
+          const others = [...heldBy(H, gid).entries()].filter(([k]) => k !== b.key);
+          let st, act = '';
+          const offTag = offOn(gid, date) ? ' <span class="tag bad">⛔ ' + esc(offLabel(gid, date)) + '</span>' : '';
+          if (b.shared) { const holders = s.team.filter(t => heldBy(H, gid).get(t.key)); st = holders.length ? '<span class="tag ok">With ' + esc(holders.map(t => t.name).join(', ')) + '</span>' : free ? '<span class="tag mute">In studio</span>' : '<span class="tag warn">Not in studio</span>'; if (!holders.length && free) act = '<button type="button" class="chip" data-give-shared="' + esc(gid) + '">Give…</button>'; }
+          else if (mine >= need) st = '<span class="tag ok">✓ With ' + esc(b.name) + '</span>';
+          else if (free >= need - mine) {
+            const lr = lastReturn(gid), bad = lr && (lr.condition === 'damaged' || lr.condition === 'missing') && !heldBy(H, gid).size;
+            st = bad ? '<span class="tag bad" title="' + esc(lr.note || '') + '">⚠ ' + esc(COND[lr.condition] + (lr.note ? ': ' + lr.note : '')) + '</span>' : '<span class="tag mute">In studio' + (it.qty > 1 ? ' · ' + free + ' of ' + it.qty : '') + '</span>';
+            act = '<input type="checkbox" data-pick="' + esc(gid) + '" data-n="' + (need - mine) + '"' + (bad ? '' : ' checked') + ' aria-label="Hand out ' + esc(it.name) + '">'; } // damaged items are not ticked by default
+          else if (others.length) { st = '<span class="tag warn">With ' + esc(others.map(([k, v]) => personOf(k).name + (v.qty > 1 ? ' ×' + v.qty : '')).join(', ')) + '</span>'; act = '<button type="button" class="chip" data-pass="' + esc(gid) + '" data-from="' + esc(others[0][0]) + '" data-to="' + esc(b.key) + '">Pass to ' + esc(b.name.split(' ')[0]) + '</button>'; }
+          else st = '<span class="tag bad">Not available</span>';
+          html += '<div class="gi"><label>' + (act.startsWith('<input') ? act : '') + '<span>' + esc(it.name) + (need > 1 ? ' ×' + need : '') + (it.vendor ? ' <span class="st">· rented</span>' : '') + '</span></label>' + st + offTag + (act.startsWith('<input') ? '' : act) + '</div>';
+        });
+        if (!b.shared && Object.keys(counts).some(g => { const mine = (heldBy(H, g).get(b.key) || {}).qty || 0; return mine < counts[g] && inStudio(H, g) >= counts[g] - mine; }))
+          html += '<div class="bar-actions"><button type="button" class="chip yes" data-give="' + esc(b.key) + '">Hand out ticked to ' + esc(b.name.split(' ')[0]) + '</button></div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    // hand-outs for this date that are not board shoots (instant shoots, repairs…)
+    const extra = logs.filter(l => l.action === 'out' && !l.event_id && l.shoot_date === date);
+    html += '<div class="gsec">Other gear out for this day · not on the board (' + extra.length + ')</div>' +
+      '<div class="bar-actions" style="margin:0 0 6px"><button type="button" class="chip" id="day-free">＋ Hand out gear for an instant shoot</button></div>' +
+      (extra.length ? groupByPerson(extra.map(l => ({ key: l.person_key, l }))).map(([key, list]) => '<div class="itemrow"><div><div class="nm">' + esc(personOf(key).name) + '</div><div class="st">' + esc(list.map(x => x.l.gear_name + (x.l.qty > 1 ? ' ×' + x.l.qty : '')).join(', ')) + (list[0].l.note ? ' · ' + esc(list[0].l.note) : '') + '</div></div></div>').join('') : '');
+    // to collect: held by someone who does not need it today or tomorrow
+    const collect = [];
+    H.forEach((m, gid) => m.forEach((v, key) => { if (!needs(key, gid, date)) collect.push({ gid, key, v }); }));
+    collect.sort((a, b) => String(a.v.since).localeCompare(String(b.v.since)));
+    html += '<div class="gsec">To collect · not needed by them ' + (date === today() ? 'today or tomorrow' : 'on this day or the next') + ' (' + collect.length + ')</div>';
+    html += collect.length ? groupByPerson(collect).map(([key, list]) => '<div class="itemrow"><div><div class="nm">' + esc(personOf(key).name) + '</div><div class="st">' + esc(list.map(x => itemOf(x.gid).name + (x.v.qty > 1 ? ' ×' + x.v.qty : '') + ' (since ' + stamp(x.v.since) + ')').join(' · ')) + '</div></div><button type="button" class="chip" data-recv="' + esc(key) + '">Receive…</button></div>').join('') : '<div class="empty">Nothing to collect.</div>';
+    $('day').innerHTML = html;
+    // wire up
+    $('day-free').addEventListener('click', () => freeSheet());
+    $('day').querySelectorAll('[data-give]').forEach(btn => btn.addEventListener('click', () => {
+      const card = btn.closest('.carrier'), s = feed.shoots.find(x => x.id === card.dataset.s), key = btn.dataset.give;
+      const rows = [...card.querySelectorAll('[data-pick]')].filter(cb => cb.checked).map(cb => ({ gid: cb.dataset.pick, qty: Number(cb.dataset.n), max: Number(cb.dataset.n), label: itemOf(cb.dataset.pick).name, event_id: s.id, shoot_date: s.date }));
+      if (!rows.length) { toast('Tick the items to hand out.', true); return; }
+      giveSheet(rows, key, s);
+    }));
+    $('day').querySelectorAll('[data-give-shared]').forEach(btn => btn.addEventListener('click', () => {
+      const card = btn.closest('.carrier'), s = feed.shoots.find(x => x.id === card.dataset.s), gid = btn.dataset.giveShared;
+      sheet({ title: 'Hand out ' + itemOf(gid).name, sub: s.shoot + ' · shared gear', mode: 'out', rows: [{ gid, qty: 1, max: 1, label: itemOf(gid).name, event_id: s.id, shoot_date: s.date }], people: s.team.length ? s.team : feed.people, defaultPerson: (s.team[0] || {}).key,
+        onSave: o => write(o.chosen.map(r => entry(r, 'out', o.person, o)), itemOf(gid).name + ' handed to ' + personOf(o.person).name + '.') });
+    }));
+    $('day').querySelectorAll('[data-pass]').forEach(btn => btn.addEventListener('click', () => {
+      const card = btn.closest('.carrier'), s = feed.shoots.find(x => x.id === card.dataset.s);
+      passSheet(btn.dataset.pass, btn.dataset.from, btn.dataset.to, s);
+    }));
+    $('day').querySelectorAll('[data-recv]').forEach(btn => btn.addEventListener('click', () => openReceive(btn.dataset.recv, collect.filter(x => x.key === btn.dataset.recv).map(x => x.gid))));
+  }
+  function groupByPerson(list) { const m = new Map(); list.forEach(x => { if (!m.has(x.key)) m.set(x.key, []); m.get(x.key).push(x); }); return [...m.entries()].sort((a, b) => personOf(a[0]).name.localeCompare(personOf(b[0]).name)); }
+  function openReceive(key, onlyGids) {
+    const H = holdings(), rows = [];
+    H.forEach((m, gid) => { const v = m.get(key); if (v && (!onlyGids || onlyGids.includes(gid))) rows.push({ gid, qty: v.qty, max: v.qty, label: itemOf(gid).name + (v.qty > 1 ? ' ×' + v.qty : ''), event_id: v.event_id, shoot_date: v.shoot_date }); }); // a return belongs to the shoot it went out for
+    if (!rows.length) { toast(personOf(key).name + ' has nothing out.'); return; }
+    receiveSheet(rows, key);
+  }
+
+  // ---------- Out now ----------
+  function renderOut() {
+    const H = holdings(), q = $('out-q').value.trim().toLowerCase(), all = [];
+    H.forEach((m, gid) => m.forEach((v, key) => all.push({ gid, key, v })));
+    const groups = groupByPerson(all).filter(([key, list]) => !q || (personOf(key).name + ' ' + list.map(x => itemOf(x.gid).name).join(' ')).toLowerCase().includes(q));
+    $('outlist').innerHTML = groups.length ? groups.map(([key, list]) => {
+      const late = list.some(x => !needs(key, x.gid, today()) && x.v.shoot_date && x.v.shoot_date < addDays(today(), -1));
+      return '<div class="gcard"><div class="carrier-head"><b>' + esc(personOf(key).name) + '</b>' + (late ? '<span class="tag bad">Overdue</span>' : '') + '<button type="button" class="chip" data-recv="' + esc(key) + '">Receive…</button></div>' +
+        list.map(x => '<div class="gi"><span style="flex:1 1 160px">' + esc(itemOf(x.gid).name + (x.v.qty > 1 ? ' ×' + x.v.qty : '')) + '</span><span class="st">since ' + esc(stamp(x.v.since)) + (x.v.shoot_date ? ' · for ' + esc(dayName(x.v.shoot_date)) : '') + '</span></div>').join('') + '</div>';
+    }).join('') : '<div class="empty">' + (q ? 'Nothing matches.' : 'Everything is in the studio.') + '</div>';
+    $('outlist').querySelectorAll('[data-recv]').forEach(b => b.addEventListener('click', () => openReceive(b.dataset.recv)));
+  }
+
+  // ---------- Items ----------
+  function renderItems() {
+    const H = holdings(), q = $('it-q').value.trim().toLowerCase();
+    const list = feed.items.filter(i => !q || (i.name + ' ' + i.category + ' ' + i.vendor).toLowerCase().includes(q)).sort((a, b) => (a.category || 'zz').localeCompare(b.category || 'zz') || a.name.localeCompare(b.name));
+    let cat = null, html = '';
+    list.forEach(i => {
+      if (i.category !== cat) { cat = i.category; html += '<div class="gsec">' + esc(cat || 'Other') + '</div>'; }
+      const holders = [...heldBy(H, i.id).entries()], free = inStudio(H, i.id), lr = lastReturn(i.id), flag = lr && lr.condition !== 'good' && !holders.length ? lr : null;
+      html += '<div class="itemrow"><div><div class="nm">' + esc(i.name) + (i.qty > 1 ? ' ×' + i.qty : '') + (i.vendor ? ' <span class="st">· rented from ' + esc(i.vendor) + '</span>' : '') + '</div><div class="st">' +
+        (free ? free + ' in studio' : 'none in studio') + (holders.length ? ' · with ' + esc(holders.map(([k, v]) => personOf(k).name + (v.qty > 1 ? ' ×' + v.qty : '')).join(', ')) : '') + '</div>' +
+        (offOn(i.id, today()) ? '<div style="margin-top:4px"><span class="tag bad">⛔ ' + esc(offLabel(i.id, today())) + ' today</span></div>' : '') +
+        (flag ? '<div style="margin-top:4px"><span class="tag ' + COND_TAG[flag.condition] + '">' + esc(COND[flag.condition]) + '</span> <span class="st">' + esc((flag.note || '') + ' · returned by ' + flag.person_name + ' ' + stamp(flag.at)) + '</span></div>' : '') +
+        '</div><div style="display:flex;gap:6px">' + (free ? '<button type="button" class="chip" data-give-any="' + esc(i.id) + '">Give…</button>' : '') + '<button type="button" class="chip" data-hist="' + esc(i.id) + '">History</button></div></div>';
+    });
+    $('items').innerHTML = html || '<div class="empty">No items match.</div>';
+    $('items').querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => { $('log-q').value = itemOf(b.dataset.hist).name; showTab('log'); }));
+    $('items').querySelectorAll('[data-give-any]').forEach(b => b.addEventListener('click', () => {
+      freeSheet([b.dataset.giveAny]);
+    }));
+  }
+
+  // ---------- Log ----------
+  function renderLog() {
+    const q = $('log-q').value.trim().toLowerCase();
+    const list = logs.slice().reverse().filter(l => !q || [l.gear_name, l.person_name, l.note, l.by_email, COND[l.condition]].join(' ').toLowerCase().includes(q)).slice(0, 300);
+    $('log').innerHTML = list.length ? list.map(l => {
+      const mine = me.role === 'owner' || (l.by_email === me.email && Date.now() - new Date(l.created_at).getTime() < 3600e3);
+      return '<div class="logrow"><div class="when"><span>' + esc(stamp(l.at)) + '</span><span>by ' + esc(l.by_email.split('@')[0]) + (mine ? ' · <button type="button" class="linkbtn" data-del="' + esc(l.id) + '">remove</button>' : '') + '</span></div>' +
+        '<span class="' + (l.action === 'out' ? 'act-out">OUT' : 'act-in">IN') + '</span><span><b>' + esc(l.gear_name) + (l.qty > 1 ? ' ×' + l.qty : '') + '</b> · ' + (l.action === 'out' ? 'to ' : 'from ') + esc(l.person_name) +
+        (l.shoot_date ? ' · for ' + esc(dayName(l.shoot_date)) : '') + ' <span class="tag ' + COND_TAG[l.condition] + '">' + esc(COND[l.condition]) + '</span>' + (l.note ? '<br><span class="st">' + esc(l.note) + '</span>' : '') + '</span></div>';
+    }).join('') : '<div class="empty">No entries' + (q ? ' match.' : ' yet.') + '</div>';
+    $('log').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Remove this entry? Use this only for a mistake.')) return;
+      const { error } = await c.from('gear_log').delete().eq('id', b.dataset.del);
+      if (error) toast('Could not remove: ' + error.message, true); else { await refresh(); toast('Entry removed.'); }
+    }));
+  }
+
+  // ---------- page ----------
+  function render() {
+    const H = holdings();
+    let outN = 0, people = new Set(); H.forEach(m => m.forEach((v, k) => { outN += v.qty; people.add(k); }));
+    const damaged = feed.items.filter(i => { const lr = lastReturn(i.id); return lr && (lr.condition === 'damaged' || lr.condition === 'missing') && !heldBy(H, i.id).size; });
+    const todayN = feed.shoots.filter(s => s.date === today()).length;
+    $('status').textContent = feed.items.length ? new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }) + ' · ' + todayN + ' shoot' + (todayN === 1 ? '' : 's') + ' today' : 'The gear list has not arrived from the board yet. Ask Ravi to open the board once.';
+    renderHome(H, outN, people, damaged);
+    const nb = $('nav-out-n'); nb.textContent = outN || ''; nb.hidden = !outN;
+    $('d-date').value = date;
+    $('d-today').classList.toggle('on', date === today()); $('d-tmr').classList.toggle('on', date === addDays(today(), 1));
+    renderDay(); renderOut(); renderItems(); renderLog();
+    $('foot').textContent = feed.updated_at ? 'Shoot list from the board, updated ' + stamp(feed.updated_at) + '.' : '';
+  }
+  // ---------- home ----------
+  // what still has to go out to each person for shoots on day d (items in the studio they do not have yet)
+  function toGive(H, d) {
+    const out = [];
+    feed.shoots.filter(s => s.date === d).forEach(s => s.carriers.forEach(cr => {
+      const counts = {}; cr.gear.forEach(g => { counts[g] = (counts[g] || 0) + 1; });
+      const items = Object.entries(counts).filter(([gid, need]) => ((heldBy(H, gid).get(cr.key) || {}).qty || 0) < need).map(([gid]) => gid);
+      if (items.length) out.push({ s, key: cr.key, name: cr.name, items });
+    }));
+    return out;
+  }
+  function renderHome(H, outN, people, damaged) {
+    const t = today(), give = toGive(H, t), giveN = give.reduce((n, x) => n + x.items.length, 0);
+    const collect = []; H.forEach((m, gid) => m.forEach((v, key) => { if (!needs(key, gid, t)) collect.push({ gid, key }); }));
+    const overdue = new Set(); H.forEach((m, gid) => m.forEach((v, key) => { if (!needs(key, gid, t) && v.shoot_date && v.shoot_date < addDays(t, -1)) overdue.add(key + gid); }));
+    const d0 = damaged[0], lr0 = d0 && lastReturn(d0.id);
+    const box = (k, cls, n, label, sub) => '<button type="button" class="stat big ' + cls + '" data-q="' + k + '"><b>' + n + '</b><strong>' + label + '</strong><span>' + esc(sub) + '</span></button>';
+    $('sum').innerHTML = box('day', 'honey', giveN, 'To hand out', give.length ? 'to ' + new Set(give.map(x => x.key)).size + ' ' + (new Set(give.map(x => x.key)).size === 1 ? 'person' : 'people') + ' today' : 'nothing left for today') +
+      box('collect', 'blush', collect.length, 'To collect', collect.length ? 'from ' + new Set(collect.map(x => x.key)).size + ' ' + (new Set(collect.map(x => x.key)).size === 1 ? 'person' : 'people') : 'nothing to collect') +
+      box('out', 'sand', outN, 'Out now', overdue.size ? overdue.size + ' overdue' : 'with ' + people.size + ' ' + (people.size === 1 ? 'person' : 'people')) +
+      box('dmg', 'lilac', damaged.length, 'Damaged', d0 ? d0.name + ' · ' + (lr0 && lr0.condition === 'missing' ? 'missing parts' : 'damaged') + (lr0 && lr0.note ? ': ' + lr0.note : '') : 'none');
+    // next to go out: today, then tomorrow
+    const tmr = addDays(t, 1), next = give.map(x => Object.assign(x, { d: t })).concat(toGive(H, tmr).map(x => Object.assign(x, { d: tmr }))).slice(0, 6);
+    $('nextout').innerHTML = next.length ? next.map(x => {
+      const free = x.items.every(g => inStudio(H, g) > 0), withOther = x.items.map(g => [...heldBy(H, g).keys()].find(k => k !== x.key)).find(Boolean);
+      const pill = offOn(x.items[0], x.d) ? '<span class="pill no">Not available</span>' : free ? '<span class="pill mute">In studio</span>' : withOther ? '<span class="pill wait">With ' + esc(personOf(withOther).name.split(' ')[0]) + '</span>' : '<span class="pill no">Not in studio</span>';
+      return '<button type="button" class="nextrow" data-d="' + esc(x.d) + '"><span><b>' + esc(x.name) + '</b><br><span class="st">' + esc(x.items.map(g => itemOf(g).name).join(', ') + ' · ' + x.s.shoot + (x.d === tmr ? ' · tomorrow' : '')) + '</span></span>' + pill + '</button>';
+    }).join('') : '<div class="allclear">Everything for today and tomorrow has gone out.</div>';
+    $('nextout').querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => { date = b.dataset.d; render(); showTab('day'); }));
+    $('sum').querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => quick(b.dataset.q)));
+  }
+  function quick(k) {
+    if (k === 'day') { date = today(); render(); showTab('day'); }
+    else if (k === 'collect') { date = today(); render(); showTab('day'); const el = [...document.querySelectorAll('#day .gsec')].find(x => /To collect/.test(x.textContent)); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    else if (k === 'dmg') { $('it-q').value = ''; renderItems(); showTab('items'); const el = document.querySelector('#items .tag.bad, #items .tag.warn'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    else showTab(k);
+  }
+  document.querySelectorAll('[data-q]').forEach(b => { if (!b.closest('#sum')) b.addEventListener('click', () => quick(b.dataset.q)); });
+  function showTab(t) {
+    document.querySelectorAll('.bnav .tab').forEach(b => { const on = b.dataset.tab === t; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    ['home', 'day', 'out', 'items', 'log'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    if (t === 'log') renderLog();
+    if (t !== 'day') window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => { if (b.dataset.tab === 'day') window.scrollTo(0, 0); showTab(b.dataset.tab); }));
+  $('d-date').addEventListener('change', () => { date = $('d-date').value || today(); render(); });
+  $('d-prev').addEventListener('click', () => { date = addDays(date, -1); render(); });
+  $('d-next').addEventListener('click', () => { date = addDays(date, 1); render(); });
+  $('d-today').addEventListener('click', () => { date = today(); render(); });
+  $('d-tmr').addEventListener('click', () => { date = addDays(today(), 1); render(); });
+  $('out-q').addEventListener('input', renderOut); $('it-q').addEventListener('input', renderItems); $('log-q').addEventListener('input', renderLog);
+
+  let busy = false;
+  async function refresh() {
+    if (busy) return; busy = true;
+    try { await load(); render(); }
+    catch (e) { $('status').innerHTML = '<span class="err">Could not load (' + esc(e && e.message || e) + ').' + (/gear_(feed|log)/.test(String(e && e.message)) ? ' Run supabase/003_gear_desk.sql in Supabase.' : '') + '</span>'; }
+    finally { busy = false; }
+  }
+  await refresh();
+  // other desks and the board update live
+  let liveT = null;
+  c.channel('gear-desk').on('postgres_changes', { event: '*', schema: 'public', table: 'gear_log' }, p => { if (p.table && p.table !== 'gear_log') return; clearTimeout(liveT); liveT = setTimeout(() => { if (!document.querySelector('.sheet-bg')) refresh(); }, 500); }).subscribe();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.querySelector('.sheet-bg')) refresh(); });
+  setInterval(() => { if (!document.hidden && !document.querySelector('.sheet-bg') && !document.activeElement.matches('input, textarea, select')) refresh(); }, 2 * 60 * 1000);
+})();
+</script>
+</body>
+</html>

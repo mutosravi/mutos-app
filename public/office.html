@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Office code · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+body { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+.code { font-size: clamp(64px, 18vw, 180px); font-weight: 800; letter-spacing: .12em; line-height: 1; margin: 18px 0 8px; font-variant-numeric: tabular-nums; }
+.ring { width: min(80vw, 520px); height: 10px; border-radius: 5px; background: var(--sand); overflow: hidden; margin: 10px auto 0; }
+.ring i { display: block; height: 100%; background: var(--rose); transition: width 1s linear; }
+.clock { font-size: 20px; font-weight: 600; color: var(--muted); }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+</head>
+<body>
+  <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true" style="font-size:34px">Muto's</b></span>
+  <p class="clock" id="clock"></p>
+  <div class="code" id="code" aria-live="polite">······</div>
+  <div class="ring"><i id="bar" style="width:100%"></i></div>
+  <p class="sub" id="msg" style="margin-top:16px;font-size:16px">Open the Muto's app → Check in → type this code</p>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), app = window.mutosApp;
+  const me = await app.me().catch(() => null);
+  if (!me) { location.replace('/'); return; }
+  if (me.role !== 'kiosk' && me.role !== 'owner') { $('msg').textContent = 'This screen is only for the office device. Ask Ravi to add this Gmail as the office screen login.'; return; }
+  const c = await app.client();
+  let left = 0;
+  async function fetchCode() {
+    const { data, error } = await c.rpc('att_office_code');
+    if (error || !data) { $('code').textContent = '······'; $('msg').textContent = 'Could not get the code (' + ((error && error.message) || 'no connection') + '). Retrying…'; left = 5; return; }
+    $('code').textContent = data.code; left = data.seconds_left; $('msg').textContent = 'Open the Muto\'s app → Check in → type this code';
+  }
+  function tick() {
+    $('clock').textContent = new Date().toLocaleString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' });
+    left--; $('bar').style.width = Math.max(0, left / 30 * 100) + '%';
+    if (left <= 0) fetchCode();
+  }
+  // keep the screen on (where the browser allows it)
+  async function awake() { try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (e) {} }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { awake(); fetchCode(); } });
+  awake(); await fetchCode(); setInterval(tick, 1000); tick();
+})();
+</script>
+</body>
+</html>

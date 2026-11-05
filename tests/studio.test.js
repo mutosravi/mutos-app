@@ -1,0 +1,284 @@
+// End-to-end test of the new Muto's app parts: client itinerary links and attendance & salary.
+// Fake Supabase in the test runner with simplified copies of supabase/004_studio.sql's rules (the real rules are tested in tests/rls_studio.sql).
+// Run: node tests/studio.test.js <dir with events/, shooters/, gear/ JSON exports>
+const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
+const { chromium } = require('playwright');
+const ROOT = path.resolve(__dirname, '..', 'public'), DATA = process.argv[2], SHOTS = process.env.SHOTS || '.';
+let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
+const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'accounts@gmail.com', KIOSK = 'office.screen@gmail.com', CREWE = 'crew.emp@gmail.com';
+const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
+const pad = n => String(n).padStart(2, '0');
+const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log'].forEach(t => { T[t] = new Map(); });
+const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id };
+const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
+let seq = 1; const newId = () => 'id' + (seq++);
+T.att_settings.set('1', { id: 1, office_lat: null, office_lng: null, radius_m: 150, code_on: true, late_night_min: 120 });
+const role = e => (T.members.get(e) || {}).role || null;
+const isOwner = e => role(e) === 'owner', staff = e => ['owner', 'manager'].includes(role(e)), payroll = e => ['owner', 'accountant'].includes(role(e));
+const pkOf = e => (T.members.get(e) || {}).person_key;
+function canSee(t, r, e) {
+  if (!e) return false;
+  if (t === 'docs' || t.startsWith('client_') || t === 'gear_feed') return staff(e) || (t === 'gear_feed' && role(e) === 'gear');
+  if (t === 'members') return r.email === e || isOwner(e);
+  if (t === 'crew_feed') return staff(e) || role(e) === 'accountant' || r.person_key === pkOf(e);
+  if (['employees', 'att_punch', 'att_requests', 'payslips'].includes(t)) return r.email === e || payroll(e);
+  if (t === 'payroll_runs' || t === 'att_log') return payroll(e);
+  if (t === 'att_settings' || t === 'holidays') return true;
+  return staff(e);
+}
+function canWrite(t, r, e) {
+  if (!e) return false;
+  if (t === 'members') return isOwner(e) && r.role !== 'owner';
+  if (t === 'docs' || t === 'crew_feed' || t === 'client_links' || t === 'client_feed' || t === 'client_itinerary') return staff(e);
+  if (['employees', 'att_settings', 'holidays', 'payslips', 'att_punch'].includes(t)) return isOwner(e);
+  if (t === 'payroll_runs') return payroll(e);
+  if (t === 'att_requests') return true;
+  return staff(e);
+}
+const match = (r, f) => f.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
+const err = m => ({ data: null, error: { message: m } });
+// same rules as the triggers in 004_studio.sql
+function before(t, r, old, e) {
+  if (t === 'att_requests' && !old && !isOwner(e)) {
+    r.email = e; r.status = 'pending'; r.recovered = 0; r.id = r.id || newId(); r.created_at = new Date().toISOString();
+    const emp = T.employees.get(e); if (!emp || !emp.active) return 'You are not on the employee list.';
+    if (r.kind === 'advance') { const open = [...T.att_requests.values()].filter(x => x.email === e && x.kind === 'advance' && x.status !== 'declined').reduce((s, x) => s + x.amount - x.recovered, 0); if (open + r.amount > emp.monthly_salary) return 'Advances can be up to one month\'s salary.'; }
+  }
+  if (t === 'att_requests' && old) {
+    if (!isOwner(e)) return 'Only the owner can decide requests.';
+    if (r.kind === 'fix' && r.status === 'approved' && old.status !== 'approved') T.att_punch.set('p' + seq, { id: 'p' + (seq++), email: r.email, day: r.day, kind: r.fix_kind, at: new Date(r.day + 'T' + r.fix_time + ':00+05:30').toISOString(), by_fix: true });
+  }
+  if (t === 'payroll_runs') { if (old && old.status === 'locked') return 'This month is locked.'; if (r.status === 'locked' && !isOwner(e)) return 'Only the owner can lock a month.'; if (r.status === 'locked') r.locked_at = new Date().toISOString(); }
+  if (t === 'att_settings' && old && old.code_on !== r.code_on) T.att_log.set(newId(), { id: newId(), at: new Date().toISOString(), by_email: e, what: 'Office code check turned ' + (r.code_on ? 'ON' : 'OFF') });
+  if (t === 'holidays') { r.id = r.id || newId(); r.ask_in = r.ask_in || []; }
+  return null;
+}
+function rpc(fn, a, e) {
+  if (fn === 'client_get' || fn === 'client_save') {
+    const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active);
+    if (!l) return { data: { error: 'This link is not active.' }, error: null };
+    if (fn === 'client_get') { const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null }, error: null }; }
+    const cur = T.client_itinerary.get(l.wedding_key) || { wedding_key: l.wedding_key };
+    T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), submitted_at: a.p_submit ? new Date().toISOString() : cur.submitted_at || null }));
+    return { data: { ok: true }, error: null };
+  }
+  if (fn === 'att_office_code') return ['owner', 'kiosk'].includes(role(e)) ? { data: { code: CODE, seconds_left: 25 }, error: null } : err('Only the office screen can show the code.');
+  if (fn === 'att_punch') {
+    const emp = T.employees.get(e); if (!emp || !emp.active) return { data: { error: 'You are not on the employee list. Ask Ravi.' }, error: null };
+    const st = T.att_settings.get('1'); if (st.office_lat == null) return { data: { error: 'The office location is not set yet.' }, error: null };
+    const R = 6371000, rad = x => x * Math.PI / 180, dl = rad(a.p_lat - st.office_lat), dg = rad(a.p_lng - st.office_lng);
+    const dist = 2 * R * Math.asin(Math.sqrt(Math.sin(dl / 2) ** 2 + Math.cos(rad(st.office_lat)) * Math.cos(rad(a.p_lat)) * Math.sin(dg / 2) ** 2));
+    if (dist - Math.min(a.p_acc || 0, 50) > st.radius_m) return { data: { error: 'You are not at the office (' + Math.round(dist) + ' m away).' }, error: null };
+    if (st.code_on && a.p_code !== CODE) return { data: { error: 'Wrong or old office code.' }, error: null };
+    const d = istDay(), mine = [...T.att_punch.values()].filter(p => p.email === e && p.day === d).sort((x, y) => x.at.localeCompare(y.at)), last = mine.length ? mine[mine.length - 1].kind : '';
+    const next = { '': ['in'], in: ['lunch_out', 'out'], lunch_out: ['lunch_in'], lunch_in: ['out'], out: [] }[last];
+    if (!next.includes(a.p_kind)) return { data: { error: 'That step is not next.' }, error: null };
+    const h = [...T.holidays.values()].find(x => x.day === d && (!x.only_for || x.only_for.includes(e)));
+    const row = { id: newId(), email: e, day: d, kind: a.p_kind, at: new Date().toISOString(), dist_m: Math.round(dist), via_code: st.code_on, flag: h && !h.ask_in.includes(e) ? 'holiday_unasked' : null };
+    T.att_punch.set(row.id, row); return { data: { ok: true, kind: a.p_kind, flag: row.flag }, error: null };
+  }
+  return err('no function ' + fn);
+}
+function handle(e, d) {
+  if (d.op === 'session') return e ? { id: 'u-' + e, email: e, user_metadata: { full_name: e.split('@')[0] } } : null;
+  if (d.op === 'signout' || d.op === 'signin') return null;
+  if (d.op === 'rpc') return rpc(d.fn, d.args, e);
+  const t = T[d.table]; if (!t) return err('no table ' + d.table);
+  if (!e) return { data: null, error: { message: 'permission denied', code: '42501' } };
+  if (d.op === 'select') {
+    let rows = [...t.values()].filter(r => canSee(d.table, r, e) && match(r, d.filters));
+    d.order.forEach(([c, asc]) => rows.sort((a, b) => String(a[c] ?? '').localeCompare(String(b[c] ?? '')) * (asc ? 1 : -1)));
+    if (d.range) rows = rows.slice(d.range[0], d.range[1] + 1); if (d.limit) rows = rows.slice(0, d.limit);
+    rows = JSON.parse(JSON.stringify(rows)); return { data: d.single ? (rows[0] || null) : rows, error: null };
+  }
+  if (d.op === 'update') {
+    const rows = [...t.values()].filter(r => match(r, d.filters) && canSee(d.table, r, e) && canWrite(d.table, r, e));
+    for (const r of rows) { const nr = Object.assign({}, r, d.rows[0]); const m = before(d.table, nr, r, e); if (m) return err(m); Object.assign(r, nr); }
+    return { data: null, error: null };
+  }
+  if (d.op === 'insert' || d.op === 'upsert') {
+    for (const r of d.rows) {
+      if (d.table === 'client_links') { r.token = r.token || crypto.randomUUID(); r.active = r.active !== false; if (d.op === 'insert' && t.has(keyOf(d.table, r))) return err('duplicate key'); }
+      if (d.table === 'att_requests' && !r.id) r.id = newId();
+      const old = d.op === 'upsert' ? t.get(keyOf(d.table, r)) : null;
+      if (!canWrite(d.table, r, e)) return { data: null, error: { message: 'new row violates row-level security policy', code: '42501' } };
+      const m = before(d.table, r, old, e); if (m) return err(m);
+    }
+    d.rows.forEach(r => t.set(keyOf(d.table, r), Object.assign({}, d.op === 'upsert' ? t.get(keyOf(d.table, r)) || {} : {}, r)));
+    return { data: null, error: null };
+  }
+  if (d.op === 'delete') {
+    [...t.values()].filter(r => match(r, d.filters) && canSee(d.table, r, e) && (canWrite(d.table, r, e) || (d.table === 'att_requests' && r.email === e && r.status === 'pending'))).forEach(r => t.delete(keyOf(d.table, r)));
+    return { data: null, error: null };
+  }
+}
+function seed(dir, coll) { const p = path.join(DATA, dir); if (!fs.existsSync(p)) return 0; let n = 0; fs.readdirSync(p).forEach(f => { const data = JSON.parse(fs.readFileSync(path.join(p, f))); const id = data.id || f.replace(/\.json$/, ''); delete data.id; T.docs.set(coll + '/' + id, { collection: coll, id, data }); n++; }); return n; }
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(s); });
+const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
+
+(async () => {
+  console.log('seeded', seed('events', 'events') + seed('shooters', 'shooters') + seed('gear', 'gear') + seed('assistants', 'assistants'), 'docs');
+  T.members.set(OWNER, { email: OWNER, role: 'owner', display_name: 'Owner' });
+  await new Promise(r => server.listen(8799, r));
+  const B = 'http://localhost:8799', browser = await chromium.launch(), pages = [];
+  async function as(email, opts) {
+    const ctx = await browser.newContext(Object.assign({ viewport: { width: 390, height: 844 }, geolocation: OFFICE, permissions: ['geolocation'] }, opts || {}));
+    const box = { email };
+    await ctx.exposeBinding('__mockCall', (src, d) => { if (d.op === 'signout') { box.email = null; return null; } return handle(box.email, d); });
+    await ctx.addInitScript(MOCK);
+    const page = await ctx.newPage(); page.errs = []; page.on('pageerror', x => page.errs.push(String(x))); page.on('dialog', dg => dg.accept(dg.type() === 'prompt' ? (page.nextPrompt || '') : undefined)); pages.push(page);
+    return page;
+  }
+
+  // ── 1. owner makes a client link from Home → Clients ──
+  const owner = await as(OWNER, { viewport: { width: 1280, height: 900 } });
+  await owner.goto(B + '/'); await owner.waitForURL('**/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
+  ok(await owner.isVisible('[data-tile="clients"]') && await owner.isVisible('#mh-tiles a[href="/attendance.html"]'), 'owner Home has Clients and Attendance tiles');
+  ok(!(await owner.textContent('#mutos-bar .logo')).includes('Studio'), 'logo is just "Muto\'s"');
+  await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-make]');
+  const wed = await owner.evaluate(() => window.MUTOS_CLIENTS._weddings()[0]);
+  ok(wed && wed.events.length >= 1, 'Clients lists upcoming weddings (first: ' + (wed && wed.title) + ', ' + (wed && wed.events.length) + ' functions)');
+  await owner.click('.sb-modal [data-make="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal [data-wa="' + wed.key + '"]');
+  const link = T.client_links.get(wed.key);
+  ok(link && link.token && T.client_feed.get(wed.key) && T.client_feed.get(wed.key).data.functions.length === wed.events.length, 'link made and the family\'s function list shared');
+  const waHref = await owner.getAttribute('.sb-modal [data-wa="' + wed.key + '"]', 'href');
+  ok(/wa\.me\/\d*\?text=/.test(waHref) && decodeURIComponent(waHref).includes('/client.html?k=' + link.token), 'WhatsApp message carries the link');
+  await owner.screenshot({ path: path.join(SHOTS, 'clients-window.png') });
+  await owner.keyboard.press('Escape');
+
+  // ── 2. the family fills it in (no login) ──
+  const fam = await as(null);
+  await fam.goto(B + '/client.html?k=' + link.token); await fam.waitForSelector('.fn');
+  ok((await fam.textContent('#top')).includes(wed.title) && (await fam.$$('.fn')).length === wed.events.length, 'client page shows their functions');
+  const f0 = wed.events[0].id;
+  await fam.fill('[data-k="' + f0 + '"][data-f="time"]', '19:30'); await fam.fill('[data-k="' + f0 + '"][data-f="venue"]', 'Taj Mahal Hotel'); await fam.fill('[data-k="' + f0 + '"][data-f="address"]', 'Vipin Khand, Gomti Nagar, Lucknow');
+  await fam.fill('[data-k="' + f0 + '"][data-f="map"]', 'https://maps.app.goo.gl/abc123'); await fam.fill('[data-k="' + f0 + '"][data-f="contact"]', 'Rahul (brother)'); await fam.fill('[data-k="' + f0 + '"][data-f="phone"]', '9876511111');
+  await fam.click('#add-fn'); await fam.fill('[data-k="x0"][data-f="name"]', 'Tilak'); await fam.fill('[data-k="x0"][data-f="date"]', istDay(40)); await fam.fill('[data-k="x0"][data-f="venue"]', 'Home'); await fam.fill('[data-k="x0"][data-f="address"]', 'Indira Nagar'); await fam.fill('[data-k="x0"][data-f="time"]', '11:00');
+  await fam.screenshot({ path: path.join(SHOTS, 'client-page.png'), fullPage: false });
+  await fam.click('#send'); await fam.waitForFunction(() => /Sent to Muto/.test(document.getElementById('top').textContent));
+  const it = T.client_itinerary.get(wed.key);
+  ok(it && it.submitted_at && it.data[f0].venue === 'Taj Mahal Hotel' && it.data.extra[0].name === 'Tilak', 'answers and the extra function reach the studio');
+  await fam.goto(B + '/client.html?k=' + crypto.randomUUID()); await fam.waitForFunction(() => /not working/.test(document.body.textContent));
+  ok(true, 'a wrong link shows "Link not working"');
+  ok(handle(null, { table: 'client_links', op: 'select', filters: [], order: [] }).error, 'visitors cannot list links');
+
+  // ── 3. owner checks the answers and applies them ──
+  await owner.evaluate(() => window.MUTOS_CLIENTS._load()); await owner.evaluate(() => document.dispatchEvent(new Event('mutos:updates'))); await owner.waitForTimeout(400);
+  ok((await owner.textContent('#mh-body')).includes('Client itineraries'), 'Home "Needs you" shows client itineraries to check');
+  await owner.click('[data-need="clients"]'); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
+  ok((await owner.textContent('.sb-modal')).includes('New answers to check'), 'Clients shows new answers');
+  await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal [data-apply="' + f0 + '"]');
+  await owner.click('.sb-modal [data-apply="' + f0 + '"]');
+  const ev0 = await owner.evaluate(id => window.__boardApi.state().events.find(e => e.id === id), f0);
+  ok(ev0.location.includes('Taj Mahal Hotel') && ev0.mapLink === 'https://maps.app.goo.gl/abc123' && /From client: starts 19:30 · contact Rahul/.test(ev0.notes), 'Apply to board: venue, map and notes on the shoot');
+  const nBefore = await owner.evaluate(() => window.__boardApi.state().events.length);
+  await owner.click('.sb-modal [data-add="0"]');
+  ok(await owner.evaluate(([n, t, d]) => window.__boardApi.state().events.length === n + 1 && window.__boardApi.state().events.some(e => e.name === t + ' Tilak' && e.date === d && e.location === 'Home, Indira Nagar'), [nBefore, wed.title, istDay(40)]), 'new function added to the board as a shoot');
+  await owner.screenshot({ path: path.join(SHOTS, 'client-answers.png') });
+  await owner.click('#ca-ok'); await owner.waitForTimeout(500);
+  ok(!!T.client_itinerary.get(wed.key).reviewed_at, 'marked as checked');
+  await owner.waitForTimeout(4500);
+  ok(T.client_feed.get(wed.key).data.functions.length === wed.events.length + 1, 'the family now sees the new function on their link too');
+
+  // ── 4. attendance set-up by the owner ──
+  await owner.goto(B + '/attendance.html'); await owner.waitForSelector('#tab-today .hello');
+  await owner.click('.tab[data-tab="set"]'); await owner.waitForSelector('#s-here');
+  await owner.click('#s-here'); await owner.waitForTimeout(600);
+  ok(Math.abs(T.att_settings.get('1').office_lat - OFFICE.latitude) < 1e-6, 'owner sets the office location from the office');
+  await owner.fill('#l-email', ACC); await owner.selectOption('#l-role', 'accountant'); await owner.click('#l-add'); await owner.waitForTimeout(300);
+  await owner.fill('#l-email', KIOSK); await owner.selectOption('#l-role', 'kiosk'); await owner.click('#l-add'); await owner.waitForTimeout(300);
+  ok(role(ACC) === 'accountant' && role(KIOSK) === 'kiosk', 'accountant and office-screen logins added');
+  await owner.click('.tab[data-tab="people"]'); await owner.click('#pp-add'); await owner.waitForSelector('#f-email');
+  await owner.fill('#f-email', STAFF); await owner.fill('#f-name', 'Neha Office'); await owner.fill('#f-sal', '30000'); await owner.fill('#f-start', '10:00'); await owner.selectOption('#f-off', '0'); await owner.fill('#f-leave', '1'); await owner.fill('#f-join', '2025-04-01');
+  await owner.click('.sheet #go'); await owner.waitForTimeout(500);
+  ok(T.employees.get(STAFF) && T.employees.get(STAFF).monthly_salary === 30000 && role(STAFF) === 'staff', 'office employee added, with a login');
+  await owner.screenshot({ path: path.join(SHOTS, 'att-people.png') });
+
+  // ── 5. the employee checks in at the office ──
+  const st = await as(STAFF);
+  await st.goto(B + '/'); await st.waitForURL('**/work.html'); await st.waitForSelector('#today .hero');
+  ok((await st.textContent('#today')).includes('Not checked in'), 'employee lands on My work');
+  await st.click('[data-punch="in"]'); await st.waitForSelector('.sheet #code'); await st.fill('.sheet #code', '000000'); await st.click('.sheet #go'); await st.waitForTimeout(500);
+  ok((await st.textContent('#toast')).includes('Wrong or old office code') && T.att_punch.size === 0, 'wrong office code refused');
+  await st.click('[data-punch="in"]'); await st.fill('.sheet #code', CODE); await st.click('.sheet #go'); await st.waitForFunction(() => /In office since/.test(document.getElementById('today').textContent));
+  ok([...T.att_punch.values()].some(p => p.email === STAFF && p.kind === 'in'), 'checked in with location and code');
+  await st.context().setGeolocation(FAR);
+  await st.click('[data-punch="lunch_out"]'); await st.fill('.sheet #code', CODE); await st.click('.sheet #go'); await st.waitForTimeout(500);
+  ok((await st.textContent('#toast')).includes('not at the office'), 'away from the office → refused');
+  await st.context().setGeolocation(OFFICE);
+  await st.click('[data-punch="lunch_out"]'); await st.fill('.sheet #code', CODE); await st.click('.sheet #go'); await st.waitForFunction(() => /At lunch since/.test(document.getElementById('today').textContent));
+  ok(true, 'lunch break marked');
+  await st.screenshot({ path: path.join(SHOTS, 'work-today.png') });
+  // requests
+  await st.click('.tab[data-tab="req"]'); await st.click('[data-new="advance"]'); await st.fill('#r-amt', '40000'); await st.click('.sheet #go'); await st.waitForTimeout(300);
+  ok([...T.att_requests.values()].length === 0, 'advance above one month\'s salary not sent');
+  await st.fill('#r-amt', '12000'); await st.fill('#r-why', 'Bike repair'); await st.click('.sheet #go'); await st.waitForTimeout(400);
+  await st.click('[data-new="leave"]'); await st.fill('#r-day', istDay(3)); await st.fill('#r-why', 'Family function'); await st.click('.sheet #go'); await st.waitForTimeout(400);
+  const reqs = [...T.att_requests.values()];
+  ok(reqs.length === 2 && reqs.every(r => r.email === STAFF && r.status === 'pending'), 'advance and leave requests waiting for Ravi');
+  await st.screenshot({ path: path.join(SHOTS, 'work-requests.png') });
+
+  // ── 6. owner decides, marks a holiday, runs last month's salary ──
+  await owner.goto(B + '/attendance.html'); await owner.waitForSelector('#tab-today .card');
+  ok((await owner.textContent('#tab-today')).includes('Neha Office'), 'Today shows who is in');
+  await owner.click('.tab[data-tab="req"]'); await owner.waitForSelector('[data-ok]');
+  const adv = reqs.find(r => r.kind === 'advance'), lv = reqs.find(r => r.kind === 'leave');
+  owner.nextPrompt = '3000'; await owner.click('[data-ok="' + adv.id + '"]'); await owner.waitForTimeout(400);
+  await owner.click('[data-ok="' + lv.id + '"]'); await owner.waitForTimeout(400);
+  ok(T.att_requests.get(adv.id).status === 'approved' && T.att_requests.get(adv.id).per_month === 3000 && T.att_requests.get(lv.id).status === 'approved', 'owner approves the advance (₹3,000 a month) and the leave');
+  await owner.click('.tab[data-tab="hol"]'); await owner.click('#h-add'); await owner.fill('#h-day', istDay(10)); await owner.fill('#h-name', 'Dev Deepawali'); await owner.check('[data-a="' + STAFF + '"]'); await owner.click('.sheet #go'); await owner.waitForTimeout(400);
+  ok([...T.holidays.values()].some(h => h.name === 'Dev Deepawali' && h.ask_in.includes(STAFF)), 'holiday marked, with Neha asked to come in');
+  // last month's check-ins for Neha
+  const last = new Date(Date.UTC(+istDay().slice(0, 4), +istDay().slice(5, 7) - 2, 1)), lm = last.getUTCFullYear() + '-' + pad(last.getUTCMonth() + 1);
+  const P = require('../public/payroll.js');
+  P.monthDays(lm).filter(d => new Date(d + 'T00:00:00Z').getUTCDay() !== 0).slice(0, 20).forEach((d, i) => {
+    const inT = i === 1 || i === 2 || i === 3 ? '10:40' : '09:55', put = (k, t) => { const id = newId(); T.att_punch.set(id, { id, email: STAFF, day: d, kind: k, at: new Date(d + 'T' + t + ':00+05:30').toISOString() }); };
+    put('in', inT); put('lunch_out', '13:30'); put('lunch_in', '14:10'); put('out', '19:00');
+  });
+  await owner.click('.tab[data-tab="pay"]'); await owner.waitForSelector('#tab-pay .tbl');
+  const prevShown = await owner.textContent('#tab-pay h2');
+  if (Number(istDay().slice(8)) > 10) { await owner.click('#p-prev'); await owner.waitForTimeout(400); }
+  const row = await owner.evaluate(() => [...document.querySelectorAll('#tab-pay tbody tr')].map(tr => tr.innerText));
+  const expect = P.monthCalc({ emp: T.employees.get(STAFF), month: lm, punches: [...T.att_punch.values()].filter(p => p.email === STAFF && p.day.startsWith(lm)), advances: [T.att_requests.get(adv.id)] });
+  ok(row[0].includes('Neha Office') && row[0].includes(String(expect.paidDays)) && expect.lates === 3 && expect.lateCut === 0.5, 'salary for ' + lm + ': ' + expect.paidDays + ' paid days, 3 lates = ½ day cut (' + prevShown + ')');
+  await owner.fill('[data-adj="0"]', '500'); await owner.dispatchEvent('[data-adj="0"]', 'change'); await owner.fill('[data-note="0"]', 'Diwali bonus'); await owner.dispatchEvent('[data-note="0"]', 'change');
+  await owner.screenshot({ path: path.join(SHOTS, 'att-salary.png') });
+  await owner.click('#p-lock'); await owner.waitForSelector('#tab-pay .ans.ok');
+  const slip = T.payslips.get(lm + '|' + STAFF);
+  ok(T.payroll_runs.get(lm).status === 'locked' && slip && slip.data.net === expect.net + 500, 'month locked; payslip ₹' + (slip && slip.data.net) + ' = salary − ₹3,000 advance + ₹500 bonus');
+  ok(T.att_requests.get(adv.id).recovered === 3000, 'advance recovery recorded (₹9,000 left)');
+  ok(handle(OWNER, { table: 'payroll_runs', op: 'update', filters: [['eq', 'month', lm]], rows: [{ data: {} }] }).error, 'a locked month cannot change');
+
+  // ── 7. accountant prepares only; employee sees the payslip; office screen shows the code ──
+  const acc = await as(ACC, { viewport: { width: 1280, height: 900 } });
+  await acc.goto(B + '/'); await acc.waitForURL('**/attendance.html'); await acc.waitForSelector('#tab-today .card');
+  await acc.click('.tab[data-tab="req"]'); ok((await acc.$$('[data-ok]')).length === 0, 'accountant cannot approve requests');
+  await acc.click('.tab[data-tab="pay"]'); await acc.waitForSelector('#tab-pay .tbl'); ok(!(await acc.$('#p-lock')), 'accountant has no Lock button');
+  await st.click('.tab[data-tab="pay"]'); await st.waitForSelector('#slips [data-slip]');
+  await st.click('#slips [data-slip]'); await st.waitForSelector('#slip .lines');
+  ok((await st.textContent('#slip')).includes('Diwali bonus') && (await st.textContent('#slip')).includes('Advance recovery'), 'employee sees the payslip with every line');
+  await st.screenshot({ path: path.join(SHOTS, 'work-payslip.png') });
+  const ks = await as(KIOSK, { viewport: { width: 1024, height: 700 } });
+  await ks.goto(B + '/'); await ks.waitForURL('**/office.html'); await ks.waitForFunction(c => document.getElementById('code').textContent === c, CODE);
+  ok(true, 'office screen shows the check-in code');
+  await ks.screenshot({ path: path.join(SHOTS, 'office-screen.png') });
+  ok(rpc('att_office_code', {}, STAFF).error, 'employees cannot get the code themselves');
+
+  // ── 8. a shooter who is also an employee gets a Work tab on their crew page ──
+  T.members.set(CREWE, { email: CREWE, role: 'crew', person_key: 'hamza', display_name: 'Hamza' });
+  T.crew_feed.set('hamza', { person_key: 'hamza', name: 'Hamza', data: { name: 'Hamza', shoots: [] } });
+  T.employees.set(CREWE, { email: CREWE, name: 'Hamza', person_key: 'hamza', monthly_salary: 20000, start_time: '10:00', weekly_off: 2, paid_leave: 0, shoot_type: 'B', active: true });
+  const cr = await as(CREWE);
+  await cr.goto(B + '/'); await cr.waitForURL('**/crew.html'); await cr.waitForSelector('#nav-work:not([hidden])');
+  ok(true, 'crew employee sees the Work tab');
+  await cr.click('#nav-work'); await cr.waitForURL('**/work.html'); await cr.waitForSelector('#to-shoots:not([hidden])');
+  ok(true, '… and My shoots from the Work page');
+
+  const errs = pages.flatMap(p => p.errs || []);
+  ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));
+  await browser.close(); server.close();
+  console.log(fails ? fails + ' FAILED' : 'ALL PASSED');
+  process.exit(fails ? 1 : 0);
+})().catch(e => { console.error(e); process.exit(1); });

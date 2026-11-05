@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Attendance · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.card { background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); }
+.row2 { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; font-size: 13px; }
+.tbl th, .tbl td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--sand); vertical-align: top; }
+.tbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: #fdfaf7; }
+.tbl td.n, .tbl th.n { text-align: right; white-space: nowrap; }
+.tblwrap { overflow-x: auto; margin-top: 10px; border-radius: 18px; }
+.tbl input.in { min-height: 34px; padding: 4px 8px; width: 92px; }
+.form-grid label { color: var(--muted); }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 620px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 10px; font-size: 19px; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; background: var(--bg); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--ink); font-weight: 400; }
+.lines { background: var(--surface); border-radius: 20px; padding: 6px 16px; box-shadow: var(--shadow); }
+.lines div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--sand); font-size: 14px; }
+@media print { .bnav, .hdr, .noprint { display: none !important; } body { background: #fff; } }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/icons.js"></script>
+<script src="/payroll.js"></script>
+<script src="/att-data.js"></script>
+</head>
+<body>
+<main class="wrap wide">
+  <header class="hdr topbar">
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+    <div class="hdr-acts"><span class="badge-w" style="background:var(--surface);box-shadow:var(--shadow)">Attendance</span><a class="btn small" id="to-home" href="/board.html" hidden>Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+  </header>
+  <nav class="bnav" role="tablist" aria-label="Main">
+  <button type="button" role="tab" class="tab on" data-tab="today"><span data-ic="home"></span>Today</button>
+  <button type="button" role="tab" class="tab" data-tab="req"><span data-ic="log"></span>Requests<b class="dot" id="nav-req" hidden></b></button>
+  <button type="button" role="tab" class="tab" data-tab="pay"><span data-ic="money"></span>Salary</button>
+  <button type="button" role="tab" class="tab" data-tab="people"><span data-ic="crew"></span>People</button>
+  <button type="button" role="tab" class="tab" data-tab="hol"><span data-ic="calendar"></span>Holidays</button>
+  <button type="button" role="tab" class="tab" data-tab="set"><span data-ic="settings"></span>Settings</button>
+</nav>
+  <p class="sub" id="who" style="margin-top:6px"></p>
+  <section id="tab-today"></section>
+  <section id="tab-req" hidden></section>
+  <section id="tab-pay" hidden></section>
+  <section id="tab-people" hidden></section>
+  <section id="tab-hol" hidden></section>
+  <section id="tab-set" hidden></section>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), A = window.MutosAtt, P = window.MutosPay;
+  const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4500); };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  $('out').addEventListener('click', () => window.mutosApp.signOut());
+  const app = window.mutosApp; let me, c;
+  try { me = await app.me(); } catch (e) { $('who').innerHTML = '<span class="err">Could not reach the app.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  if (me.role !== 'owner' && me.role !== 'accountant') { location.replace('/'); return; }
+  c = await app.client();
+  const owner = me.role === 'owner';
+  if (owner) $('to-home').hidden = false;
+  $('who').textContent = me.email + ' · ' + (owner ? 'owner' : 'accountant (prepares salaries; Ravi approves and locks)');
+
+  let emps = [], feeds = [], shootsBy = new Map(), today = A.todayIST(), cur = null, payMonth = null, payData = null;
+  async function loadBase() {
+    const [e, f] = await Promise.all([c.from('employees').select('*').order('name'), c.from('crew_feed').select('person_key, name, data')]);
+    if (e.error) throw e.error;
+    emps = e.data || []; feeds = f.error ? [] : (f.data || []);
+    shootsBy = new Map(feeds.map(r => [r.person_key, ((r.data && r.data.shoots) || []).map(s => ({ date: s.date, slot: s.slot }))]));
+    cur = await A.loadMonth(c, A.monthOf(today));
+    const pend = cur.requests.filter(r => r.status === 'pending').length; $('nav-req').textContent = pend || ''; $('nav-req').hidden = !pend;
+  }
+  const active = () => emps.filter(e => e.active);
+  const empOf = email => emps.find(e => e.email === email) || { name: email, email };
+  const pill = st => { const s = A.STATUS[st] || [st, '#fff', '#000']; return '<span class="pill" style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span>'; };
+
+  // ---------- today ----------
+  function renderToday() {
+    const rows = active().map(e => { const r = A.calcFor(e, cur, shootsBy.get(e.person_key) || [], { upto: today }); return { e, d: r.days.find(x => x.date === today) || {} }; });
+    const count = st => rows.filter(x => st.includes(x.d.status)).length;
+    const flagged = cur.punches.filter(p => p.day === today && p.flag === 'holiday_unasked');
+    $('tab-today').innerHTML = '<section class="hello" style="display:block"><h1>Today</h1><p class="sub">' + esc(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })) + ' · ' + active().length + ' employees</p></section>' +
+      '<div class="statgrid" style="margin-top:14px;grid-template-columns:repeat(4,minmax(0,1fr))"><div class="stat"><b>' + count(['open', 'present', 'late', 'half', 'short']) + '</b><span>in office</span></div><div class="stat honey"><b>' + count(['late', 'half']) + '</b><span>late</span></div><div class="stat lilac"><b>' + count(['shoot', 'shoot_paid']) + '</b><span>on shoot</span></div><div class="stat peach"><b>' + count(['today']) + '</b><span>not in yet</span></div></div>' +
+      (flagged.length ? '<div class="ans wait">' + flagged.length + ' came in on today\'s holiday without being asked. Add them to the holiday\'s "asked to come in" list (Holidays tab) if you want to pay them for it.</div>' : '') +
+      '<div style="margin-top:12px">' + (rows.length ? rows.map(({ e, d }) => '<div class="card row2"><div><b>' + esc(e.name) + '</b><div class="meta">' + esc([A.t12(e.start_time) + ' start', d.inAt ? 'in ' + d.inAt : '', d.outAt ? 'out ' + d.outAt : '', d.note].filter(Boolean).join(' · ')) + '</div></div>' + pill(d.status || 'today') + '</div>').join('') : '<div class="empty">No employees yet. Add them in People.</div>') + '</div>';
+  }
+
+  // ---------- requests ----------
+  const dn = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  function reqText(r) {
+    if (r.kind === 'leave') return (r.half ? 'Half-day leave ' : 'Leave ') + dn(r.day) + (r.day_to && r.day_to !== r.day ? ' → ' + dn(r.day_to) : '');
+    if (r.kind === 'fix') return 'Fix ' + dn(r.day) + ': ' + { in: 'check-in', lunch_out: 'lunch out', lunch_in: 'back from lunch', out: 'check-out' }[r.fix_kind] + ' at ' + A.t12(r.fix_time);
+    return 'Advance ' + A.rs(r.amount) + (r.status === 'approved' ? ' · ' + A.rs(r.per_month) + '/month · ' + A.rs(r.amount - r.recovered) + ' left' : '');
+  }
+  function renderReq() {
+    const rs = cur.requests.slice().sort((a, b) => (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) || b.created_at.localeCompare(a.created_at));
+    $('tab-req').innerHTML = '<div class="sechead"><h2>Requests</h2></div>' + (rs.length ? rs.map(r => '<div class="card"><div class="row2"><div><b>' + esc(empOf(r.email).name) + '</b> · ' + esc(reqText(r)) + '<div class="meta">' + esc(r.reason || 'no reason given') + ' · asked ' + esc(new Date(r.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '</div></div>' +
+      '<span class="pill ' + ({ pending: 'wait', approved: 'ok', declined: 'no' }[r.status]) + '">' + r.status + '</span></div>' +
+      (r.status === 'pending' && owner ? '<div class="acts"><button type="button" class="chip yes" data-ok="' + r.id + '">Approve</button><button type="button" class="chip" data-no="' + r.id + '">Decline</button></div>' : '') + '</div>').join('') : '<div class="empty">No requests.</div>') +
+      (owner ? '' : '<p class="sub">Only Ravi can approve requests.</p>');
+    $('tab-req').querySelectorAll('[data-ok]').forEach(b => b.addEventListener('click', async () => {
+      const r = cur.requests.find(x => x.id === b.dataset.ok), patch = { status: 'approved' };
+      if (r.kind === 'advance') { const v = prompt('Approve ' + A.rs(r.amount) + ' for ' + empOf(r.email).name + '.\nHow much to cut from salary each month (₹)?', String(Math.ceil(r.amount / 4 / 100) * 100)); if (v == null) return; patch.per_month = Math.max(1, Number(v) || r.amount); }
+      await decide(r.id, patch);
+    }));
+    $('tab-req').querySelectorAll('[data-no]').forEach(b => b.addEventListener('click', async () => { const why = prompt('Reason (they will see it):', ''); if (why == null) return; await decide(b.dataset.no, { status: 'declined', note: why.slice(0, 300) }); }));
+  }
+  async function decide(id, patch) {
+    const { error } = await c.from('att_requests').update(patch).eq('id', id);
+    if (error) { toast(error.message, true); return; }
+    await loadBase(); renderReq(); toast(patch.status === 'approved' ? 'Approved.' : 'Declined.');
+  }
+
+  // ---------- salary ----------
+  async function renderPay() {
+    if (!payMonth) payMonth = Number(today.slice(8)) <= 10 ? A.shiftMonth(A.monthOf(today), -1) : A.monthOf(today);
+    const isCurrent = payMonth === A.monthOf(today), ended = payMonth < A.monthOf(today);
+    const [{ data: run }, d] = await Promise.all([c.from('payroll_runs').select('*').eq('month', payMonth).maybeSingle(), A.loadMonth(c, payMonth)]);
+    const locked = run && run.status === 'locked', saved = (run && run.data && run.data.adjust) || {};
+    const rows = locked ? run.data.rows : active().map(e => { const r = A.calcFor(e, d, shootsBy.get(e.person_key) || [], { upto: isCurrent ? today : null }); const adj = saved[e.email] || {}; r.adjust = Number(adj.amount) || 0; r.adjustNote = adj.note || ''; r.final = r.net + r.adjust; r.bank = e.bank || ''; return r; });
+    payData = { rows, locked, run, d };
+    const tot = k => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+    $('tab-pay').innerHTML = '<div class="sechead"><button type="button" class="allbtn" id="p-prev">‹</button><h2>Salary · ' + esc(A.monthLabel(payMonth)) + '</h2><button type="button" class="allbtn" id="p-next"' + (isCurrent ? ' disabled' : '') + '>›</button></div>' +
+      '<div class="ans ' + (locked ? 'ok' : 'wait') + '" style="margin:0">' + (locked ? '🔒 Locked ' + esc(new Date(run.locked_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Payslips are with each employee.' : isCurrent ? 'This month so far (up to today). It can be locked after the month ends.' : 'Draft. Check each line, add any bonus or cut, save, then Ravi locks it. Pay day is the 5th.') + '</div>' +
+      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Employee</th><th class="n">Paid days</th><th class="n">Lates</th><th class="n">Salary</th><th class="n">Advance cut</th><th class="n">Adjust ₹</th><th class="n">To pay</th><th></th></tr></thead><tbody>' +
+      rows.map((r, i) => '<tr><td><b>' + esc(r.name) + '</b><div class="meta">' + r.workingDays + ' working days · day ' + A.rs(r.daily) + '</div></td><td class="n">' + r.paidDays + '</td><td class="n">' + r.lates + (r.lateCut ? ' (−' + r.lateCut + ')' : '') + '</td><td class="n">' + A.rs(r.gross) + '</td><td class="n">' + (r.recovery.length ? '−' + A.rs(r.recovery.reduce((s, x) => s + x.amount, 0)) : '–') + '</td>' +
+        '<td class="n">' + (locked ? (r.adjust ? A.rs(r.adjust) : '–') : '<input class="in" type="number" data-adj="' + i + '" value="' + (r.adjust || '') + '" placeholder="0"><input class="in" data-note="' + i + '" value="' + esc(r.adjustNote) + '" placeholder="note" style="margin-top:4px">') + '</td>' +
+        '<td class="n"><b>' + A.rs(r.final) + '</b></td><td><button type="button" class="chip" data-slip="' + i + '">Payslip</button></td></tr>').join('') +
+      '<tr><td><b>Total</b></td><td></td><td></td><td class="n">' + A.rs(tot('gross')) + '</td><td></td><td></td><td class="n"><b id="p-total">' + A.rs(tot('final')) + '</b></td><td></td></tr></tbody></table></div>' +
+      '<div class="acts" style="margin-top:12px">' + (!locked && !isCurrent ? '<button type="button" class="btn small" id="p-save">Save draft</button>' : '') + (!locked && ended && owner ? '<button type="button" class="btn small primary" id="p-lock">Lock month & send payslips</button>' : '') + '<button type="button" class="btn small" id="p-bank">Bank sheet (Excel)</button></div><div id="p-slip"></div>';
+    $('p-prev').addEventListener('click', () => { payMonth = A.shiftMonth(payMonth, -1); renderPay(); });
+    $('p-next').addEventListener('click', () => { payMonth = A.shiftMonth(payMonth, 1); renderPay(); });
+    $('tab-pay').querySelectorAll('[data-adj], [data-note]').forEach(inp => inp.addEventListener('change', () => {
+      const r = rows[Number(inp.dataset.adj ?? inp.dataset.note)];
+      if (inp.dataset.adj != null) { r.adjust = Math.round(Number(inp.value) || 0); r.final = r.net + r.adjust; inp.closest('tr').querySelector('td:nth-child(7) b').textContent = A.rs(r.final); $('p-total').textContent = A.rs(rows.reduce((s, x) => s + x.final, 0)); } else r.adjustNote = inp.value.trim().slice(0, 100);
+    }));
+    $('tab-pay').querySelectorAll('[data-slip]').forEach(b => b.addEventListener('click', () => slip(rows[Number(b.dataset.slip)])));
+    const sv = $('p-save'); if (sv) sv.addEventListener('click', () => saveDraft().then(ok => ok && toast('Draft saved.')));
+    const lk = $('p-lock'); if (lk) lk.addEventListener('click', lockMonth);
+    $('p-bank').addEventListener('click', () => {
+      const csv = [['Name', 'Bank details', 'Amount (₹)', 'Month']].concat(rows.map(r => [r.name, r.bank || '', r.final, payMonth])).map(x => x.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'mutos-salary-' + payMonth + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 2000);
+    });
+  }
+  const adjustOf = () => Object.fromEntries(payData.rows.filter(r => r.adjust || r.adjustNote).map(r => [r.email, { amount: r.adjust, note: r.adjustNote }]));
+  async function saveDraft() {
+    const { error } = await c.from('payroll_runs').upsert({ month: payMonth, status: 'draft', data: { adjust: adjustOf(), savedBy: me.email } });
+    if (error) { toast(error.message, true); return false; } return true;
+  }
+  async function lockMonth() {
+    const rows = payData.rows;
+    if (!confirm('Lock ' + A.monthLabel(payMonth) + '? Total to pay ' + A.rs(rows.reduce((s, r) => s + r.final, 0)) + '.\n\nPayslips go to every employee and this month can no longer change.')) return;
+    if (!(await saveDraft())) return;
+    const slim = rows.map(r => ({ email: r.email, name: r.name, bank: r.bank, workingDays: r.workingDays, daily: r.daily, paidDays: r.paidDays, lates: r.lates, lateCut: r.lateCut, gross: r.gross, recovery: r.recovery, net: r.net, adjust: r.adjust, adjustNote: r.adjustNote, final: r.final,
+      lines: r.lines.concat(r.adjust ? [[r.adjust > 0 ? 'Bonus / adjustment' + (r.adjustNote ? ' (' + r.adjustNote + ')' : '') : 'Cut' + (r.adjustNote ? ' (' + r.adjustNote + ')' : ''), (r.adjust > 0 ? '+' : '−') + A.rs(Math.abs(r.adjust))]] : []) }));
+    const s1 = await c.from('payslips').upsert(slim.map(r => ({ month: payMonth, email: r.email, data: { paidDays: r.paidDays, gross: r.gross, net: r.final, lines: r.lines, adjust: r.adjust, adjustNote: r.adjustNote } })));
+    if (s1.error) { toast('Payslips: ' + s1.error.message, true); return; }
+    for (const r of rows) for (const x of r.recovery) {
+      const q = cur.requests.find(y => y.id === x.id) || payData.d.requests.find(y => y.id === x.id);
+      if (q) await c.from('att_requests').update({ recovered: Number(q.recovered) + x.amount }).eq('id', x.id);
+    }
+    const { error } = await c.from('payroll_runs').update({ status: 'locked', data: { adjust: adjustOf(), rows: slim, lockedBy: me.email } }).eq('month', payMonth);
+    if (error) { toast(error.message, true); return; }
+    await loadBase(); await renderPay(); toast('Locked. Payslips sent to everyone in the app.');
+  }
+  function slip(r) {
+    $('p-slip').innerHTML = '<div class="sechead"><h2>Payslip · ' + esc(r.name) + ' · ' + esc(A.monthLabel(payMonth)) + '</h2><button type="button" class="allbtn noprint" onclick="window.print()">Print / PDF</button></div><div class="lines">' +
+      r.lines.map(([k, v]) => '<div><span>' + esc(k) + '</span><b>' + esc(v) + '</b></div>').join('') + (r.adjust && !r.lines.some(l => /adjustment|Cut/.test(l[0])) ? '<div><span>Adjustment' + (r.adjustNote ? ' (' + esc(r.adjustNote) + ')' : '') + '</span><b>' + A.rs(r.adjust) + '</b></div>' : '') +
+      '<div><span><b>To pay</b></span><b style="font-size:20px">' + A.rs(r.final) + '</b></div></div>' +
+      (r.days ? '<details style="margin-top:10px"><summary class="sub">Day by day</summary>' + r.days.map(d => '<div class="card row2" style="padding:8px 12px"><span>' + esc(d.day) + ' · ' + esc(d.label || '') + (d.note ? ' · ' + esc(d.note) : '') + '</span><span class="meta">' + esc([d.inAt, d.outAt].filter(Boolean).join(' – ')) + '</span></div>').join('') + '</details>' : '');
+    $('p-slip').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // ---------- people ----------
+  function renderPeople() {
+    $('tab-people').innerHTML = '<div class="sechead"><h2>Employees</h2>' + (owner ? '<button type="button" class="allbtn" id="pp-add">＋ Add</button>' : '') + '</div>' +
+      (emps.length ? emps.map(e => '<div class="card row2"><div><b>' + esc(e.name) + '</b>' + (e.active ? '' : ' <span class="pill mute">left</span>') + '<div class="meta">' + esc([e.email, A.rs(e.monthly_salary) + '/month', A.t12(e.start_time) + ' start', 'off ' + A.WEEK[e.weekly_off], e.paid_leave > 0 ? e.paid_leave + ' paid leave/month' : 'no paid leave', e.person_key ? 'shooter · Type ' + e.shoot_type + (e.shoot_type === 'A' ? ' (shoot = paid office day)' : ' (shoot = unpaid office day)') : 'office only'].join(' · ')) + '</div></div>' +
+        (owner ? '<button type="button" class="chip" data-edit="' + esc(e.email) + '">Edit</button>' : '') + '</div>').join('') : '<div class="empty">No employees yet.</div>');
+    const add = $('pp-add'); if (add) add.addEventListener('click', () => editEmp(null));
+    $('tab-people').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editEmp(emps.find(e => e.email === b.dataset.edit))));
+  }
+  function editEmp(e) {
+    const x = e || { start_time: '10:00', weekly_off: 0, paid_leave: 0, shoot_type: 'B', active: true, monthly_salary: '', joined: today };
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + (e ? 'Edit ' + esc(e.name) : 'Add employee') + '</h3><div class="form-grid">' +
+      '<label class="wide">Gmail they sign in with<input class="in" id="f-email" type="email" value="' + esc(x.email || '') + '"' + (e ? ' disabled' : '') + '></label>' +
+      '<label>Name<input class="in" id="f-name" value="' + esc(x.name || '') + '"></label>' +
+      '<label>Also on the crew list?<select class="in" id="f-pk"><option value="">No, office only</option>' + feeds.map(f => '<option value="' + esc(f.person_key) + '"' + (x.person_key === f.person_key ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select></label>' +
+      '<label>Monthly salary (₹)<input class="in" id="f-sal" type="number" min="0" value="' + esc(x.monthly_salary) + '"></label>' +
+      '<label>Start time<input class="in" id="f-start" type="time" value="' + esc(String(x.start_time).slice(0, 5)) + '"></label>' +
+      '<label>Weekly off<select class="in" id="f-off">' + A.WEEK.map((w, i) => '<option value="' + i + '"' + (Number(x.weekly_off) === i ? ' selected' : '') + '>' + w + '</option>').join('') + '</select></label>' +
+      '<label>Paid leave per month<input class="in" id="f-leave" type="number" min="0" max="10" step="0.5" value="' + esc(x.paid_leave) + '"><span class="hint">0 = no paid leave</span></label>' +
+      '<label>Shoot days<select class="in" id="f-type"><option value="B"' + (x.shoot_type !== 'A' ? ' selected' : '') + '>Type B: unpaid office day (full shoot pay)</option><option value="A"' + (x.shoot_type === 'A' ? ' selected' : '') + '>Type A: paid office day (lower shoot pay)</option></select></label>' +
+      '<label>Joined (days before this are not counted)<input class="in" id="f-join" type="date" value="' + esc(x.joined || '') + '"></label>' +
+      '<label class="wide">Bank details (for the bank sheet)<input class="in" id="f-bank" maxlength="200" value="' + esc(x.bank || '') + '" placeholder="Account no. · IFSC · name"></label>' +
+      '<label class="wide" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="f-active"' + (x.active ? ' checked' : '') + ' style="width:20px;height:20px;accent-color:var(--rose)">Working here now</label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Save</button></div></div>';
+    document.body.appendChild(bg);
+    const v = id => bg.querySelector('#' + id);
+    bg.querySelector('#cx').addEventListener('click', () => bg.remove());
+    bg.querySelector('#go').addEventListener('click', async () => {
+      const email = (e ? e.email : v('f-email').value).trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('Enter their Gmail.', true); return; }
+      if (!v('f-name').value.trim()) { toast('Enter the name.', true); return; }
+      const row = { email, name: v('f-name').value.trim(), person_key: v('f-pk').value || null, monthly_salary: Number(v('f-sal').value) || 0, start_time: v('f-start').value || '10:00', weekly_off: Number(v('f-off').value), paid_leave: Number(v('f-leave').value) || 0,
+        shoot_type: v('f-type').value, joined: v('f-join').value || null, bank: v('f-bank').value.trim() || null, active: v('f-active').checked };
+      const { error } = await c.from('employees').upsert(row);
+      if (error) { toast(error.message, true); return; }
+      // an office-only employee needs a login; crew already have one from the board
+      const { data: m } = await c.from('members').select('email, role').eq('email', email).maybeSingle();
+      if (!m && !row.person_key) { const r2 = await c.from('members').insert({ email, role: 'staff', display_name: row.name }); if (r2.error) toast('Saved, but the login was not made: ' + r2.error.message, true); }
+      bg.remove(); await loadBase(); renderPeople(); toast('Saved.' + (row.person_key && !m ? ' Give them a Login Gmail on the board (Manage shooters) so they can sign in.' : ''));
+    });
+  }
+
+  // ---------- holidays ----------
+  async function renderHol() {
+    const y = today.slice(0, 4), { data: hs } = await c.from('holidays').select('*').gte('day', y + '-01-01').order('day');
+    $('tab-hol').innerHTML = '<div class="sechead"><h2>Holidays</h2>' + (owner ? '<button type="button" class="allbtn" id="h-add">＋ Mark a holiday</button>' : '') + '</div><p class="sub">Paid for everyone they apply to. People you ask to come in get holiday pay + a day\'s pay for working.</p>' +
+      ((hs || []).length ? hs.map(h => '<div class="card row2"><div><b>' + esc(h.name) + '</b> <span class="meta" style="display:inline">' + esc(new Date(h.day + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + (h.half ? ' · half day' : '')) + '</span><div class="meta">' + esc((h.only_for ? 'Only: ' + h.only_for.map(e => empOf(e).name).join(', ') : 'Everyone') + (h.ask_in.length ? ' · Asked to come in: ' + h.ask_in.map(e => empOf(e).name).join(', ') : '')) + '</div></div>' +
+        (owner ? '<div class="acts" style="margin:0"><button type="button" class="chip" data-hedit="' + h.id + '">Edit</button><button type="button" class="chip" data-hdel="' + h.id + '">Remove</button></div>' : '') + '</div>').join('') : '<div class="empty">No holidays marked this year.</div>');
+    const add = $('h-add'); if (add) add.addEventListener('click', () => editHol(null));
+    $('tab-hol').querySelectorAll('[data-hedit]').forEach(b => b.addEventListener('click', () => editHol(hs.find(h => h.id === b.dataset.hedit))));
+    $('tab-hol').querySelectorAll('[data-hdel]').forEach(b => b.addEventListener('click', async () => { if (!confirm('Remove this holiday?')) return; const { error } = await c.from('holidays').delete().eq('id', b.dataset.hdel); if (error) toast(error.message, true); else { renderHol(); toast('Removed.'); } }));
+  }
+  function editHol(h) {
+    const x = h || { day: today, name: '', half: false, only_for: null, ask_in: [] };
+    const box = (id, sel) => '<div class="checks">' + active().map(e => '<label><input type="checkbox" data-' + id + '="' + esc(e.email) + '"' + (sel.includes(e.email) ? ' checked' : '') + '>' + esc(e.name) + '</label>').join('') + '</div>';
+    const bg = document.createElement('div'); bg.className = 'sheet-bg';
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + (h ? 'Edit holiday' : 'Mark a holiday') + '</h3><div class="form-grid">' +
+      '<label>Date<input class="in" id="h-day" type="date" value="' + esc(x.day) + '"></label>' + (h ? '' : '<label>To <span class="hint">(optional)</span><input class="in" id="h-to" type="date"></label>') +
+      '<label class="wide">Name<input class="in" id="h-name" maxlength="80" value="' + esc(x.name) + '" placeholder="e.g. Diwali, heavy rain"></label>' +
+      '<label class="wide" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="h-half"' + (x.half ? ' checked' : '') + ' style="width:20px;height:20px;accent-color:var(--rose)">Half day only</label>' +
+      '<label class="wide">Who is it for<select class="in" id="h-who"><option value="all">Everyone</option><option value="some"' + (x.only_for ? ' selected' : '') + '>Only some people</option></select></label></div>' +
+      '<div id="h-some"' + (x.only_for ? '' : ' hidden') + '>' + box('o', x.only_for || []) + '</div>' +
+      '<p class="sub" style="margin-top:12px"><b>Asked to come in</b> (holiday pay + a day\'s pay if they work):</p>' + box('a', x.ask_in || []) +
+      '<div class="pillrow" style="margin-top:14px"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Save</button></div></div>';
+    document.body.appendChild(bg);
+    const v = id => bg.querySelector('#' + id);
+    v('h-who').addEventListener('change', () => { v('h-some').hidden = v('h-who').value !== 'some'; });
+    v('cx').addEventListener('click', () => bg.remove());
+    v('go').addEventListener('click', async () => {
+      const name = v('h-name').value.trim(), d1 = v('h-day').value, d2 = (v('h-to') && v('h-to').value) || d1;
+      if (!name || !d1) { toast('Enter the date and a name.', true); return; }
+      const only = v('h-who').value === 'some' ? [...bg.querySelectorAll('[data-o]:checked')].map(i => i.dataset.o) : null;
+      const ask = [...bg.querySelectorAll('[data-a]:checked')].map(i => i.dataset.a);
+      if (only && !only.length) { toast('Tick who the holiday is for.', true); return; }
+      const base = { name, half: v('h-half').checked, only_for: only, ask_in: ask };
+      let error;
+      if (h) ({ error } = await c.from('holidays').update(Object.assign({ day: d1 }, base)).eq('id', h.id));
+      else { const rows = []; for (let d = d1; d <= d2 && rows.length < 31; d = new Date(new Date(d + 'T12:00:00Z').getTime() + 864e5).toISOString().slice(0, 10)) rows.push(Object.assign({ day: d }, base)); ({ error } = await c.from('holidays').insert(rows)); }
+      if (error) { toast(error.message, true); return; }
+      bg.remove(); await loadBase(); renderHol(); renderToday(); toast('Holiday saved. Everyone sees it in their app.');
+    });
+  }
+
+  // ---------- settings ----------
+  async function renderSet() {
+    const s = cur.settings || {};
+    const [{ data: log }, { data: mem }] = await Promise.all([c.from('att_log').select('*').order('at', { ascending: false }).limit(20), owner ? c.from('members').select('email, role, display_name').in('role', ['accountant', 'kiosk']) : Promise.resolve({ data: [] })]);
+    $('tab-set').innerHTML = '<div class="sechead"><h2>Settings</h2></div>' +
+      '<div class="card"><b>Office location</b><div class="meta">' + (s.office_lat ? esc(s.office_lat.toFixed(5) + ', ' + s.office_lng.toFixed(5)) + ' · check-in works within ' + s.radius_m + ' m' : 'Not set: nobody can check in until it is set.') + '</div>' +
+      (owner ? '<div class="acts"><button type="button" class="chip yes" id="s-here">I am at the office: use this spot</button></div><div class="form-grid" style="margin-top:10px"><label>Distance allowed (m)<input class="in" id="s-rad" type="number" min="30" max="2000" value="' + (s.radius_m || 150) + '"></label><label>Late start after an evening shoot (Type A, minutes)<input class="in" id="s-ln" type="number" min="0" max="600" value="' + (s.late_night_min ?? 120) + '"></label></div><button type="button" class="btn small" id="s-save">Save</button>' : '') + '</div>' +
+      '<div class="card row2"><div><b>Office code check</b><div class="meta">' + (s.code_on !== false ? 'ON: people type the code from the office screen when they check in.' : 'OFF: location only (easier to fake).') + '</div></div>' + (owner ? '<button type="button" class="chip" id="s-code">' + (s.code_on !== false ? 'Turn off' : 'Turn on') + '</button>' : '') + '</div>' +
+      '<div class="card row2"><div><b>Office screen</b><div class="meta">Open this on the office phone or tablet, signed in with the office screen login. It shows the code.</div></div><a class="chip" href="/office.html">Open</a></div>' +
+      (owner ? '<div class="card"><b>Logins for attendance</b>' + (mem || []).map(m => '<div class="row2" style="margin-top:6px"><span>' + esc(m.email) + ' · ' + (m.role === 'kiosk' ? 'office screen' : 'accountant') + '</span><button type="button" class="linkbtn" data-rm="' + esc(m.email) + '">remove</button></div>').join('') +
+        '<div class="form-grid" style="margin-top:10px"><label>Gmail<input class="in" id="l-email" type="email"></label><label>As<select class="in" id="l-role"><option value="accountant">Accountant (prepares salaries)</option><option value="kiosk">Office screen (shows the code)</option></select></label></div><button type="button" class="btn small" id="l-add">Add login</button></div>' : '') +
+      '<div class="card"><b>Changes</b>' + ((log || []).length ? log.map(l => '<div class="meta">' + esc(new Date(l.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) + ' · ' + (l.by_email || 'system') + ' · ' + l.what) + '</div>').join('') : '<div class="meta">No changes yet.</div>') + '</div>';
+    if (!owner) return;
+    const upd = async (patch, msg) => { const { error } = await c.from('att_settings').update(patch).eq('id', 1); if (error) { toast(error.message, true); return; } await loadBase(); renderSet(); toast(msg); };
+    $('s-here').addEventListener('click', async () => { toast('Getting this phone\'s location…'); try { const p = await A.locate(); if (p.acc > 100) toast('Location is rough (' + Math.round(p.acc) + ' m). Try again near a window for a better fix.', true); await upd({ office_lat: p.lat, office_lng: p.lng }, 'Office location saved.'); } catch (e) { toast(e.message, true); } });
+    $('s-save').addEventListener('click', () => upd({ radius_m: Number($('s-rad').value) || 150, late_night_min: Number($('s-ln').value) || 0 }, 'Saved.'));
+    $('s-code').addEventListener('click', () => { const on = s.code_on === false; if (!on && !confirm('Turn the office code off? Check-in will use location only, which is easier to fake.')) return; upd({ code_on: on }, 'Office code check turned ' + (on ? 'on.' : 'off.')); });
+    $('l-add').addEventListener('click', async () => {
+      const email = $('l-email').value.trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('Enter a Gmail.', true); return; }
+      const { error } = await c.from('members').upsert({ email, role: $('l-role').value, display_name: $('l-role').value === 'kiosk' ? 'Office screen' : 'Accountant' });
+      if (error) toast(error.message, true); else { renderSet(); toast('Login added.'); }
+    });
+    $('tab-set').querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', async () => { if (!confirm('Remove ' + b.dataset.rm + '?')) return; const { error } = await c.from('members').delete().eq('email', b.dataset.rm); if (error) toast(error.message, true); else renderSet(); }));
+  }
+
+  function showTab(t) {
+    document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    ['today', 'req', 'pay', 'people', 'hol', 'set'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    ({ today: renderToday, req: renderReq, pay: renderPay, people: renderPeople, hol: renderHol, set: renderSet })[t]();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  try { await loadBase(); } catch (e) { $('tab-today').innerHTML = '<div class="empty">Could not load attendance (' + esc(e.message || e) + '). Run supabase/004_studio.sql first.</div>'; return; }
+  showTab(new URLSearchParams(location.search).get('tab') || 'today');
+  setInterval(async () => { if (!document.hidden && !document.querySelector('.sheet-bg') && !$('tab-today').hidden) { await loadBase(); renderToday(); } }, 60000);
+})();
+</script>
+</body>
+</html>

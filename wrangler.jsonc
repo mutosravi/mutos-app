@@ -1,0 +1,19 @@
+// Cloudflare settings for the Muto's app (read automatically when you push to GitHub).
+// Secrets are NOT here: add SUPABASE_SECRET_KEY and VAPID_PRIVATE_KEY in Cloudflare → this Worker → Settings → Variables and Secrets.
+{
+  "name": "mutos-app",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "triggers": { "crons": ["30 13 * * *", "30 21 * * *"] },   // 7:00 pm India: reminders · 3:00 am India: backup
+  "vars": {
+    "SUPABASE_URL": "https://plbixpdyxpayyzpzrvna.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_BBsRicVGu4a7qv0Xv__3cA_5b8DLUQm",
+    "VAPID_PUBLIC_KEY": "",
+    "VAPID_SUBJECT": "https://mutos-app.mutos-raviranjan.workers.dev"
+  },
+  // nightly backups: add a KV namespace for this app later (kept separate from the team app's backups)
+  // keep variables added in the Cloudflare dashboard when GitHub updates are deployed
+  "keep_vars": true,
+  "observability": { "enabled": true }
+}

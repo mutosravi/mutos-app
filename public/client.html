@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Your functions · Muto's</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.fn { background: var(--surface); border-radius: 20px; padding: 16px; margin: 12px 0; box-shadow: var(--shadow); }
+.fn-head { display: flex; gap: 12px; align-items: flex-start; }
+.fn-head .txt { flex: 1 1 auto; min-width: 0; }
+.fn-head h2 { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.25; }
+.fn-head .meta { margin-top: 2px; }
+.fn .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.fn .grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.fn .grid .wide { grid-column: 1 / -1; }
+.fn .hint { font-weight: 400; font-size: 12px; color: var(--muted); }
+.fn.done { box-shadow: var(--shadow), inset 4px 0 0 #3d7a6e; }
+.fn .x { background: none; border: 0; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; padding: 0; }
+.bar { position: sticky; bottom: 0; background: linear-gradient(rgba(251,246,242,0), var(--bg) 30%); padding: 18px 0 max(16px, env(safe-area-inset-bottom)); display: flex; gap: 8px; }
+.bar .pillbtn { flex: 1; }
+.saved { font-size: 12px; color: var(--muted); text-align: center; margin: 6px 0 0; min-height: 16px; }
+.progress { height: 8px; border-radius: 4px; background: rgba(255,255,255,.7); overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--rose); border-radius: 4px; transition: width .3s; }
+@media (max-width: 380px) { .fn .grid { grid-template-columns: 1fr; } }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+</head>
+<body>
+<main class="wrap" style="padding-bottom:24px">
+  <header class="hdr"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span></header>
+  <section id="top"><div class="hero"><p>Loading your functions…</p></div></section>
+  <div id="list"></div>
+  <div id="more" hidden><button type="button" class="pillbtn light" id="add-fn" style="width:100%;box-shadow:var(--shadow)">＋ Add a function we missed</button></div>
+  <div class="bar" id="bar" hidden><button type="button" class="pillbtn light" id="save">Save</button><button type="button" class="pillbtn" id="send">Send to Muto's</button></div>
+  <p class="saved" id="saved"></p>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  const token = new URLSearchParams(location.search).get('k') || location.hash.slice(1);
+  const dayName = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  const dblock = s => { const d = new Date(s + 'T12:00:00'); return '<span class="dblock"><b>' + d.getDate() + '</b><span>' + d.toLocaleDateString('en-IN', { month: 'short' }) + '</span></span>'; };
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4000); };
+  const fail = m => { $('top').innerHTML = '<div class="hero"><h2>Link not working</h2><p>' + esc(m) + '</p></div>'; };
+  if (!/^[0-9a-f-]{36}$/i.test(token || '')) { fail('This link is incomplete. Please open the full link the studio sent you on WhatsApp.'); return; }
+
+  let c;
+  try { c = await window.mutosApp.client(); } catch (e) { fail('Could not connect. Check your internet and open the link again.'); return; }
+  const { data: got, error } = await c.rpc('client_get', { p_token: token });
+  if (error || !got || got.error) { fail((got && got.error) || 'Could not open your details. Check your internet and try again.'); return; }
+
+  const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  const fns = (got.functions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const ans = Object.assign({ extra: [] }, got.answers || {});
+  if (!Array.isArray(ans.extra)) ans.extra = [];
+  let submittedAt = got.submitted_at, dirty = false;
+
+  const FIELDS = [
+    ['time', 'Function starts at', 'time', ''],
+    ['guests', 'About how many guests', 'number', 'e.g. 300'],
+    ['venue', 'Venue name', 'text', 'e.g. Taj Mahal Hotel', 'wide'],
+    ['address', 'Full address', 'textarea', 'Area, landmark, city', 'wide'],
+    ['map', 'Google Maps link', 'url', 'Paste the location link', 'wide', 'In Google Maps: tap the place → Share → Copy link'],
+    ['contact', 'Contact person at the venue', 'text', 'Name'],
+    ['phone', 'Their phone', 'tel', '10-digit mobile'],
+    ['notes', 'Anything our team should know', 'textarea', 'Rituals, special moments, family members to cover, entry time of the couple…', 'wide']
+  ];
+  const filled = a => !!(a && a.time && a.venue && a.address);
+  function field(key, a, [k, label, type, ph, wide, hint]) {
+    const v = esc(a[k] || '');
+    const input = type === 'textarea' ? '<textarea class="in" rows="2" data-k="' + key + '" data-f="' + k + '" maxlength="600" placeholder="' + esc(ph) + '">' + v + '</textarea>'
+      : '<input class="in" type="' + type + '" data-k="' + key + '" data-f="' + k + '" maxlength="300" placeholder="' + esc(ph) + '" value="' + v + '"' + (type === 'tel' ? ' inputmode="tel"' : type === 'number' ? ' inputmode="numeric" min="0"' : '') + '>';
+    return '<label' + (wide ? ' class="wide"' : '') + '>' + esc(label) + input + (hint ? '<span class="hint">' + esc(hint) + '</span>' : '') + '</label>';
+  }
+  function render() {
+    const total = fns.length + ans.extra.length, done = fns.filter(f => filled(ans[f.id])).length + ans.extra.filter(filled).length;
+    const first = fns.find(f => f.date >= today), daysTo = first ? Math.round((new Date(first.date + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5) : null;
+    $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">Welcome</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
+      '<h2>' + esc(got.title) + '</h2><p>Please fill in the details of each function, so our team reaches the right place on time. It takes about 5 minutes, and you can change anything later.</p>' +
+      '<div class="progress" aria-label="' + done + ' of ' + total + ' filled"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' filled</p>' +
+      (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. You can still change anything and send again.</div>' : '') + '</section>';
+    let h = '';
+    fns.forEach(f => {
+      const a = ans[f.id] = ans[f.id] || {};
+      h += '<article class="fn' + (filled(a) ? ' done' : '') + '"><div class="fn-head">' + (f.date ? dblock(f.date) : '') + '<div class="txt"><h2>' + esc(f.name) + '</h2><div class="meta">' + esc([f.date ? dayName(f.date) : '', f.slot].filter(Boolean).join(' · ')) + '</div>' +
+        (filled(a) ? '<span class="pill ok" style="display:inline-block;margin-top:6px">Filled</span>' : '<span class="pill wait" style="display:inline-block;margin-top:6px">To fill</span>') + '</div></div>' +
+        '<div class="grid">' + FIELDS.map(F => field(f.id, a, F)).join('') +
+        '<label class="wide" style="flex-direction:row;align-items:center;gap:8px;font-weight:400;color:var(--ink)"><input type="checkbox" data-k="' + esc(f.id) + '" data-f="changed"' + (a.changed ? ' checked' : '') + ' style="width:20px;height:20px;accent-color:var(--rose)">The date or time has changed (write the new one in the notes)</label></div></article>';
+    });
+    ans.extra.forEach((a, i) => {
+      h += '<article class="fn' + (filled(a) ? ' done' : '') + '"><div class="fn-head"><div class="txt"><h2>New function</h2><div class="meta">Not on our list yet: the studio will confirm it with you</div></div><button type="button" class="x" data-rm="' + i + '">Remove</button></div>' +
+        '<div class="grid">' + field('x' + i, a, ['name', 'Function name', 'text', 'e.g. Tilak, Ring ceremony', 'wide']) + field('x' + i, a, ['date', 'Date', 'date', '']) +
+        '<label>Time of day<select class="in" data-k="x' + i + '" data-f="slot">' + ['Morning', 'Evening', 'Full day'].map(s => '<option' + (a.slot === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></label>' +
+        FIELDS.map(F => field('x' + i, a, F)).join('') + '</div></article>';
+    });
+    $('list').innerHTML = h || '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
+    $('more').hidden = false; $('bar').hidden = false;
+    $('list').querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' || inp.tagName === 'SELECT' ? 'change' : 'input', () => {
+      const k = inp.dataset.k, f = inp.dataset.f, obj = k[0] === 'x' && /^x\d+$/.test(k) ? ans.extra[Number(k.slice(1))] : (ans[k] = ans[k] || {});
+      obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
+      dirty = true; $('saved').textContent = 'Not saved yet'; scheduleSave();
+      const card = inp.closest('.fn'); card.classList.toggle('done', filled(obj));
+    }));
+    $('list').querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { ans.extra.splice(Number(b.dataset.rm), 1); dirty = true; render(); scheduleSave(); }));
+  }
+  let saveT = null, saving = false;
+  function scheduleSave() { clearTimeout(saveT); saveT = setTimeout(() => save(false), 2500); }
+  async function save(submit) {
+    clearTimeout(saveT);
+    if (saving) { setTimeout(() => save(submit), 400); return false; }
+    saving = true; $('saved').textContent = 'Saving…';
+    const clean = { extra: ans.extra.filter(a => Object.values(a).some(Boolean)) };
+    fns.forEach(f => { if (ans[f.id] && Object.values(ans[f.id]).some(Boolean)) clean[f.id] = ans[f.id]; });
+    try {
+      const { data, error } = await c.rpc('client_save', { p_token: token, p_data: clean, p_submit: !!submit });
+      if (error || !data || data.error) throw new Error((data && data.error) || (error && error.message) || 'failed');
+      dirty = false; if (submit) submittedAt = new Date().toISOString();
+      $('saved').textContent = 'Saved ' + new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+      return true;
+    } catch (e) { $('saved').textContent = 'Not saved: ' + e.message; toast('Could not save. Check your internet and tap Save again.', true); return false; }
+    finally { saving = false; }
+  }
+  $('save').addEventListener('click', async () => { if (await save(false)) toast('Saved. You can come back to this link any time.'); });
+  $('send').addEventListener('click', async () => {
+    const missing = fns.filter(f => !filled(ans[f.id])).map(f => f.name);
+    if (missing.length && !confirm('Not filled yet: ' + missing.join(', ') + '.\n\nSend what you have now? You can fill the rest later.')) return;
+    if (await save(true)) { render(); toast('Thank you! Muto\'s has received your details.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  });
+  $('add-fn').addEventListener('click', () => { ans.extra.push({ slot: 'Evening' }); render(); const cards = document.querySelectorAll('.fn'); cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+  render();
+})();
+</script>
+</body>
+</html>

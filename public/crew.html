@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>My Shoots</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/push-client.js"></script>
+<script src="/icons.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <header class="hdr topbar">
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+    <div class="hdr-acts"><button type="button" class="btn small" id="bell" hidden>🔔 Reminders</button><a class="btn small" id="to-board" href="/board.html" hidden>Board</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+  </header>
+  <nav class="bnav" role="tablist" aria-label="Main">
+  <button type="button" role="tab" class="tab on" data-tab="home" aria-selected="true"><span data-ic="home"></span>Home</button>
+  <button type="button" role="tab" class="tab" data-tab="shoots" aria-selected="false"><span data-ic="calendar"></span>Shoots<b class="dot" id="nav-shoots-n" hidden></b></button>
+  <button type="button" role="tab" class="tab" data-tab="away" aria-selected="false"><span data-ic="off"></span>Days off</button>
+  <a class="tab" id="nav-work" href="/work.html" hidden><span data-ic="clock"></span>Work</a>
+</nav>
+  <div id="preview" hidden style="margin:8px 0 0"><label class="who" for="pick">Preview as </label><select class="pick" id="pick"></select> <span class="who">· view only</span></div>
+  <section class="hello"><span class="avatar soft" id="av" aria-hidden="true"></span><div><h1 id="hello">My shoots</h1><p class="sub" id="count">Loading…</p></div></section>
+  <div id="decisions" style="margin-top:12px"></div>
+  <div class="todo" id="todo"></div>
+  <section id="tab-home">
+    <div id="next"></div>
+    <div class="sechead"><h2>This week</h2><button type="button" class="allbtn" data-goto="shoots">All shoots</button></div>
+    <div class="week" id="week"></div>
+    <div class="sechead"><h2>Quick menu</h2></div>
+    <div class="tiles three" id="qm"></div>
+  </section>
+  <section id="tab-shoots" hidden>
+    <h2 class="h2" style="margin-top:22px">My shoots</h2>
+    <div id="list"></div>
+    <div id="recent"></div>
+  </section>
+  <section id="tab-away" hidden>
+    <h2 class="h2" style="margin-top:22px">Days off</h2>
+    <div class="panel">
+      <p class="panel-note">Mark the dates you can't work. A date more than 7 days away with no shoot of yours is blocked straight away. If you already have a shoot that day, or it is within the next 7 days, it goes to the studio to approve.</p>
+      <div class="form-grid">
+        <label>From<input type="date" id="aw-from" class="in"></label>
+        <label>To <span class="hint">(optional)</span><input type="date" id="aw-to" class="in"></label>
+        <label>Time<select id="aw-slot" class="in"><option>Full day</option><option>Morning</option><option>Evening</option></select></label>
+        <label class="wide">Reason <span class="hint">(optional)</span><input type="text" id="aw-reason" class="in" maxlength="150" placeholder="e.g. family function, exam, travelling"></label>
+        <label class="wide">Who could cover for you? <span class="hint">(optional, helps the studio)</span><input type="text" id="aw-cover" class="in" maxlength="45" placeholder="e.g. Aman"></label>
+      </div>
+      <p class="panel-note" id="aw-preview"></p>
+      <button type="button" class="btn primary" id="aw-add">Mark not available</button>
+    </div>
+    <h2 class="h2">Your dates</h2>
+    <div id="aw-list"></div>
+  </section>
+  <p class="foot" id="foot"></p>
+  <p class="who" style="margin-top:4px">Signed in as <span id="who"></span></p>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id);
+  const app = window.mutosApp;
+  const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
+  const pad = n => String(n).padStart(2, '0');
+  const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
+  const dayName = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const stamp = t => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const digits = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; if (d.length === 11 && d[0] === '0') d = '91' + d.slice(1); return d; };
+  const tel = p => 'tel:+' + digits(p), wa = p => 'https://wa.me/' + digits(p);
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3500); };
+  $('out').addEventListener('click', () => app.signOut());
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+
+  let me, c;
+  try { me = await app.me(); } catch (e) { $('count').innerHTML = '<span class="err">Could not reach the app. Check your internet and reload.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  if (!['crew', 'owner', 'manager'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; }
+  c = await app.client();
+  const staff = me.role === 'owner' || me.role === 'manager';
+  $('who').textContent = me.email;
+  if (staff) $('to-board').hidden = false;
+  if (!staff) c.from('employees').select('email').eq('email', me.email).maybeSingle().then(r => { if (r && r.data) $('nav-work').hidden = false; }).catch(() => {});
+
+  // ---------- what is on screen ----------
+  let feeds = null, current = null, row = null, statusBy = new Map(), aways = [], desk = [];
+  const viewOnly = () => staff; // staff preview what crew see; answers come only from the crew member
+  const myKey = () => staff ? current : me.personKey;
+  const today = () => dstr(new Date());
+  const sigOf = s => [s.date, s.slot, s.callTime || '', s.venue || '', s.shoot].join('|');
+
+  async function load() {
+    if (staff) {
+      const { data, error } = await c.from('crew_feed').select('person_key, name, data, updated_at').order('name');
+      if (error) throw error;
+      feeds = data;
+      const pick = $('pick'), keep = current || new URLSearchParams(location.search).get('p');
+      pick.innerHTML = data.map(r => '<option value="' + esc(r.person_key) + '">' + esc(r.name) + '</option>').join('');
+      if (keep && data.some(r => r.person_key === keep)) pick.value = keep;
+      current = pick.value || null;
+      $('preview').hidden = !data.length;
+      row = data.find(r => r.person_key === current) || null;
+    } else {
+      const { data, error } = await c.from('crew_feed').select('person_key, name, data, updated_at').eq('person_key', me.personKey).maybeSingle();
+      if (error) throw error;
+      row = data;
+    }
+    const key = myKey();
+    statusBy = new Map(); aways = [];
+    if (key) {
+      const [st, aw] = await Promise.all([
+        c.from('crew_status').select('*').eq('person_key', key),
+        c.from('crew_away').select('*').eq('person_key', key).order('date')
+      ]);
+      if (st.error || aw.error) console.warn('crew actions not available yet (run supabase/002_crew_actions.sql)', st.error || aw.error); // the shoot list still works
+      if (st.error) st.data = []; if (aw.error) aw.data = [];
+      const gl = await c.from('gear_log').select('gear_name, action, qty, event_id, condition, note, at').eq('person_key', key).order('at', { ascending: true });
+      desk = gl.error ? [] : gl.data; // entries the Gear desk made about this person
+      st.data.forEach(r => statusBy.set(r.event_id, r));
+      aways = aw.data;
+    }
+  }
+  $('pick').addEventListener('change', async () => { current = $('pick').value; await refresh(); });
+
+  async function saveStatus(s, fields, msg) {
+    if (viewOnly()) return;
+    const body = Object.assign({ person_key: me.personKey, event_id: s.id, shoot_date: s.date }, fields);
+    const { error } = await c.from('crew_status').upsert(body);
+    if (error) { toast('Could not save: ' + error.message, true); return; }
+    statusBy.set(s.id, Object.assign({}, statusBy.get(s.id) || {}, body));
+    render(); if (msg) toast(msg);
+  }
+
+  // ---------- calendar ----------
+  const SLOT_TIMES = { Morning: ['08:00', '14:00'], Evening: ['17:00', '23:00'], 'Full day': ['08:00', '23:00'] };
+  function times(s) {
+    const [a, b] = SLOT_TIMES[s.slot] || SLOT_TIMES['Full day'];
+    const start = s.callTime || a;
+    let end = b; if (end <= start) { const [h, m] = start.split(':').map(Number); end = pad(Math.min(23, h + 5)) + ':' + pad(m); }
+    return [start, end];
+  }
+  // India time → UTC stamp like 20261120T113000Z
+  function utc(date, hm) { const d = new Date(date + 'T' + hm + ':00+05:30'); return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+  function details(s) {
+    return [s.role ? 'Your job: ' + s.role : '', s.gear && s.gear.length ? 'Your gear: ' + s.gear.join(', ') : '',
+      s.clientName || s.clientPhone ? 'Client: ' + [s.clientName, s.clientPhone].filter(Boolean).join(' ') : '',
+      s.team && s.team.length ? 'Team: ' + s.team.map(t => t.name + ' (' + t.role + ')').join(', ') : '',
+      s.notes ? 'Note: ' + s.notes : '', s.map ? 'Map: ' + s.map : '', 'Muto\'s Studio'].filter(Boolean).join('\n');
+  }
+  function googleCal(s) {
+    const [a, b] = times(s);
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(s.shoot + ' · ' + s.slot) +
+      '&dates=' + utc(s.date, a) + '/' + utc(s.date, b) + '&location=' + encodeURIComponent(s.venue || '') + '&details=' + encodeURIComponent(details(s));
+  }
+  const icsText = t => String(t || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m);
+  function icsFor(list) {
+    const now = utc(today(), '00:00');
+    const ev = list.map(s => { const [a, b] = times(s); return ['BEGIN:VEVENT', 'UID:' + s.id + '-' + myKey() + '@mutos-team', 'DTSTAMP:' + now, 'DTSTART:' + utc(s.date, a), 'DTEND:' + utc(s.date, b),
+      'SUMMARY:' + icsText(s.shoot + ' · ' + s.slot), 'LOCATION:' + icsText(s.venue), 'DESCRIPTION:' + icsText(details(s)),
+      'BEGIN:VALARM', 'TRIGGER:-PT3H', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsText(s.shoot), 'END:VALARM', 'END:VEVENT'].join('\r\n'); });
+    return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mutos Studio//Team//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'].concat(ev, ['END:VCALENDAR']).join('\r\n');
+  }
+  function downloadIcs(list, name) {
+    const blob = new Blob([icsFor(list)], { type: 'text/calendar;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name + '.ics';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  }
+
+  // ---------- one shoot ----------
+  function answerBlock(s) {
+    const st = statusBy.get(s.id) || {}, changed = st.confirm && st.confirm_sig && st.confirm_sig !== sigOf(s);
+    if (st.confirm === 'yes' && !changed) return '<div class="ans ok">✓ You confirmed' + (st.confirmed_at ? ' · ' + esc(stamp(st.confirmed_at)) : '') + (viewOnly() ? '' : ' <button type="button" class="linkbtn" data-act="reask">change</button>') + '</div>';
+    if (st.confirm === 'no' && !changed) return '<div class="ans no">✗ You said you can\'t make it' + (st.confirm_note ? ': ' + esc(st.confirm_note) : '') + '. The studio will contact you.' + (viewOnly() ? '' : ' <button type="button" class="linkbtn" data-act="reask">change</button>') + '</div>';
+    if (viewOnly()) return '<div class="ans wait">' + (changed ? 'Details changed since they answered · ' : '') + 'Not confirmed yet</div>';
+    return (changed ? '<div class="ans wait">Details changed since you answered. Please confirm again.</div>' : '') +
+      '<div class="acts big"><button type="button" class="chip yes" data-act="yes">✓ I\'ll be there</button><button type="button" class="chip" data-act="no">✗ Can\'t make it</button></div>' +
+      '<div class="cant" hidden><textarea class="in" rows="2" maxlength="300" placeholder="Why? (the studio sees this)"></textarea><div class="acts"><button type="button" class="chip no" data-act="no-send">Send</button><button type="button" class="chip" data-act="no-cancel">Cancel</button></div></div>';
+  }
+  function gearBlock(s, past) {
+    const studioGear = (s.gear || []).filter(g => g !== 'own kit');
+    if (!studioGear.length) return '';
+    const fromDesk = desk.filter(d => d.event_id === s.id);
+    if (fromDesk.length) return '<div class="row small" style="display:block">' + fromDesk.map(d => '🎒 ' + (d.action === 'out' ? 'Gear desk gave you ' : 'You returned ') + esc(d.gear_name + (d.qty > 1 ? ' ×' + d.qty : '')) + ' · ' + esc(stamp(d.at)) + (d.condition !== 'good' ? ' · <b>' + esc({ minor: 'minor issue', damaged: 'damaged', missing: 'missing parts' }[d.condition]) + '</b>' : '') + (d.note ? ' · ' + esc(d.note) : '')).join('<br>') + '</div>';
+    const st = statusBy.get(s.id) || {};
+    if (st.gear_back_at) return '<div class="row small">🎒 Gear returned · ' + esc(stamp(st.gear_back_at)) + '</div>';
+    if (st.gear_out_at) return '<div class="row small">🎒 Gear picked up · ' + esc(stamp(st.gear_out_at)) + (viewOnly() ? '' : ' <button type="button" class="chip" data-act="gear-back">Returned gear</button>') + '</div>';
+    if (viewOnly()) return '';
+    return '<div class="row small">🎒 <button type="button" class="chip" data-act="gear-out">Picked up gear</button>' + (past ? ' <button type="button" class="chip" data-act="gear-back">Returned gear</button>' : '') + '</div>';
+  }
+  function dataBlock(s) {
+    const st = statusBy.get(s.id) || {};
+    if (st.data_at) return '<div class="ans ok">💾 Data handed over · ' + esc(stamp(st.data_at)) + (st.data_note ? ' · ' + esc(st.data_note) : '') + '</div>';
+    if (viewOnly()) return '<div class="ans wait">💾 Data not handed over yet</div>';
+    return '<div class="ans wait">💾 Hand over your cards / footage, then mark it here.</div><div class="acts"><input class="in" data-role="data-note" maxlength="300" placeholder="Note (optional): e.g. 2 cards to Ravi" style="flex:1 1 180px"><button type="button" class="chip yes" data-act="data">Data handed over</button></div>';
+  }
+  function card(s, past) {
+    const meta = [s.slot, s.report ? 'Report ' + s.report : 'Report time to be confirmed'].join(' · ');
+    let h = '<article class="shoot" data-id="' + esc(s.id) + '"><h2>' + esc(s.shoot) + '</h2>' +
+      (s.wedding && s.wedding.toLowerCase() !== s.shoot.toLowerCase() ? '<div class="meta">' + esc(s.wedding) + '</div>' : '') +
+      '<div class="meta">' + esc(past ? s.day + ' · ' + s.slot : meta) + '</div>' +
+      '<span class="role">' + esc(s.role || 'Crew') + '</span>' + (s.premium ? '<span class="prem">★ Premium · shoot in 4K HDR</span>' : '');
+    if (past) return h + dataBlock(s) + gearBlock(s, true) + '</article>';
+    h += answerBlock(s);
+    h += '<div class="row"><span class="k">Venue</span>' + esc(s.venue || 'To be confirmed') + '<div class="acts">' + (s.map ? '<a class="chip" href="' + esc(s.map) + '" target="_blank" rel="noopener">Open map</a>' : '') +
+      '<a class="chip" href="' + esc(googleCal(s)) + '" target="_blank" rel="noopener">+ Google Calendar</a><button type="button" class="chip" data-act="ics">+ Phone calendar</button></div></div>';
+    if (s.clientName || s.clientPhone) h += '<div class="row"><span class="k">Client</span>' + esc(s.clientName || '') + (s.clientPhone ? ' <span class="meta" style="display:inline">' + esc(s.clientPhone) + '</span><div class="acts"><a class="chip" href="' + tel(s.clientPhone) + '">Call</a><a class="chip wa" href="' + wa(s.clientPhone) + '" target="_blank" rel="noopener">WhatsApp</a></div>' : '') + '</div>';
+    if (s.gear && s.gear.length) h += '<div class="row"><span class="k">Your gear</span>' + esc(s.gear.join(', ')) + '</div>' + gearBlock(s, false);
+    if (s.shared && s.shared.length) h += '<div class="row"><span class="k">Shared on this shoot</span>' + esc(s.shared.join(', ')) + '</div>';
+    if (s.team && s.team.length) h += '<div class="row"><span class="k">Team with you</span><ul class="team">' + s.team.map(t => '<li>' + esc(t.name) + ' <span class="meta" style="display:inline">' + esc(t.role) + '</span>' + (t.phone ? ' · <a href="' + tel(t.phone) + '">call</a>' : '') + '</li>').join('') + '</ul></div>';
+    (s.travel || []).forEach(t => { h += '<div class="row">' + esc(t) + '</div>'; });
+    if (s.notes) h += '<div class="row note"><span class="k" style="color:inherit">Note from the studio</span>' + esc(s.notes) + '</div>';
+    return h + '</article>';
+  }
+
+  // ---------- not available ----------
+  const AW_LABEL = { auto: ['Blocked', 'ok'], approved: ['Approved by studio', 'ok'], pending: ['Waiting for the studio', 'wait'], declined: ['Declined: please talk to the studio', 'no'] };
+  function bookedOn(d) { return ((row && row.data && row.data.shoots) || []).filter(s => s.date === d); }
+  function rangeDates() {
+    const a = $('aw-from').value, b = $('aw-to').value || a;
+    if (!a) return [];
+    const out = []; for (let d = a; d <= b && out.length < 62; d = addDays(d, 1)) out.push(d);
+    return out;
+  }
+  function previewAway() {
+    const ds = rangeDates(), el = $('aw-preview');
+    if (!ds.length) { el.textContent = ''; return; }
+    if (ds[0] < today()) { el.innerHTML = '<span class="err">Pick today or a later date.</span>'; return; }
+    if (($('aw-to').value || ds[0]) < ds[0]) { el.innerHTML = '<span class="err">"To" is before "From".</span>'; return; }
+    const ask = ds.filter(d => bookedOn(d).length || d < addDays(today(), 7)), instant = ds.length - ask.length;
+    const booked = ds.filter(d => bookedOn(d).length);
+    el.innerHTML = esc(ds.length + ' date' + (ds.length > 1 ? 's' : '') + ': ' + [instant ? instant + ' blocked straight away' : '', ask.length ? ask.length + ' sent to the studio to approve' : ''].filter(Boolean).join(', ') + '.') +
+      (booked.length ? '<br><b>You have a shoot on ' + esc(booked.map(dayName).join(', ')) + '.</b> The studio has to find someone else first.' : '');
+  }
+  ['aw-from', 'aw-to', 'aw-slot'].forEach(id => $(id).addEventListener('input', previewAway));
+  $('aw-from').addEventListener('change', () => { if ($('aw-to').value && $('aw-to').value < $('aw-from').value) $('aw-to').value = ''; previewAway(); });
+  $('aw-add').addEventListener('click', async () => {
+    if (viewOnly()) { toast('Preview only: crew mark their own dates.'); return; }
+    const ds = rangeDates(); if (!ds.length) { toast('Pick a date first.', true); return; }
+    if (ds[0] < today()) { toast('Pick today or a later date.', true); return; }
+    const cover = $('aw-cover').value.trim(), slot = $('aw-slot').value, reason = [$('aw-reason').value.trim(), cover ? 'Suggests: ' + cover : ''].filter(Boolean).join(' · ');
+    const have = new Set(aways.map(a => a.date + '|' + a.slot));
+    const todo = ds.filter(d => !have.has(d + '|' + slot) && !have.has(d + '|Full day'));
+    if (!todo.length) { toast('Already marked.'); return; }
+    $('aw-add').disabled = true;
+    let ok = 0, asked = 0, failed = '';
+    for (const d of todo) {
+      const { error } = await c.from('crew_away').insert({ person_key: me.personKey, date: d, slot, reason });
+      if (error) failed = error.message; else ok++;
+    }
+    $('aw-add').disabled = false;
+    await load(); render();
+    asked = aways.filter(a => todo.includes(a.date) && a.status === 'pending').length;
+    $('aw-from').value = ''; $('aw-to').value = ''; $('aw-reason').value = ''; $('aw-cover').value = ''; previewAway();
+    if (failed && !ok) toast('Could not save: ' + failed, true);
+    else toast(ok + ' date' + (ok > 1 ? 's' : '') + ' saved' + (asked ? ' · ' + asked + ' waiting for the studio' : '') + '.');
+  });
+  function renderAway() {
+    const list = aways.filter(a => a.date >= today());
+    $('aw-list').innerHTML = list.length ? list.map(a => { const [l, k] = AW_LABEL[a.status] || ['', ''];
+      return '<div class="awrow"><div><b>' + esc(dayName(a.date)) + '</b> <span class="meta" style="display:inline">' + esc(a.slot) + '</span>' + (a.reason ? '<div class="meta">' + esc(a.reason) + '</div>' : '') + '</div>' +
+        '<div class="awright"><span class="pill ' + k + '">' + esc(l) + '</span>' + (viewOnly() ? '' : '<button type="button" class="linkbtn" data-aw="' + esc(a.id) + '">remove</button>') + '</div></div>'; }).join('')
+      : '<div class="empty">No dates marked. You are shown as available on every day.</div>';
+    $('aw-list').querySelectorAll('[data-aw]').forEach(b => b.addEventListener('click', async () => {
+      const { error } = await c.from('crew_away').delete().eq('id', b.dataset.aw);
+      if (error) { toast('Could not remove: ' + error.message, true); return; }
+      aways = aways.filter(a => a.id !== b.dataset.aw); render(); toast('Removed. You are available that day again.');
+    }));
+  }
+
+  // ---------- page ----------
+  function render() {
+    const t = today(), tmr = addDays(t, 1);
+    const all = (row && row.data && row.data.shoots) || [];
+    const shoots = all.filter(s => s.date >= t), past = all.filter(s => s.date < t);
+    const name = (row && row.name) || me.name;
+    $('hello').textContent = staff ? (row ? row.name + "'s view" : 'Crew view') : 'Hello, ' + String(name).split(' ')[0];
+    $('av').textContent = String(name || '?').trim().charAt(0).toUpperCase();
+    const days = new Set(shoots.map(s => s.date)).size;
+    $('count').textContent = !row ? (staff ? 'No crew member has a Login Gmail yet. Add one in Manage shooters → edit.' : 'Your schedule is not ready yet. The studio will add you shortly.')
+      : shoots.length ? shoots.length + ' upcoming shoot' + (shoots.length === 1 ? '' : 's') + ' over ' + days + ' day' + (days === 1 ? '' : 's') + '.' : 'No upcoming shoots right now.';
+    // to-do chips
+    const unconf = shoots.filter(s => s.date <= addDays(t, 14)).filter(s => { const st = statusBy.get(s.id); return !st || !st.confirm || (st.confirm_sig && st.confirm_sig !== sigOf(s)); });
+    const dataDue = past.filter(s => !(statusBy.get(s.id) || {}).data_at);
+    const gearOut = all.filter(s => { const st = statusBy.get(s.id) || {}; return st.gear_out_at && !st.gear_back_at; });
+    const pend = aways.filter(a => a.status === 'pending' && a.date >= t);
+    const chips = [];
+    if (unconf.length) chips.push('<button type="button" class="tchip" data-go="shoots">' + unconf.length + ' to confirm · next 2 weeks</button>');
+    if (dataDue.length) chips.push('<button type="button" class="tchip" data-go="recent">' + dataDue.length + ' data to hand over</button>');
+    if (gearOut.length) chips.push('<span class="tchip quiet">' + gearOut.length + ' gear with you</span>');
+    if (pend.length) chips.push('<button type="button" class="tchip quiet" data-go="away">' + pend.length + ' date' + (pend.length > 1 ? 's' : '') + ' waiting for approval</button>');
+    $('todo').innerHTML = chips.join('');
+    // the studio's answers to your not-available requests, shown until you close them
+    let seenDec = []; try { seenDec = JSON.parse(localStorage.getItem('mutos-seen-decisions') || '[]'); } catch (e) {}
+    const dec = viewOnly() ? [] : aways.filter(a => (a.status === 'approved' || a.status === 'declined') && a.decided_at && a.date >= t && !seenDec.includes(a.id + a.status));
+    $('decisions').innerHTML = dec.map(a => '<div class="ans ' + (a.status === 'approved' ? 'ok' : 'no') + '" style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin:0 0 8px"><span>' +
+      (a.status === 'approved' ? '✓ <b>Day off approved</b>: ' + esc(dayName(a.date)) + ' (' + esc(a.slot) + '). You are free that day.' : '✗ <b>Day off not approved</b>: ' + esc(dayName(a.date)) + ' (' + esc(a.slot) + '). The studio needs you; please call them.') +
+      '</span><button type="button" class="linkbtn" data-seen="' + esc(a.id + a.status) + '" aria-label="Close">✕</button></div>').join('');
+    $('decisions').querySelectorAll('[data-seen]').forEach(b => b.addEventListener('click', () => { seenDec.push(b.dataset.seen); try { localStorage.setItem('mutos-seen-decisions', JSON.stringify(seenDec.slice(-200))); } catch (e) {} render(); }));
+    $('todo').querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { const g = b.dataset.go; showTab(g === 'away' ? 'away' : 'shoots'); if (g === 'recent') $('recent').scrollIntoView({ behavior: 'smooth' }); }));
+    // upcoming
+    let html = '', last = '';
+    shoots.forEach(s => {
+      if (s.date !== last) { last = s.date; html += '<div class="date-band" id="band-' + esc(s.date) + '"><b>' + esc(s.day) + '</b>' + (s.date === t ? '<span class="tag-soon">Today</span>' : s.date === tmr ? '<span class="tag-soon">Tomorrow</span>' : '') + '</div>'; }
+      html += card(s, false);
+    });
+    if (row && !shoots.length) html = '<div class="empty">Nothing booked. When the studio adds you to a shoot it shows up here.</div>';
+    if (shoots.length > 1 && !staff) html = '<div class="acts" style="margin:4px 0 0"><button type="button" class="chip" id="ics-all">+ Add all ' + shoots.length + ' shoots to phone calendar</button></div>' + html;
+    $('list').innerHTML = html;
+    // recent: only what still needs doing
+    const recent = past.filter(s => { const st = statusBy.get(s.id) || {}; return !st.data_at || (st.gear_out_at && !st.gear_back_at) || (!st.gear_out_at && (s.gear || []).some(g => g !== 'own kit') && s.date >= addDays(t, -3)); }).reverse();
+    $('recent').innerHTML = recent.length ? '<h2 class="h2">Recent shoots · to finish</h2>' + recent.map(s => card(s, true)).join('') : '';
+    // actions
+    document.querySelectorAll('.shoot').forEach(el => {
+      const s = all.find(x => x.id === el.dataset.id); if (!s) return;
+      const on = (act, fn) => el.querySelectorAll('[data-act="' + act + '"]').forEach(b => b.addEventListener('click', fn));
+      on('yes', () => saveStatus(s, { confirm: 'yes', confirm_sig: sigOf(s), confirm_note: null, confirmed_at: new Date().toISOString() }, 'Confirmed. Thank you!'));
+      on('no', () => { el.querySelector('.cant').hidden = false; el.querySelector('.cant textarea').focus(); });
+      on('no-cancel', () => { el.querySelector('.cant').hidden = true; });
+      on('no-send', () => { const why = el.querySelector('.cant textarea').value.trim(); if (!why) { toast('Please write why, so the studio can plan.', true); return; } saveStatus(s, { confirm: 'no', confirm_sig: sigOf(s), confirm_note: why, confirmed_at: new Date().toISOString() }, 'Sent. The studio will contact you.'); });
+      on('reask', () => saveStatus(s, { confirm: null, confirm_sig: null, confirm_note: null, confirmed_at: null }));
+      on('ics', () => downloadIcs([s], s.shoot.replace(/[^\w]+/g, '-')));
+      on('gear-out', () => saveStatus(s, { gear_out_at: new Date().toISOString() }, 'Marked: gear picked up.'));
+      on('gear-back', () => saveStatus(s, Object.assign({ gear_back_at: new Date().toISOString() }, (statusBy.get(s.id) || {}).gear_out_at ? {} : { gear_out_at: new Date().toISOString() }), 'Marked: gear returned.'));
+      on('data', () => { const n = el.querySelector('[data-role="data-note"]'); saveStatus(s, { data_at: new Date().toISOString(), data_note: n && n.value.trim() || null }, 'Marked: data handed over.'); });
+    });
+    const ia = $('ics-all'); if (ia) ia.addEventListener('click', () => downloadIcs(shoots, 'mutos-shoots'));
+    renderHome({ shoots, all, unconf, dataDue, gearOut });
+    const hero = document.querySelector('#next .hero[data-id]');
+    if (hero) {
+      const s = all.find(x => x.id === hero.dataset.id);
+      hero.querySelectorAll('[data-act="yes"]').forEach(b => b.addEventListener('click', () => saveStatus(s, { confirm: 'yes', confirm_sig: sigOf(s), confirm_note: null, confirmed_at: new Date().toISOString() }, 'Confirmed. Thank you!')));
+      hero.querySelectorAll('[data-act="open"]').forEach(b => b.addEventListener('click', () => {
+        showTab('shoots'); const el = document.querySelector('#list .shoot[data-id="' + s.id + '"]'); if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (b.textContent.startsWith('Can')) { const c2 = el.querySelector('.cant'); if (c2) { c2.hidden = false; setTimeout(() => c2.querySelector('textarea').focus({ preventScroll: true }), 400); } }
+      }));
+    }
+    const nb = $('nav-shoots-n'); nb.textContent = unconf.length || ''; nb.hidden = !unconf.length;
+    renderAway();
+    const up = row && (row.updated_at || (row.data && row.data.updated));
+    $('foot').textContent = up ? 'Last updated by the studio ' + stamp(up) + '. Changes show here automatically.' : '';
+  }
+  // ---------- home ----------
+  function renderHome({ shoots, all, unconf, dataDue, gearOut }) {
+    const t = today(), s = shoots[0];
+    // next shoot
+    if (!row) $('next').innerHTML = '';
+    else if (!s) $('next').innerHTML = '<div class="hero"><div class="hero-top"><span class="k">Next shoot</span></div><h2>Nothing booked</h2><p>When the studio adds you to a shoot it shows up here.</p></div>';
+    else {
+      const st = statusBy.get(s.id) || {}, changed = st.confirm && st.confirm_sig && st.confirm_sig !== sigOf(s);
+      const when = s.date === t ? 'Today' : s.date === addDays(t, 1) ? 'Tomorrow' : dayName(s.date);
+      const gear = (s.gear || []).filter(g => g !== 'own kit');
+      let btns;
+      if (st.confirm === 'yes' && !changed) btns = '<div class="ans ok" style="margin:0">✓ You confirmed this shoot</div>';
+      else if (st.confirm === 'no' && !changed) btns = '<div class="ans no" style="margin:0">✗ You said you can\'t make it. The studio will contact you.</div>';
+      else if (viewOnly()) btns = '<div class="ans wait" style="margin:0">Not confirmed yet</div>';
+      else btns = '<div class="pillrow"><button type="button" class="pillbtn" data-act="yes">I\'ll be there</button><button type="button" class="pillbtn light" data-act="open">Can\'t make it</button></div>';
+      $('next').innerHTML = '<div class="hero" data-id="' + esc(s.id) + '"><div class="hero-top"><span class="k">Next shoot</span><span class="badge-w">' + esc(when) + '</span></div>' +
+        '<h2>' + esc(s.shoot) + '</h2><p>' + esc([s.slot, s.report ? 'Report ' + s.report : 'Report time to be confirmed'].join(' · ')) + (s.venue ? '<br>' + esc(s.venue) : '') + '</p>' +
+        '<div class="chipset"><span class="dark">' + esc(s.role || 'Crew') + '</span>' + (gear.length ? '<span>' + esc(gear.join(' · ')) + '</span>' : '') + (s.premium ? '<span>★ Premium · 4K HDR</span>' : '') + '</div>' + btns +
+        '<div class="acts" style="margin:0">' + (s.map ? '<a class="chip" href="' + esc(s.map) + '" target="_blank" rel="noopener">Open map</a>' : '') + '<button type="button" class="chip" data-act="open">All details</button></div></div>';
+    }
+    // this week
+    const offOn = d => aways.some(a => a.date === d && (a.status === 'auto' || a.status === 'approved'));
+    let w = '';
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(t, i), has = all.some(x => x.date === d), off = offOn(d), dt = new Date(d + 'T12:00:00');
+      w += '<button type="button" class="wd' + (i === 0 ? ' today' : '') + (has ? ' has' : '') + (off && i ? ' off' : '') + '" data-day="' + d + '" aria-label="' + esc(dayName(d) + (has ? ', shoot' : off ? ', day off' : '')) + '"><small>' + dt.toLocaleDateString('en-IN', { weekday: 'short' }) + '</small><b>' + dt.getDate() + '</b>' + (off && !has ? '<span class="offt">OFF</span>' : '<i></i>') + '</button>';
+    }
+    $('week').innerHTML = w;
+    $('week').querySelectorAll('[data-day]').forEach(b => b.addEventListener('click', () => {
+      const d = b.dataset.day;
+      if (!all.some(x => x.date === d)) { toast(dayName(d) + (offOn(d) ? ': your day off.' : ': no shoot.')); return; }
+      showTab('shoots'); const el = $('band-' + d); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+    // quick menu
+    const tiles = [
+      ['shoots', 'calendar', 'My shoots', unconf.length, 'main'],
+      ['away', 'off', 'Days off', aways.filter(a => a.status === 'pending' && a.date >= t).length],
+      ['gear', 'bag', 'Gear with me', gearOut.length],
+      ['data', 'card', 'Data handover', dataDue.length],
+      ['cal', 'download', 'Add to calendar', 0]
+    ];
+    if (!$('bell').hidden) tiles.push(['bell', 'bell', 'Reminders', 0]);
+    const sp = (window.MUTOS_CONFIG || {}).studioPhone; if (sp) tiles.push(['call', 'phone', 'Call the studio', 0]);
+    $('qm').innerHTML = tiles.map(([k, ic, label, n, cls]) => '<button type="button" class="tile' + (cls ? ' ' + cls : '') + '" data-q="' + k + '">' + window.MUTOS_ICON(ic) + esc(label) + (n ? '<span class="count">' + n + '</span>' : '') + '</button>').join('');
+    $('qm').querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.q;
+      if (k === 'shoots' || k === 'away') showTab(k);
+      else if (k === 'gear') { const x = gearOut[0] || all.find(y => desk.some(d => d.event_id === y.id && d.action === 'out')); if (!x) { toast('No studio gear with you right now.'); return; } showTab('shoots'); const el = document.querySelector('.shoot[data-id="' + x.id + '"]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      else if (k === 'data') { if (!dataDue.length) { toast('All data handed over. Thank you!'); return; } showTab('shoots'); $('recent').scrollIntoView({ behavior: 'smooth' }); }
+      else if (k === 'cal') { if (viewOnly()) { toast('Preview only.'); return; } if (!shoots.length) { toast('No upcoming shoots to add.'); return; } downloadIcs(shoots, 'mutos-shoots'); toast('Calendar file with ' + shoots.length + ' shoot' + (shoots.length > 1 ? 's' : '') + ' downloaded. Open it to add them.'); }
+      else if (k === 'bell') $('bell').click();
+      else if (k === 'call') location.href = tel(sp);
+    }));
+  }
+  function showTab(t) {
+    document.querySelectorAll('.bnav .tab').forEach(b => { const on = b.dataset.tab === t; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    $('tab-home').hidden = t !== 'home'; $('tab-shoots').hidden = t !== 'shoots'; $('tab-away').hidden = t !== 'away';
+    if (t === 'away' && !$('aw-from').value) $('aw-from').min = today();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.goto)));
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  $('aw-from').min = today(); $('aw-to').min = today();
+
+  // reminders (phone notifications) — crew only
+  if (!staff && window.mutosPush) window.mutosPush.button($('bell'), me, c, toast);
+
+  let busy = false;
+  async function refresh() {
+    if (busy) return; busy = true;
+    try { await load(); render(); }
+    catch (e) { $('count').innerHTML = '<span class="err">Could not load your shoots (' + esc(e && e.message || e) + '). Reload to try again.</span>'; }
+    finally { busy = false; }
+  }
+  await refresh();
+  if (new URLSearchParams(location.search).get('tab') === 'away') showTab('away');
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.activeElement.matches('input, textarea, select')) refresh(); });
+  setInterval(() => { if (!document.hidden && !document.activeElement.matches('input, textarea, select')) refresh(); }, 3 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
