@@ -9,7 +9,7 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports'].forEach(t => { T[t] = new Map(); });
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log'].forEach(t => { T[t] = new Map(); });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
@@ -17,6 +17,10 @@ T.att_settings.set('1', { id: 1, office_lat: null, office_lng: null, radius_m: 1
 const role = e => (T.members.get(e) || {}).role || null;
 const isOwner = e => role(e) === 'owner', staff = e => ['owner', 'manager'].includes(role(e)), payroll = e => ['owner', 'accountant'].includes(role(e));
 const pkOf = e => (T.members.get(e) || {}).person_key;
+const keeper = e => { const p = [...T.people.values()].find(x => e && x.email === e && x.active); return !!(p && (p.skills || []).includes('data')); };
+const canDrive = (e, id) => staff(e) || keeper(e) || ((T.drives.get(id) || {}).holder && T.drives.get(id).holder === myPerson(e));
+const pname = id => id ? (T.people.get(id) || {}).name : 'the office';
+const dlog = (drive, e, what) => { const id = newId(); T.drive_log.set(id, { id, drive, by_email: e, at: new Date().toISOString(), what }); };
 const myPerson = e => { const p = [...T.people.values()].find(x => e && x.email === e && x.active); return p ? p.id : null; };
 function canSee(t, r, e) {
   if (!e) return false;
@@ -31,6 +35,9 @@ function canSee(t, r, e) {
   if (t === 'people_private') return payroll(e) || r.person === myPerson(e);
   if (t === 'work_jobs') return staff(e) || (r.assignee && r.assignee === myPerson(e));
   if (t === 'work_reports') return staff(e) || r.person === myPerson(e);
+  // same rules as 008_drives.sql
+  if (t === 'drives' || t === 'drive_items' || t === 'drive_log') return staff(e) || !!myPerson(e);
+  if (t === 'drive_moves') return staff(e) || keeper(e) || r.from_person === myPerson(e) || r.to_person === myPerson(e) || r.given_by === e;
   return staff(e);
 }
 function canWrite(t, r, e) {
@@ -42,10 +49,13 @@ function canWrite(t, r, e) {
   if (t === 'att_requests') return true;
   if (t === 'people') return staff(e);
   if (t === 'people_private') return isOwner(e) || r.person === myPerson(e);
+  if (t === 'drives') return r.id && T.drives.has(r.id) ? canDrive(e, r.id) : staff(e) || keeper(e);
+  if (t === 'drive_items') return canDrive(e, r.drive);
+  if (t === 'drive_moves' || t === 'drive_log') return false;
   if (t === 'work_jobs' || t === 'work_reports') return staff(e) || (t === 'work_jobs' ? r.assignee && r.assignee === myPerson(e) : r.person === myPerson(e));
   return staff(e);
 }
-const match = (r, f) => f.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
+const match = (r, f) => f.every(([op, c, v]) => op === 'is' ? (r[c] ?? null) === v : op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
 const err = m => ({ data: null, error: { message: m } });
 // same rules as the triggers in 004_studio.sql
 function before(t, r, old, e) {
@@ -80,6 +90,16 @@ function before(t, r, old, e) {
     if (r.status === 'final' && (!old || old.status !== 'final')) r.done_at = now;
     if (r.status !== 'final') r.done_at = null;
   }
+  if (t === 'drives') {
+    r.id = r.id || crypto.randomUUID(); r.name = String(r.name).trim(); r.status = r.status || 'in_use'; r.kind = r.kind || 'HDD'; r.owner_type = r.owner_type || 'studio';
+    if ([...T.drives.values()].some(x => x.id !== r.id && x.name.toLowerCase() === r.name.toLowerCase())) return 'duplicate key value violates unique constraint "drives_name_uq"';
+    if (old && (r.holder ?? null) !== (old.holder ?? null)) return 'A drive changes hands only by giving it in the app and the other person accepting.';
+    if (!old) { r.holder = r.holder || null; dlog(r.id, e, 'Added to the register'); } else if (r.cleaned_on !== old.cleaned_on) dlog(r.id, e, 'Cleaned on ' + r.cleaned_on + (r.free_label ? ', free ' + r.free_label : ''));
+  }
+  if (t === 'drive_items') {
+    if (!old) { Object.assign(r, { id: r.id || crypto.randomUUID(), added_by: e, added_at: new Date().toISOString(), removed_at: null, removed_why: null, moved_to: null }); dlog(r.drive, e, 'Data added: ' + r.title); }
+    else { if (old.removed_at && !r.removed_at) return 'Removed data stays in the history'; if (r.drive !== old.drive) return 'Use Move'; if (r.removed_at && !old.removed_at) { r.removed_why = r.removed_why || 'cleaned'; dlog(r.drive, e, 'Data removed (' + r.removed_why + '): ' + r.title); } }
+  }
   if (t === 'work_reports') {
     if (old) return 'permission denied for table work_reports';
     r.id = r.id || crypto.randomUUID(); r.day = r.day || istDay(); r.by_email = e; r.at = new Date().toISOString();
@@ -105,6 +125,40 @@ function rpc(fn, a, e) {
     const cur = T.client_itinerary.get(l.wedding_key) || { wedding_key: l.wedding_key };
     T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), submitted_at: a.p_submit ? new Date().toISOString() : cur.submitted_at || null }));
     return { data: { ok: true }, error: null };
+  }
+  // drive register RPCs (008_drives.sql)
+  if (fn === 'people_directory') return { data: (staff(e) || myPerson(e)) ? [...T.people.values()].filter(p => p.active).map(p => ({ id: p.id, code: p.code, name: p.name, keeper: (p.skills || []).includes('data') })).sort((a, b) => a.name.localeCompare(b.name)) : [], error: null };
+  if (fn.startsWith('drive_')) {
+    if (!e) return { data: null, error: { message: 'permission denied for function ' + fn, code: '42501' } };
+    const me = myPerson(e), no = m => ({ data: { error: m }, error: null }), pend = d => [...T.drive_moves.values()].filter(m => m.drive === d && m.status === 'pending');
+    const close = (m, st) => Object.assign(m, { status: st, answered_by: e, answered_at: new Date().toISOString() });
+    if (fn === 'drive_give') {
+      const d = T.drives.get(a.p_drive); if (!d) return no('Unknown drive.');
+      if (!(staff(e) || (!d.holder && keeper(e)) || (d.holder && d.holder === me))) return no('Only the person who has ' + d.name + ' (or the studio) can give it.');
+      if (d.status !== 'in_use') return no(d.name + ' is not in use.');
+      if ((a.p_to || null) === (d.holder || null)) return no('They already have it.');
+      pend(d.id).forEach(m => close(m, 'cancelled'));
+      const id = crypto.randomUUID(); T.drive_moves.set(id, { id, drive: d.id, from_person: d.holder || null, to_person: a.p_to || null, status: 'pending', note: a.p_note || null, given_by: e, given_by_person: me, given_at: new Date().toISOString() });
+      dlog(d.id, e, pname(d.holder) + ' → ' + pname(a.p_to) + ': given, waiting to be accepted'); return { data: { ok: true, id }, error: null };
+    }
+    if (fn === 'drive_answer') {
+      const m = T.drive_moves.get(a.p_move); if (!m || m.status !== 'pending') return no('This handover is no longer waiting.');
+      if (!((m.to_person && m.to_person === me) || (!m.to_person && (keeper(e) || staff(e))))) return no('This handover is not for you.');
+      const d = T.drives.get(m.drive);
+      if (a.p_accept && (d.holder || null) !== (m.from_person || null)) { close(m, 'cancelled'); return no('changed hands'); }
+      close(m, a.p_accept ? 'accepted' : 'declined'); if (a.p_accept) d.holder = m.to_person;
+      dlog(d.id, e, pname(m.to_person) + (a.p_accept ? ' accepted ' : ' did not accept ') + d.name + ' from ' + pname(m.from_person)); return { data: { ok: true }, error: null };
+    }
+    if (fn === 'drive_cancel') { const m = T.drive_moves.get(a.p_move); if (!m || m.status !== 'pending') return no('no longer waiting'); if (!(m.given_by === e || staff(e))) return no('Only the giver can take it back.'); close(m, 'cancelled'); return { data: { ok: true }, error: null }; }
+    if (fn === 'drive_set_holder') { if (!isOwner(e)) return no('Only the owner can correct this.'); const d = T.drives.get(a.p_drive); pend(d.id).forEach(m => close(m, 'cancelled')); d.holder = a.p_person || null; dlog(d.id, e, 'Corrected by the owner: now with ' + pname(d.holder)); return { data: { ok: true }, error: null }; }
+    if (fn === 'drive_move_item') {
+      const it = T.drive_items.get(a.p_item); if (!it || it.removed_at) return no('That data is no longer on the drive.');
+      const dst = T.drives.get(a.p_to_drive); if (!dst || dst.id === it.drive) return no('Pick another drive.');
+      if (!(canDrive(e, it.drive) || canDrive(e, dst.id))) return no('Only the studio, a drive keeper or whoever has the drive can move data.');
+      const id = crypto.randomUUID(); T.drive_items.set(id, Object.assign({}, it, { id, drive: dst.id, from_item: it.id, added_by: e, added_at: new Date().toISOString() }));
+      if (!a.p_copy) Object.assign(it, { removed_at: new Date().toISOString(), removed_why: 'moved', moved_to: id });
+      dlog(it.drive, e, (a.p_copy ? 'Copied ' : 'Moved ') + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + (a.p_copy ? ' copied' : ' moved') + ' here'); return { data: { ok: true, id }, error: null };
+    }
   }
   if (fn === 'att_office_code') return ['owner', 'kiosk'].includes(role(e)) ? { data: { code: CODE, seconds_left: 25 }, error: null } : err('Only the office screen can show the code.');
   if (fn === 'att_punch') {
@@ -436,6 +490,54 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.click('[data-setup="' + PP('Kuldeep').id + '"]'); await owner.waitForSelector('#f-email'); await owner.fill('#f-email', 'kuldeep.data@gmail.com'); await owner.fill('#f-sal', '15000'); await owner.click('#go'); await owner.waitForSelector('.sheet-bg', { state: 'detached' });
   ok(PP('Kuldeep').email === 'kuldeep.data@gmail.com' && T.employees.get('kuldeep.data@gmail.com'), 'a Gmail typed while setting up also goes on the People list');
   ok((await owner.textContent('#tab-people')).includes('M005'), 'set-up people show their employee code');
+
+  // ── 10. drive register: give → accept, move data, find a wedding ──
+  const DRV = n => [...T.drives.values()].find(d => d.name === n);
+  ['M 1', 'M 5', 'Red', 'Dibba 2'].forEach(n => { const id = crypto.randomUUID(); T.drives.set(id, { id, name: n, owner_type: 'studio', kind: n.startsWith('M') ? 'SSD' : 'HDD', size_label: n.startsWith('M') ? '2 TB' : '4 TB', status: 'in_use', holder: n === 'Dibba 2' ? PP('Imran').id : null }); });
+  PP('Kuldeep').skills = ['data']; const KUL = 'kuldeep.data@gmail.com';
+  ok(role(KUL) === 'staff', 'Kuldeep has a login (made when his attendance was set up)');
+  await owner.goto(B + '/desk.html?tab=drives'); await owner.waitForSelector('[data-d]');
+  ok(await owner.$$eval('#tab-drives [data-d]', x => x.length) === 4 && (await owner.textContent('#tab-drives')).includes('Imran'), 'Work desk → Drives lists the register with who has each drive');
+  const kul = await as(KUL);
+  await kul.goto(B + '/mywork.html?tab=drives'); await kul.waitForSelector('#tab-drives [data-d]');
+  await kul.click('[data-d="' + DRV('M 1').id + '"]'); await kul.waitForSelector('#it-t');
+  await kul.fill('#it-t', 'Client 59 · Haldi'); await kul.fill('#it-s', '600 GB'); await kul.click('#it-add'); await kul.waitForFunction(() => /Added to M 1/.test(document.getElementById('toast').textContent));
+  const raw = [...T.drive_items.values()].find(i => i.title === 'Client 59 · Haldi');
+  ok(raw && raw.drive === DRV('M 1').id && raw.what === 'raw' && raw.added_by === KUL, 'the drive keeper lists Client 59 Haldi raw on M 1');
+  await kul.waitForSelector('#dgive'); await kul.click('#dgive'); await kul.waitForSelector('#gto');
+  await kul.selectOption('#gto', PP('Hamza').id); await kul.fill('#gnote', 'for the reel'); await kul.click('#ggo');
+  await kul.waitForFunction(() => /Waiting for Hamza/.test(document.getElementById('toast').textContent));
+  ok(!DRV('M 1').holder && [...T.drive_moves.values()].some(m => m.status === 'pending' && m.to_person === PP('Hamza').id && m.given_by === KUL), 'Kuldeep gives M 1 to Hamza: still the office\'s until Hamza accepts');
+  await cr.goto(B + '/mywork.html'); await cr.waitForSelector('#nav-drv:not([hidden])');
+  ok(true, 'Hamza sees a dot on Drives');
+  await cr.click('.bnav .tab[data-tab="drives"]'); await cr.waitForSelector('[data-yes]');
+  ok((await cr.textContent('#tab-drives')).includes('From the office, given by Kuldeep') && (await cr.textContent('#tab-drives')).includes('for the reel'), '… "Waiting for you to accept: M 1 from the office, given by Kuldeep"');
+  await cr.click('[data-yes]'); await cr.waitForFunction(() => /now your responsibility/.test(document.getElementById('toast').textContent));
+  ok(DRV('M 1').holder === PP('Hamza').id && [...T.drive_log.values()].some(l => l.what.includes('Hamza accepted M 1 from the office')), 'Hamza accepts: M 1 is his responsibility, and the history says so');
+  await cr.click('.chip-b[data-dv="mine"]'); await cr.click('[data-d="' + DRV('M 1').id + '"]'); await cr.waitForSelector('[data-mv]');
+  await cr.click('[data-mv="' + raw.id + '"]'); await cr.waitForSelector('#mto'); await cr.fill('#mto', 'M 5'); await cr.click('#mmove');
+  await cr.waitForFunction(() => /Moved to M 5/.test(document.getElementById('toast').textContent));
+  const onM5 = [...T.drive_items.values()].find(i => i.drive === DRV('M 5').id && !i.removed_at);
+  ok(raw.removed_why === 'moved' && raw.moved_to === onM5.id && onM5.title === 'Client 59 · Haldi', 'Hamza moves the Haldi raw to M 5; M 1 keeps it in its history');
+  await cr.waitForSelector('#dclose'); await cr.click('#dclose');
+  await cr.click('[data-d="' + DRV('M 1').id + '"]'); await cr.waitForSelector('#dgive'); await cr.click('#dgive'); await cr.selectOption('#gto', 'office'); await cr.click('#ggo');
+  await cr.waitForFunction(() => /Waiting for a drive keeper/.test(document.getElementById('toast').textContent));
+  ok(handle(OWNER, { op: 'rpc', fn: 'drive_give', args: { p_drive: DRV('M 5').id, p_to: PP('Saif').id } }).data.ok, 'the partner/owner can give out an office drive too');
+  ok(handle(CREWE, { op: 'rpc', fn: 'drive_give', args: { p_drive: DRV('Red').id, p_to: PP('Saif').id } }).data.error, 'an editor cannot give a drive they do not have');
+  await kul.reload(); await kul.waitForSelector('[data-yes]'); await kul.click('[data-yes]'); await kul.waitForFunction(() => /now your responsibility/.test(document.getElementById('toast').textContent));
+  ok(!DRV('M 1').holder, 'Hamza returns M 1; the drive keeper accepts it back into the office');
+  // find the wedding from the desk
+  await owner.reload(); await owner.waitForSelector('#dq'); await owner.fill('#dq', 'client 59'); await owner.waitForFunction(() => /Data found/.test(document.getElementById('tab-drives').textContent));
+  const found = await owner.textContent('#tab-drives');
+  ok(found.includes('Client 59 · Haldi') && /on M 5/.test(found) && /→ Saif, waiting/.test(found), 'search "client 59": the Haldi raw is on M 5 (being handed to Saif)');
+  // cleaning
+  await kul.click('.chip-b[data-dv="all"]'); await kul.click('[data-d="' + DRV('Red').id + '"]'); await kul.waitForSelector('#dclean');
+  await kul.fill('#it-t', 'Old project'); await kul.selectOption('#it-w', 'project'); await kul.click('#it-add'); await kul.waitForSelector('#dclean');
+  await kul.click('#dclean'); await kul.waitForSelector('#cl-it input'); await kul.check('#cl-it input'); await kul.fill('#cl-f', '3.9 TB'); await kul.click('#clgo');
+  await kul.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
+  ok(DRV('Red').cleaned_on === istDay() && DRV('Red').free_label === '3.9 TB' && [...T.drive_items.values()].find(i => i.title === 'Old project').removed_why === 'cleaned', 'cleaned Red: date, free space, and what was deleted (kept in history)');
+  ok(handle(KUL, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }).error, 'nobody can hand over a drive by editing it');
+  if (process.env.SHOTS) { await owner.click('.chip-b[data-dv="all"]').catch(() => {}); await owner.fill('#dq', ''); await owner.screenshot({ path: path.join(SHOTS, 'desk-drives.png'), fullPage: true }); await cr.screenshot({ path: path.join(SHOTS, 'mywork-drives.png'), fullPage: true }); }
 
   const errs = pages.flatMap(p => p.errs || []);
   ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));

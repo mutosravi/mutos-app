@@ -47,11 +47,14 @@
 .rep:first-of-type { border-top: 0; }
 .code { font: 600 11px var(--font-body); background: var(--sand); border-radius: 6px; padding: 2px 6px; margin-right: 6px; }
 .off { opacity: .55; }
+.x { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; }
+.sechead h2 { font-size: 15px; }
 </style>
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
 <script src="/icons.js"></script>
 <script src="/work-core.js"></script>
+<script src="/drives-ui.js"></script>
 </head>
 <body>
 <main class="wrap wide">
@@ -63,12 +66,14 @@
     <button type="button" role="tab" class="tab on" data-tab="jobs"><span data-ic="film"></span>Jobs</button>
     <button type="button" role="tab" class="tab" data-tab="today"><span data-ic="log"></span>Reports</button>
     <button type="button" role="tab" class="tab" data-tab="month"><span data-ic="bars"></span>Month</button>
+    <button type="button" role="tab" class="tab" data-tab="drives"><span data-ic="drive"></span>Drives<b class="dot" id="nav-drv" hidden></b></button>
     <button type="button" role="tab" class="tab" data-tab="people"><span data-ic="idcard"></span>People</button>
   </nav>
   <p class="sub" id="who" style="margin-top:6px"></p>
   <section id="tab-jobs"></section>
   <section id="tab-today" hidden></section>
   <section id="tab-month" hidden></section>
+  <section id="tab-drives" hidden></section>
   <section id="tab-people" hidden></section>
   <datalist id="drives"></datalist>
   <div class="toast" id="toast" hidden></div>
@@ -97,6 +102,7 @@
     if (p.error) throw p.error; if (j.error) throw j.error;
     people = p.data || []; jobs = j.data || [];
     const drives = new Set(); jobs.forEach(x => { if (x.drive) drives.add(x.drive.trim()); if (x.render_drive) drives.add(x.render_drive.trim()); });
+    try { const dr = await c.from('drives').select('name').eq('status', 'in_use'); (dr.data || []).forEach(x => drives.add(x.name)); } catch (e) {}
     $('drives').innerHTML = [...drives].sort().map(d => '<option value="' + esc(d) + '">').join('');
   }
   async function loadBoard() {
@@ -341,22 +347,34 @@
     });
   }
 
+  // ---------- drives ----------
+  let drv = null;
+  async function renderDrives() {
+    if (!drv) {
+      const mine = people.find(p => p.email && p.email === me.email);
+      drv = window.MutosDrives.mount($('tab-drives'), { c, me: mine ? mine.id : null, email: me.email, staff: true, owner, keeper: true, toast, weddings: weddings.map(w => ({ key: w.key, title: w.title })),
+        onChange: n => { $('nav-drv').hidden = !n; $('nav-drv').textContent = n || ''; } });
+    }
+    try { await drv.refresh(); } catch (e) { $('tab-drives').innerHTML = '<div class="empty">Could not load drives (' + esc(e.message || e) + '). Run supabase/008_drives.sql first.</div>'; drv = null; }
+  }
+
   // ---------- tabs ----------
   function showTab(t) {
     document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-    ['jobs', 'today', 'month', 'people'].forEach(x => { $('tab-' + x).hidden = x !== t; });
-    ({ jobs: renderJobs, today: renderToday, month: renderMonth, people: renderPeople })[t]();
+    ['jobs', 'today', 'month', 'drives', 'people'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    ({ jobs: renderJobs, today: renderToday, month: renderMonth, drives: renderDrives, people: renderPeople })[t]();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load the work desk (' + esc(e.message || e) + '). Run supabase/007_work_desk.sql first.</div>'; return; }
   await loadBoard();
   const first = new URLSearchParams(location.search).get('tab');
-  showTab(['jobs', 'today', 'month', 'people'].includes(first) ? first : 'jobs');
+  showTab(['jobs', 'today', 'month', 'drives', 'people'].includes(first) ? first : 'jobs');
   // live: an editor's progress shows up without reloading
   try {
     c.channel('work-desk').on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs' }, () => { clearTimeout(window.__wd); window.__wd = setTimeout(async () => { if (document.querySelector('.sheet-bg')) return; await load(); if (!$('tab-jobs').hidden) renderJobs(); }, 800); })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'work_reports' }, () => { if (!$('tab-today').hidden && !document.querySelector('.sheet-bg')) renderToday(); }).subscribe();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'work_reports' }, () => { if (!$('tab-today').hidden && !document.querySelector('.sheet-bg')) renderToday(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drive_moves' }, () => { if (drv && !document.querySelector('.sheet-bg')) drv.refresh().catch(() => {}); }).subscribe();
   } catch (e) {}
 })();
 </script>

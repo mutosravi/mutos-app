@@ -33,12 +33,33 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
 .rline .mini[hidden] { display: none; }
 .sent { font-size: 13.5px; border-top: 1px dashed var(--sand); padding: 8px 0; display: flex; justify-content: space-between; gap: 8px; }
 .code { font: 600 11px var(--font-body); background: var(--sand); border-radius: 6px; padding: 2px 6px; margin-right: 6px; }
+/* shared with the Work desk: drive list and sheets */
+.card { background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); }
+.row2 { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+.jrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; width: 100%; text-align: left; border: 0; font: inherit; color: var(--ink); cursor: pointer; }
+.jrow .nm { font-weight: 600; font-size: 14px; }
+.jrow .meta { grid-column: 1 / -1; margin: 0; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 4px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-b { border: 0; background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 12.5px var(--font-body); color: var(--ink); cursor: pointer; box-shadow: var(--shadow); }
+.chip-b.on { background: var(--ink); color: #fff; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 620px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 10px; font-size: 19px; }
+.sheet h4 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.form-grid label { color: var(--muted); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; background: var(--bg); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--ink); font-weight: 400; }
+.rep { border-top: 1px dashed var(--sand); padding: 7px 0; font-size: 13.5px; }
+.sechead h2 { font-size: 15px; }
 .x { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: 12.5px; }
 </style>
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
 <script src="/icons.js"></script>
 <script src="/work-core.js"></script>
+<script src="/drives-ui.js"></script>
 </head>
 <body>
 <main class="wrap">
@@ -46,12 +67,14 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
   <nav class="bnav" role="tablist" aria-label="Main">
     <button type="button" role="tab" class="tab on" data-tab="jobs"><span data-ic="film"></span>My jobs<b class="dot" id="nav-chg" hidden></b></button>
     <button type="button" role="tab" class="tab" data-tab="rep"><span data-ic="log"></span>Today's report<b class="dot" id="nav-rep" hidden></b></button>
+    <button type="button" role="tab" class="tab" data-tab="drives"><span data-ic="drive"></span>Drives<b class="dot" id="nav-drv" hidden></b></button>
     <button type="button" role="tab" class="tab" data-tab="me"><span data-ic="idcard"></span>Me</button>
     <a class="tab" id="nav-att" href="/work.html" hidden><span data-ic="clock"></span>Attendance</a>
   </nav>
   <section class="hello" style="display:block"><h1 id="hi">My work</h1><p class="sub" id="sub">Loading…</p></section>
   <section id="tab-jobs"></section>
   <section id="tab-rep" hidden></section>
+  <section id="tab-drives" hidden></section>
   <section id="tab-me" hidden></section>
   <div class="toast" id="toast" hidden></div>
 </main>
@@ -184,16 +207,25 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     });
   }
 
+  // ---------- drives ----------
+  const staffRole = me.role === 'owner' || me.role === 'manager';
+  const drv = window.MutosDrives.mount($('tab-drives'), { c, me: person.id, email: me.email, staff: staffRole, owner: me.role === 'owner', keeper: (person.skills || []).includes('data'), toast,
+    get weddings() { return [...new Map(jobs.map(j => [j.wedding_key, { key: j.wedding_key, title: j.wedding_title }])).values()]; },
+    onChange: n => { $('nav-drv').hidden = !n; $('nav-drv').textContent = n || ''; } });
+  drv.refresh().catch(() => {}); // shows the dot when a drive is waiting for me
+  async function renderDrives() { try { await drv.refresh(); } catch (e) { $('tab-drives').innerHTML = '<div class="empty">Drives are not set up yet.</div>'; } }
+
   function showTab(t) {
     document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-    ['jobs', 'rep', 'me'].forEach(x => { $('tab-' + x).hidden = x !== t; });
-    ({ jobs: renderJobs, rep: renderRep, me: renderMe })[t]();
+    ['jobs', 'rep', 'drives', 'me'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    ({ jobs: renderJobs, rep: renderRep, drives: renderDrives, me: renderMe })[t]();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load your jobs (' + esc(e.message || e) + ').</div>'; return; }
   const first = new URLSearchParams(location.search).get('tab');
-  showTab(['jobs', 'rep', 'me'].includes(first) ? first : 'jobs');
+  showTab(['jobs', 'rep', 'drives', 'me'].includes(first) ? first : 'jobs');
+  try { c.channel('my-drives').on('postgres_changes', { event: '*', schema: 'public', table: 'drive_moves' }, () => { if (!document.querySelector('.sheet-bg')) drv.refresh().catch(() => {}); }).subscribe(); } catch (e) {}
   try { c.channel('my-work').on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs', filter: 'assignee=eq.' + person.id }, () => { clearTimeout(window.__mw); window.__mw = setTimeout(async () => { if (document.activeElement && document.activeElement.matches('input')) return; await load(); if (!$('tab-jobs').hidden) renderJobs(); }, 800); }).subscribe(); } catch (e) {}
 })();
 </script>

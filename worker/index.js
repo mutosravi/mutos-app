@@ -128,6 +128,30 @@ export async function notifyDecisionApi(request, env, fetchFn = fetch) {
   return Response.json({ sent });
 }
 
+// a drive was given in the app: tell the person who has to accept it (or the drive keepers, for a return to the office)
+export async function notifyDriveApi(request, env, fetchFn = fetch) {
+  if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return Response.json({ sent: 0, note: 'Phone notifications are not set up.' });
+  const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!token) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+  const u = await fetchFn(String(env.SUPABASE_URL).replace(/\/+$/, '') + '/auth/v1/user', { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token } });
+  if (!u.ok) return Response.json({ error: 'Sign in again.' }, { status: 401 });
+  const email = String((await u.json()).email || '').toLowerCase(), store = db(env, fetchFn);
+  const { id } = await request.json().catch(() => ({}));
+  if (!/^[0-9a-f-]{36}$/i.test(String(id))) return Response.json({ error: 'Unknown handover.' }, { status: 400 });
+  const [m] = await store.get('drive_moves?select=id,drive,from_person,to_person,status,given_by,note&id=eq.' + id);
+  if (!m || m.status !== 'pending') return Response.json({ sent: 0 });
+  if (m.given_by !== email) return Response.json({ error: 'Only the giver can send this notice.' }, { status: 403 });
+  const [d] = await store.get('drives?select=name&id=eq.' + m.drive);
+  const who = m.to_person ? await store.get('people?select=id,crew_keys&id=eq.' + m.to_person + '&active=eq.true') : await store.get('people?select=id,crew_keys&skills=cs.%7Bdata%7D&active=eq.true');
+  const [from] = m.from_person ? await store.get('people?select=name&id=eq.' + m.from_person) : [{ name: 'the office' }];
+  const keys = [...new Set(who.flatMap(p => p.crew_keys || []))];
+  if (!keys.length) return Response.json({ sent: 0, note: 'They have not turned on phone notices.' });
+  const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inList(keys));
+  const msg = { title: 'Drive for you: ' + ((d && d.name) || 'a drive'), body: (m.to_person ? 'From ' + ((from && from.name) || 'someone') : 'Returned to the office by ' + ((from && from.name) || 'someone')) + (m.note ? ' · ' + m.note : '') + '. Open the app and tap "I have it" once you have it.', tag: 'drive-' + m.id, url: '/mywork.html?tab=drives' };
+  const sent = subs.length ? await deliver(env, store, subs, msg, fetchFn) : 0;
+  return Response.json({ sent });
+}
+
 export async function backupApi(request, env, fetchFn = fetch) {
   const url = new URL(request.url);
   if (!env.SUPABASE_SECRET_KEY) return Response.json({ error: 'The server is missing SUPABASE_SECRET_KEY (Cloudflare → Settings → Variables and Secrets).' }, { status: 503 });
@@ -160,6 +184,9 @@ export default {
     }
     if (url.pathname === '/api/team-sheet' && request.method === 'POST') {
       try { return await teamSheetApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
+    }
+    if (url.pathname === '/api/notify-drive' && request.method === 'POST') {
+      try { return await notifyDriveApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
     if (url.pathname.startsWith('/api/backups')) {
       try { return await backupApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }

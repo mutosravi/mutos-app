@@ -1,6 +1,6 @@
 // Evening reminder job: picks tomorrow's shoots, sends one encrypted notification per phone, cleans up dead sign-ups.
 // Run: node tests/reminders.test.mjs   (the encryption itself is checked against an independent decoder separately)
-import { runReminders, reminderFor, notifyDecisionApi } from '../worker/index.js';
+import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi } from '../worker/index.js';
 import { b64u } from '../worker/push.js';
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const pad = n => String(n).padStart(2, '0');
@@ -60,5 +60,32 @@ ok(b.title === '2 shoots tomorrow' && b.body.includes('Please confirm'), 'two sh
   ok((await call('x', { id: ID })).status === 401, 'fake sign-in refused');
   ok((await call('o', { id: 'not-an-id' })).status === 400, 'only real request ids');
   rows[ID].status = 'pending'; r = await call('o', { id: ID }); j = await r.json(); ok(j.sent === 0, 'nothing sent while still pending');
+}
+// drive handover notice (008_drives.sql): only the giver can send it; it goes to the receiver's phones
+{
+  const MID = '22222222-2222-4222-8222-222222222222', SHREY = 'p-shrey', KUL = 'p-kul';
+  const mv = { id: MID, drive: 'd1', from_person: KUL, to_person: SHREY, status: 'pending', given_by: 'kul@x.com', note: 'for Jyoti reel' };
+  const phones = [Object.assign({ endpoint: 'https://push.test/s1', person_key: 'shrey-cine', fails: 0 }, await phone()), Object.assign({ endpoint: 'https://push.test/s2', person_key: 'other', fails: 0 }, await phone())];
+  const pushed = [], asked = [];
+  const f3 = async (url, opt = {}) => {
+    const u = String(url); asked.push(u);
+    if (u.endsWith('/auth/v1/user')) { const t = (opt.headers.Authorization || '').slice(7); return t === 'x' ? { ok: false } : { ok: true, json: async () => ({ email: t === 'k' ? 'kul@x.com' : 'shrey@x.com' }) }; }
+    if (u.includes('/drive_moves?')) return { ok: true, json: async () => [mv] };
+    if (u.includes('/drives?')) return { ok: true, json: async () => [{ name: 'M 1' }] };
+    if (u.includes('/people?select=id,crew_keys&id=eq.' + SHREY)) return { ok: true, json: async () => [{ id: SHREY, crew_keys: ['shrey-cine', 'shrey-drone'] }] };
+    if (u.includes('/people?select=id,crew_keys&skills=cs.')) return { ok: true, json: async () => [{ id: KUL, crew_keys: ['other'] }] };
+    if (u.includes('/people?select=name')) return { ok: true, json: async () => [{ name: 'Kuldeep' }] };
+    if (u.includes('/push_subs?')) { const keys = decodeURIComponent(u.split('person_key=')[1]); return { ok: true, json: async () => phones.filter(x => keys.includes('"' + x.person_key + '"')) }; }
+    if (u.startsWith('https://push.test/')) { pushed.push(u); return { status: 201 }; }
+    return { ok: true, json: async () => ({}) };
+  };
+  const call = (tok, body) => notifyDriveApi(new Request('https://app.test/api/notify-drive', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), Object.assign({ SUPABASE_PUBLISHABLE_KEY: 'pub' }, env), f3);
+  let r = await call('k', { id: MID }), j = await r.json();
+  ok(r.status === 200 && j.sent === 1 && pushed[0] === 'https://push.test/s1', 'drive given: the receiver\'s phone gets the notice (any of their crew roles)');
+  ok((await call('s', { id: MID })).status === 403, 'only the giver can send the drive notice');
+  ok((await call('x', { id: MID })).status === 401 && (await call('k', { id: 'bad' })).status === 400, 'fake sign-in or id refused');
+  mv.to_person = null; pushed.length = 0; r = await call('k', { id: MID }); j = await r.json();
+  ok(j.sent === 1 && pushed[0] === 'https://push.test/s2', 'a return to the office notifies the drive keepers');
+  mv.status = 'accepted'; r = await call('k', { id: MID }); j = await r.json(); ok(j.sent === 0, 'nothing sent once it is answered');
 }
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
