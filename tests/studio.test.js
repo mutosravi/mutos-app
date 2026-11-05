@@ -9,8 +9,8 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log'].forEach(t => { T[t] = new Map(); });
-const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person };
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments'].forEach(t => { T[t] = new Map(); });
+const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
 T.att_settings.set('1', { id: 1, office_lat: null, office_lng: null, radius_m: 150, code_on: true, late_night_min: 120 });
@@ -37,6 +37,7 @@ function canSee(t, r, e) {
   if (t === 'work_reports') return staff(e) || r.person === myPerson(e);
   // same rules as 008_drives.sql
   if (t === 'drives' || t === 'drive_items' || t === 'drive_log') return staff(e) || !!myPerson(e);
+  if (['packages', 'bookings', 'booking_payments'].includes(t)) return staff(e) || payroll(e);
   if (t === 'drive_moves') return staff(e) || keeper(e) || r.from_person === myPerson(e) || r.to_person === myPerson(e) || r.given_by === e;
   return staff(e);
 }
@@ -51,6 +52,7 @@ function canWrite(t, r, e) {
   if (t === 'people_private') return isOwner(e) || r.person === myPerson(e);
   if (t === 'drives') return r.id && T.drives.has(r.id) ? canDrive(e, r.id) : staff(e) || keeper(e);
   if (t === 'drive_items') return canDrive(e, r.drive);
+  if (['packages', 'bookings', 'booking_payments'].includes(t)) return staff(e);
   if (t === 'drive_moves' || t === 'drive_log') return false;
   if (t === 'work_jobs' || t === 'work_reports') return staff(e) || (t === 'work_jobs' ? r.assignee && r.assignee === myPerson(e) : r.person === myPerson(e));
   return staff(e);
@@ -96,6 +98,8 @@ function before(t, r, old, e) {
     if (old && (r.holder ?? null) !== (old.holder ?? null)) return 'A drive changes hands only by giving it in the app and the other person accepting.';
     if (!old) { r.holder = r.holder || null; dlog(r.id, e, 'Added to the register'); } else if (r.cleaned_on !== old.cleaned_on) dlog(r.id, e, 'Cleaned on ' + r.cleaned_on + (r.free_label ? ', free ' + r.free_label : ''));
   }
+  if (t === 'packages') { r.id = r.id || crypto.randomUUID(); r.items = r.items || []; r.active = r.active !== false; }
+  if (t === 'booking_payments') { if (old) return 'permission denied'; r.id = r.id || crypto.randomUUID(); r.by_email = e; r.paid_on = r.paid_on || istDay(); if (!(r.amount > 0)) return 'amount'; }
   if (t === 'drive_items') {
     if (!old) { Object.assign(r, { id: r.id || crypto.randomUUID(), added_by: e, added_at: new Date().toISOString(), removed_at: null, removed_why: null, moved_to: null }); dlog(r.drive, e, 'Data added: ' + r.title); }
     else { if (old.removed_at && !r.removed_at) return 'Removed data stays in the history'; if (r.drive !== old.drive) return 'Use Move'; if (r.removed_at && !old.removed_at) { r.removed_why = r.removed_why || 'cleaned'; dlog(r.drive, e, 'Data removed (' + r.removed_why + '): ' + r.title); } }
@@ -112,6 +116,16 @@ function before(t, r, old, e) {
   }
   return null;
 }
+// same sums as booking_summary() in 009_bookings.sql
+function bookingSummary(key) {
+  const b = T.bookings.get(key); if (!b) return null;
+  const today = istDay(), plus = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const paid = [...T.booking_payments.values()].filter(p => p.wedding_key === key).reduce((s, p) => s + Number(p.amount), 0);
+  const plan = (b.plan || []).slice().sort((x, y) => x.due.localeCompare(y.due));
+  const dueNow = plan.filter(x => x.due <= today).reduce((s, x) => s + x.amount, 0), late = plan.filter(x => plus(x.due, b.grace_days) < today).reduce((s, x) => s + x.amount, 0);
+  let upto = 0, nxt = null; for (const x of plan) { upto += x.amount; if (upto > paid) { nxt = x; break; } }
+  return { package: b.package_name, items: b.items, total: b.total, paid, pending: Math.max(b.total - paid, 0), due_now: Math.max(dueNow - paid, 0), next_label: nxt && nxt.label, next_due: nxt && nxt.due, next_amount: nxt ? Math.min(nxt.amount, Math.max(b.total - paid, 0)) : null, locked: b.lock_on && late - paid > 0, overdue: Math.max(late - paid, 0) };
+}
 function rpc(fn, a, e) {
   // same rules as 005_client_login.sql
   if (fn.startsWith('client_') && !e) return { data: null, error: { message: 'permission denied for function ' + fn, code: '42501' } };
@@ -120,8 +134,9 @@ function rpc(fn, a, e) {
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active);
     if (!l) return { data: { error: 'This page is not active.' }, error: null };
     const listed = l.emails.includes(e);
-    if (fn === 'client_get') { if (!listed && !staff(e)) return { data: { error: 'This Gmail (' + e + ') is not on Muto\'s list for this wedding.', not_listed: true }, error: null }; const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null, preview: !listed }, error: null }; }
+    if (fn === 'client_get') { if (!listed && !staff(e)) return { data: { error: 'This Gmail (' + e + ') is not on Muto\'s list for this wedding.', not_listed: true }, error: null }; const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null, preview: !listed, booking: bookingSummary(l.wedding_key) }, error: null }; }
     if (!listed) return { data: { error: 'Only the family\'s registered Gmail can fill this in.' }, error: null };
+    const bs = bookingSummary(l.wedding_key); if (bs && bs.locked) return { data: { error: 'Your details are locked until the pending payment is cleared.', locked: true }, error: null };
     const cur = T.client_itinerary.get(l.wedding_key) || { wedding_key: l.wedding_key };
     T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), submitted_at: a.p_submit ? new Date().toISOString() : cur.submitted_at || null }));
     return { data: { ok: true }, error: null };
@@ -538,6 +553,43 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(DRV('Red').cleaned_on === istDay() && DRV('Red').free_label === '3.9 TB' && [...T.drive_items.values()].find(i => i.title === 'Old project').removed_why === 'cleaned', 'cleaned Red: date, free space, and what was deleted (kept in history)');
   ok(handle(KUL, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }).error, 'nobody can hand over a drive by editing it');
   if (process.env.SHOTS) { await owner.click('.chip-b[data-dv="all"]').catch(() => {}); await owner.fill('#dq', ''); await owner.screenshot({ path: path.join(SHOTS, 'desk-drives.png'), fullPage: true }); await cr.screenshot({ path: path.join(SHOTS, 'mywork-drives.png'), fullPage: true }); }
+
+  // ── 11. packages, payments, client lock, jobs from the package ──
+  [['Basic (edit me)', 0, [{ kind: 'top', per: 'wedding' }, { kind: 'lr', per: 'wedding' }]], ['Premium (edit me)', 0, [{ kind: 'reel', per: 'function' }, { kind: 'trailer', per: 'wedding' }, { kind: 'album', per: 'wedding', note: '40 sheets' }]]].forEach(([name, price, items]) => { const id = crypto.randomUUID(); T.packages.set(id, { id, name, price, items, active: true }); });
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
+  await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-book="' + wed.key + '"]');
+  await owner.click('#cl-packages'); await owner.waitForSelector('[data-pk]'); await owner.click('[data-pk="' + [...T.packages.values()].find(p => p.name.startsWith('Premium')).id + '"]'); await owner.waitForSelector('#pk-p');
+  await owner.fill('#pk-p', '300000'); await owner.click('#pk-save'); await owner.waitForSelector('#pk-new');
+  ok([...T.packages.values()].some(p => p.price === 300000), 'owner sets a package price in Clients → Packages');
+  await owner.click('#pk-back'); await owner.click('.sb-modal [data-book="' + wed.key + '"]'); await owner.waitForSelector('#bk-pkg');
+  const premium = [...T.packages.values()].find(p => p.name.startsWith('Premium'));
+  await owner.selectOption('#bk-pkg', premium.id);
+  ok(await owner.$$eval('.bk-it', x => x.length) === 3 && await owner.inputValue('#bk-total') === String(premium.price), 'picking a package fills its deliverables and price');
+  const plan = [['Advance', istDay(-30), '100000'], ['Before the wedding', istDay(-5), '150000'], ['On delivery', istDay(60), '50000']];
+  for (const [i, [l, d, amt]] of plan.entries()) { await owner.click('#bk-add-pl'); const r = '.bk-pl[data-i="' + i + '"] '; await owner.fill(r + '[data-f="label"]', l); await owner.fill(r + '[data-f="due"]', d); await owner.fill(r + '[data-f="amount"]', amt); }
+  await owner.click('#bk-save'); await owner.waitForSelector('#py-add');
+  const bk = T.bookings.get(wed.key);
+  ok(bk && bk.total === 300000 && bk.plan.length === 3 && bk.items.length === 3 && bk.lock_on === true && bk.package_name.startsWith('Premium'), 'booking saved: package, 3 deliverables, 3 instalments, lock on');
+  await owner.fill('#py-amt', '100000'); await owner.selectOption('#py-mode', 'Bank'); await owner.click('#py-add'); await owner.waitForFunction(() => /recorded/.test(document.querySelector('.sb-toast, #sb-toast, .toast') ? document.body.textContent : document.body.textContent));
+  ok([...T.booking_payments.values()].some(p => p.amount === 100000 && p.by_email === OWNER), 'advance of ₹1,00,000 recorded');
+  ok(/₹1,50,000 overdue/.test(await owner.textContent('.sb-modal')), 'the money line shows ₹1,50,000 overdue');
+  ok((await owner.getAttribute('#bk-wa', 'href') || '').includes(encodeURIComponent('was due')), 'a WhatsApp payment reminder is ready');
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'booking.png') });
+  await owner.click('#bk-back'); await owner.waitForSelector('.sb-modal [data-book]');
+  ok(/overdue · locked/.test(await owner.textContent('.sb-modal')), 'Clients list: "₹1,50,000 overdue · locked"');
+  await fam.goto(B + '/client.html'); await fam.waitForSelector('.fn');
+  const ft = await fam.textContent('#top') + await fam.textContent('#list');
+  ok(ft.includes('Your package: Premium') && ft.includes('₹1,00,000') && /Payment pending/.test(ft) && await fam.isHidden('#bar') && await fam.$eval('.fn input.in', i => i.disabled), 'the family sees the package and payments; overdue → changes paused');
+  ok(rpc('client_save', { p_token: link.token, p_data: {}, p_submit: false }, FAM).data.locked, 'and the server refuses changes while locked');
+  T.booking_payments.set('p2', { id: 'p2', wedding_key: wed.key, amount: 150000, paid_on: istDay(), mode: 'UPI' });
+  await fam.reload(); await fam.waitForSelector('#bar:not([hidden])');
+  ok(!(await fam.textContent('#top')).includes('Payment pending') && (await fam.textContent('#list')).includes('On delivery'), 'paid: the page opens again and shows the next payment');
+  // the work desk adds every deliverable of the package
+  await owner.goto(B + '/desk.html'); await owner.waitForSelector('#add'); await owner.click('#add'); await owner.selectOption('#aw', wed.key); await owner.waitForSelector('#apk-go');
+  const before = T.work_jobs.size; await owner.click('#apk-go'); await owner.waitForFunction(() => /from the package/.test(document.getElementById('toast').textContent));
+  const pj = [...T.work_jobs.values()].filter(j => j.wedding_key === wed.key);
+  const perFn = pj.filter(j => j.kind === 'reel' && j.fn_label);  // the wedding now has 2 functions (Tilak was added from the family's answers)
+  ok(perFn.length === 2 && T.work_jobs.size - before === perFn.length + 1 /* the trailer was already on the desk */ && pj.some(j => j.kind === 'trailer') && pj.some(j => j.kind === 'album' && j.title === '40 sheets'), 'Add everything in the package: a reel per function + trailer + album (40 sheets)');
 
   const errs = pages.flatMap(p => p.errs || []);
   ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));

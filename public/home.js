@@ -167,6 +167,8 @@
     const wClash = week.filter(a.hasConflict).length; if (wClash) needs.push(['clash', 'peach', wClash, 'Double-booked', 'in the next 7 days']);
     const csum = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
     if (csum && csum.toCheck) needs.splice(Math.min(1, needs.length), 0, ['clients', 'lilac', csum.toCheck, 'Client itineraries', 'sent by families, to check']);
+    if (csum && csum.overdue) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
+    if (csum && csum.dueSoon) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
     if (u && u.unconf.length) needs.push(['updates', 'sand', u.unconf.length, 'Not confirmed', 'by crew, next 7 days']);
     if (u && u.data.length) needs.push(['updates', 'sand', u.data.length, 'Data handover', 'still with the crew']);
     h += '<div class="sechead"><h2>Needs you</h2>' + (needs.length > 4 ? '<button type="button" class="allbtn" id="mh-needs-all">All ' + needs.length + ICON('chev').replace('<svg', '<svg width="14" height="14"') + '</button>' : '') + '</div>';

@@ -94,13 +94,14 @@
   const owner = me.role === 'owner';
   $('who').textContent = me.email + ' · ' + (owner ? 'owner' : 'partner / manager');
 
-  let people = [], jobs = [], weddings = [], shooters = [], members = [];
+  let people = [], jobs = [], weddings = [], shooters = [], members = [], books = [];
   const today = W.todayIST();
   const f = { view: 'open', person: '', q: '' };
   async function load() {
     const [p, j] = await Promise.all([c.from('people').select('*').order('code'), c.from('work_jobs').select('*').order('created_at')]);
     if (p.error) throw p.error; if (j.error) throw j.error;
     people = p.data || []; jobs = j.data || [];
+    try { const b = await c.from('bookings').select('wedding_key, package_name, items'); books = b.error ? [] : (b.data || []); } catch (e) { books = []; }
     const drives = new Set(); jobs.forEach(x => { if (x.drive) drives.add(x.drive.trim()); if (x.render_drive) drives.add(x.render_drive.trim()); });
     try { const dr = await c.from('drives').select('name').eq('status', 'in_use'); (dr.data || []).forEach(x => drives.add(x.name)); } catch (e) {}
     $('drives').innerHTML = [...drives].sort().map(d => '<option value="' + esc(d) + '">').join('');
@@ -150,7 +151,7 @@
       .sort((a, b) => (a.first > today) - (b.first > today) || (a.first > today ? a.first.localeCompare(b.first) : b.first.localeCompare(a.first)));
     const bg = W.sheet('<h3>Add jobs</h3><div class="form-grid">' +
       '<label class="wide">Wedding<select class="in" id="aw"><option value="">Pick a wedding (already shot first)</option>' + ws.map(w => '<option value="' + esc(w.key) + '">' + esc(w.title) + ' · ' + esc(W.dayShort(w.first)) + (w.last !== w.first ? '–' + esc(W.dayShort(w.last)) : '') + '</option>').join('') + '</select></label></div>' +
-      '<div id="afn"></div><h4>What has to be delivered</h4><div class="checks" id="ak">' + W.KINDS.map(([k, l]) => '<label><input type="checkbox" value="' + k + '">' + esc(l) + '</label>').join('') + '</div>' +
+      '<div id="afn"></div><div id="apk"></div><h4>What has to be delivered</h4><div class="checks" id="ak">' + W.KINDS.map(([k, l]) => '<label><input type="checkbox" value="' + k + '">' + esc(l) + '</label>').join('') + '</div>' +
       '<div class="form-grid" style="margin-top:12px"><label>Who does it<select class="in" id="ap">' + personOptions('') + '</select></label>' +
       '<label>Due date<input class="in" id="ad" type="date"></label>' +
       '<label class="wide">Note (optional)<input class="in" id="an" maxlength="500" placeholder="e.g. client wants the reel by the reception"></label>' +
@@ -160,6 +161,10 @@
     bg.querySelector('#aw').addEventListener('change', () => {
       const x = w(); if (!x) { bg.querySelector('#afn').innerHTML = ''; return; }
       bg.querySelector('#afn').innerHTML = '<h4>Functions</h4><div class="checks">' + x.events.map(ev => '<label><input type="checkbox" value="' + esc(ev.id) + '" checked>' + esc(W.fnName(ev, x)) + ' · ' + esc(W.dayShort(ev.date)) + '</label>').join('') + '</div>';
+      const bk = books.find(b => b.wedding_key === x.key);
+      bg.querySelector('#apk').innerHTML = bk && (bk.items || []).length ? '<div class="ans ok"><b>' + esc(bk.package_name || 'Package') + ':</b> ' + esc(bk.items.map(it => W.kindLabel(it.kind) + (it.per === 'function' ? ' (each function)' : '') + (it.note ? ' ' + it.note : '')).join(', ')) +
+        '<br><button type="button" class="pillbtn" id="apk-go" style="min-height:36px;margin-top:8px">Add everything in the package</button></div>' : '';
+      const go = bg.querySelector('#apk-go'); if (go) go.addEventListener('click', () => addPackageJobs(x, bk, bg));
     });
     bg.querySelector('#cx').addEventListener('click', () => bg.remove());
     bg.querySelector('#go').addEventListener('click', async () => {
@@ -180,6 +185,22 @@
       bg.remove(); await load(); f.view = 'open'; renderJobs();
       toast(rows.length + ' job' + (rows.length > 1 ? 's' : '') + ' added' + (skipped.length ? ' (already there: ' + skipped.join(', ') + ')' : '') + '.');
     });
+  }
+
+  // one tap: every deliverable of the wedding's package (per function → one job per function)
+  async function addPackageJobs(x, bk, bg) {
+    const rows = [], skipped = [], assignee = bg.querySelector('#ap').value || null, due = bg.querySelector('#ad').value || null;
+    bk.items.forEach(it => {
+      const parts = it.per === 'function' ? x.events.map(ev => ({ ids: [ev.id], label: W.fnName(ev, x) })) : [{ ids: x.events.map(ev => ev.id), label: '' }];
+      parts.forEach(pt => {
+        if (jobs.some(j => j.wedding_key === x.key && j.kind === it.kind && (j.fn_label || '') === pt.label.slice(0, 120) && (j.title || '') === (it.note || ''))) { skipped.push(W.kindLabel(it.kind)); return; }
+        rows.push({ wedding_key: x.key, wedding_title: x.title.slice(0, 120), wedding_date: x.first, event_ids: pt.ids, fn_label: pt.label.slice(0, 120) || null, kind: it.kind, title: it.note ? String(it.note).slice(0, 120) : null, assignee, due });
+      });
+    });
+    if (!rows.length) { toast('Everything in the package is already on the desk.', true); return; }
+    const { error } = await c.from('work_jobs').insert(rows);
+    if (error) { toast('Could not add: ' + error.message, true); return; }
+    bg.remove(); await load(); f.view = 'open'; renderJobs(); toast(rows.length + ' jobs added from the package' + (skipped.length ? ' (' + skipped.length + ' already there)' : '') + '. Assign them below.');
   }
 
   async function editJob(j) {

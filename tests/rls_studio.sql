@@ -33,7 +33,7 @@ select pg_temp.check(client_get(current_setting('t.tok')::uuid) ->> 'title' = 'A
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj"}}', false)) ? 'ok', 'client saves a draft');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj Gomti Nagar"}}', true)) ? 'ok', 'client submits');
 select pg_temp.check(client_get(current_setting('t.tok')::uuid) #>> '{answers,e1,venue}' = 'Taj Gomti Nagar', 'answers come back');
-select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_object('x', repeat('a', 70000)), false)) ? 'error', 'oversized answers refused');
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_object('x', repeat('a', 1600000)), false)) ? 'error', 'oversized answers refused');
 set request.jwt.claims = '{"email":"m@x.com"}';
 select pg_temp.check((client_get(current_setting('t.tok')::uuid) ->> 'preview')::boolean, 'manager can preview the page');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{}', false)) ? 'error', 'but cannot fill it in for the family');

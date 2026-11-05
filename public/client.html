@@ -91,7 +91,9 @@
     return;
   }
   try { sessionStorage.removeItem('mutos-client-k'); } catch (e) {}
-  const preview = !!got.preview;
+  const preview = !!got.preview, bk = got.booking || null, locked = !!(bk && bk.locked);
+  const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+  const KL = { reel: 'Reel', teaser: 'Teaser', trailer: 'Trailer', highlight: 'Highlight film', full: 'Full film', top: 'Top selected photos', lr: 'Edited photos', album_sel: 'Album photo selection', album: 'Album', other: 'Other' };
 
   const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   const fns = (got.functions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -123,8 +125,13 @@
       '<h2>' + esc(got.title) + '</h2><p>Please fill in the details of each function, so our team reaches the right place on time. It takes about 5 minutes, and you can change anything later.</p>' +
       '<div class="progress" aria-label="' + done + ' of ' + total + ' filled"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' filled</p>' +
       (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
+      (locked ? '<div class="ans no" style="margin:0"><b>Payment pending:</b> ' + inr(bk.overdue) + ' is overdue, so changes are paused. You can still see everything. Please clear it or call Muto\'s, and the page opens again.</div>' : '') +
       (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. You can still change anything and send again.</div>' : '') + '</section>';
     let h = '';
+    if (bk) h += '<article class="fn"><div class="fn-head"><div class="txt"><h2>Your package' + (bk.package && bk.package !== 'Custom' ? ': ' + esc(bk.package) : '') + '</h2><div class="meta">What Muto\'s will deliver</div></div></div>' +
+      ((bk.items || []).length ? '<ul style="margin:10px 0 0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +
+      '<div class="grid" style="margin-top:12px"><div><div class="meta">Paid</div><b>' + inr(bk.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(bk.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(bk.pending) + '</b></div>' +
+      (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div></article>';
     fns.forEach(f => {
       const a = ans[f.id] = ans[f.id] || {};
       h += '<article class="fn' + (filled(a) ? ' done' : '') + '"><div class="fn-head">' + (f.date ? dblock(f.date) : '') + '<div class="txt"><h2>' + esc(f.name) + '</h2><div class="meta">' + esc([f.date ? dayName(f.date) : '', f.slot].filter(Boolean).join(' · ')) + '</div>' +
@@ -139,8 +146,8 @@
         FIELDS.map(F => field('x' + i, a, F)).join('') + '</div></article>';
     });
     $('list').innerHTML = h || '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
-    $('more').hidden = preview; $('bar').hidden = preview;
-    if (preview) $('list').querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; });
+    $('more').hidden = preview || locked; $('bar').hidden = preview || locked;
+    if (preview || locked) $('list').querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; });
     $('list').querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' || inp.tagName === 'SELECT' ? 'change' : 'input', () => {
       const k = inp.dataset.k, f = inp.dataset.f, obj = k[0] === 'x' && /^x\d+$/.test(k) ? ans.extra[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
