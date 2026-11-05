@@ -79,11 +79,12 @@
   if (owner) $('to-home').hidden = false;
   $('who').textContent = me.email + ' · ' + (owner ? 'owner' : 'accountant (prepares salaries; Ravi approves and locks)');
 
-  let emps = [], feeds = [], shootsBy = new Map(), today = A.todayIST(), cur = null, payMonth = null, payData = null;
+  let emps = [], people = [], feeds = [], shootsBy = new Map(), today = A.todayIST(), cur = null, payMonth = null, payData = null;
   async function loadBase() {
     const [e, f] = await Promise.all([c.from('employees').select('*').order('name'), c.from('crew_feed').select('person_key, name, data')]);
     if (e.error) throw e.error;
     emps = e.data || []; feeds = f.error ? [] : (f.data || []);
+    try { const pr = await c.from('people').select('id, code, name, email, crew_keys, active').order('code'); people = pr.error ? [] : (pr.data || []); } catch (x) { people = []; }
     shootsBy = new Map(feeds.map(r => [r.person_key, ((r.data && r.data.shoots) || []).map(s => ({ date: s.date, slot: s.slot }))]));
     cur = await A.loadMonth(c, A.monthOf(today));
     const pend = cur.requests.filter(r => r.status === 'pending').length; $('nav-req').textContent = pend || ''; $('nav-req').hidden = !pend;
@@ -190,17 +191,25 @@
   }
 
   // ---------- people ----------
+  // the People register (Work desk) is the one list of everyone; attendance is set up per person from it
+  const personOfEmp = e => people.find(p => p.email && p.email === e.email);
+  const notSetUp = () => people.filter(p => p.active && !(p.email && emps.some(e => e.email === p.email)));
   function renderPeople() {
-    $('tab-people').innerHTML = '<div class="sechead"><h2>Employees</h2>' + (owner ? '<button type="button" class="allbtn" id="pp-add">＋ Add</button>' : '') + '</div>' +
-      (emps.length ? emps.map(e => '<div class="card row2"><div><b>' + esc(e.name) + '</b>' + (e.active ? '' : ' <span class="pill mute">left</span>') + '<div class="meta">' + esc([e.email, A.rs(e.monthly_salary) + '/month', A.t12(e.start_time) + ' start', 'off ' + A.WEEK[e.weekly_off], e.paid_leave > 0 ? e.paid_leave + ' paid leave/month' : 'no paid leave', e.person_key ? 'shooter · Type ' + e.shoot_type + (e.shoot_type === 'A' ? ' (shoot = paid office day)' : ' (shoot = unpaid office day)') : 'office only'].join(' · ')) + '</div></div>' +
-        (owner ? '<button type="button" class="chip" data-edit="' + esc(e.email) + '">Edit</button>' : '') + '</div>').join('') : '<div class="empty">No employees yet.</div>');
+    const todo = notSetUp();
+    $('tab-people').innerHTML = '<div class="sechead"><h2>Attendance set up</h2>' + (owner ? '<button type="button" class="allbtn" id="pp-add">＋ Someone new</button>' : '') + '</div>' +
+      (emps.length ? emps.map(e => '<div class="card row2"><div><b>' + (personOfEmp(e) ? '<span class="pill mute" style="margin-right:6px">' + esc(personOfEmp(e).code) + '</span>' : '') + esc(e.name) + '</b>' + (e.active ? '' : ' <span class="pill mute">left</span>') + '<div class="meta">' + esc([e.email, A.rs(e.monthly_salary) + '/month', A.t12(e.start_time) + ' start', 'off ' + A.WEEK[e.weekly_off], e.paid_leave > 0 ? e.paid_leave + ' paid leave/month' : 'no paid leave', e.person_key ? 'shooter · Type ' + e.shoot_type + (e.shoot_type === 'A' ? ' (shoot = paid office day)' : ' (shoot = unpaid office day)') : 'office only'].join(' · ')) + '</div></div>' +
+        (owner ? '<button type="button" class="chip" data-edit="' + esc(e.email) + '">Edit</button>' : '') + '</div>').join('') : '<div class="empty">Nobody yet. Set people up from the list below.</div>') +
+      (todo.length ? '<div class="sechead" style="margin-top:18px"><h2>Not set up yet · ' + todo.length + '</h2></div><p class="sub">Everyone on the People list (Home → People). Add salary, start time and weekly off to start their attendance.</p>' +
+        todo.map(p => '<div class="card row2"><div><b><span class="pill mute" style="margin-right:6px">' + esc(p.code) + '</span>' + esc(p.name) + '</b><div class="meta">' + esc(p.email || 'No Gmail yet') + '</div></div>' + (owner ? '<button type="button" class="chip" data-setup="' + p.id + '">Set up</button>' : '') + '</div>').join('') : '');
     const add = $('pp-add'); if (add) add.addEventListener('click', () => editEmp(null));
+    $('tab-people').querySelectorAll('[data-setup]').forEach(b => b.addEventListener('click', () => { const p = people.find(x => x.id === b.dataset.setup); editEmp(null, p); }));
     $('tab-people').querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => editEmp(emps.find(e => e.email === b.dataset.edit))));
   }
-  function editEmp(e) {
+  function editEmp(e, person) {
     const x = e || { start_time: '10:00', weekly_off: 0, paid_leave: 0, shoot_type: 'B', active: true, monthly_salary: '', joined: today };
+    if (!e && person) { x.name = person.name; x.email = person.email || ''; const pk = (person.crew_keys || []).find(k => feeds.some(f => f.person_key === k)); if (pk) x.person_key = pk; }
     const bg = document.createElement('div'); bg.className = 'sheet-bg';
-    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + (e ? 'Edit ' + esc(e.name) : 'Add employee') + '</h3><div class="form-grid">' +
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + (e ? 'Edit ' + esc(e.name) : person ? 'Set up attendance · ' + esc(person.code + ' ' + person.name) : 'Add employee') + '</h3><div class="form-grid">' +
       '<label class="wide">Gmail they sign in with<input class="in" id="f-email" type="email" value="' + esc(x.email || '') + '"' + (e ? ' disabled' : '') + '></label>' +
       '<label>Name<input class="in" id="f-name" value="' + esc(x.name || '') + '"></label>' +
       '<label>Also on the crew list?<select class="in" id="f-pk"><option value="">No, office only</option>' + feeds.map(f => '<option value="' + esc(f.person_key) + '"' + (x.person_key === f.person_key ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select></label>' +
@@ -224,6 +233,8 @@
         shoot_type: v('f-type').value, joined: v('f-join').value || null, bank: v('f-bank').value.trim() || null, active: v('f-active').checked };
       const { error } = await c.from('employees').upsert(row);
       if (error) { toast(error.message, true); return; }
+      // keep the People list's Gmail in step
+      if (person && !person.email) await c.from('people').update({ email }).eq('id', person.id);
       // an office-only employee needs a login; crew already have one from the board
       const { data: m } = await c.from('members').select('email, role').eq('email', email).maybeSingle();
       if (!m && !row.person_key) { const r2 = await c.from('members').insert({ email, role: 'staff', display_name: row.name }); if (r2.error) toast('Saved, but the login was not made: ' + r2.error.message, true); }

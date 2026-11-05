@@ -425,6 +425,18 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(true, 'a Gmail not on the people list gets no work page');
   ok(handle(null, { table: 'work_jobs', op: 'select', filters: [], order: [] }).error && handle(null, { table: 'people', op: 'select', filters: [], order: [] }).error, 'visitors see no jobs or people');
 
+  // Attendance → People shows the same People list; attendance is set up from it
+  await owner.goto(B + '/attendance.html?tab=people'); await owner.waitForSelector('[data-setup]');
+  const att = await owner.textContent('#tab-people');
+  ok(/Not set up yet · \d+/.test(att) && att.includes('M005') && att.includes('Kuldeep'), 'Attendance → People lists everyone on the People list who is not set up yet');
+  await owner.click('[data-setup="' + PP('Imran').id + '"]'); await owner.waitForSelector('#f-sal');
+  ok(await owner.inputValue('#f-name') === 'Imran' && await owner.inputValue('#f-email') === IMRAN, 'Set up opens with the name and Gmail filled in');
+  await owner.fill('#f-sal', '30000'); await owner.click('#go'); await owner.waitForSelector('.sheet-bg', { state: 'detached' });
+  ok((T.employees.get(IMRAN) || {}).monthly_salary === 30000 && (T.employees.get(IMRAN) || {}).name === 'Imran', 'Imran\'s attendance is set up');
+  await owner.click('[data-setup="' + PP('Kuldeep').id + '"]'); await owner.waitForSelector('#f-email'); await owner.fill('#f-email', 'kuldeep.data@gmail.com'); await owner.fill('#f-sal', '15000'); await owner.click('#go'); await owner.waitForSelector('.sheet-bg', { state: 'detached' });
+  ok(PP('Kuldeep').email === 'kuldeep.data@gmail.com' && T.employees.get('kuldeep.data@gmail.com'), 'a Gmail typed while setting up also goes on the People list');
+  ok((await owner.textContent('#tab-people')).includes('M005'), 'set-up people show their employee code');
+
   const errs = pages.flatMap(p => p.errs || []);
   ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await browser.close(); server.close();
