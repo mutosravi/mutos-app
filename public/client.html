@@ -32,10 +32,12 @@
 </style>
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
+<script src="/icons.js"></script>
 </head>
 <body>
 <main class="wrap" style="padding-bottom:24px">
-  <header class="hdr"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span></header>
+  <header class="hdr"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span><div class="hdr-acts"><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out" hidden></button></div></header>
+  <div id="pick" class="chipset" style="margin-top:8px"></div>
   <section id="top"><div class="hero"><p>Loading your functions…</p></div></section>
   <div id="list"></div>
   <div id="more" hidden><button type="button" class="pillbtn light" id="add-fn" style="width:100%;box-shadow:var(--shadow)">＋ Add a function we missed</button></div>
@@ -47,18 +49,49 @@
 (async function () {
   const $ = id => document.getElementById(id);
   const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
-  const token = new URLSearchParams(location.search).get('k') || location.hash.slice(1);
+  const wanted = new URLSearchParams(location.search).get('k') || '';
   const dayName = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
   const dblock = s => { const d = new Date(s + 'T12:00:00'); return '<span class="dblock"><b>' + d.getDate() + '</b><span>' + d.toLocaleDateString('en-IN', { month: 'short' }) + '</span></span>'; };
   let toastT = null;
   const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4000); };
-  const fail = m => { $('top').innerHTML = '<div class="hero"><h2>Link not working</h2><p>' + esc(m) + '</p></div>'; };
-  if (!/^[0-9a-f-]{36}$/i.test(token || '')) { fail('This link is incomplete. Please open the full link the studio sent you on WhatsApp.'); return; }
+  const card = html => { $('top').innerHTML = '<div class="hero">' + html + '</div>'; };
+  const fail = m => card('<h2>Something is not right</h2><p>' + esc(m) + '</p>');
+  const app = window.mutosApp;
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  $('out').addEventListener('click', () => app.signOut());
 
-  let c;
-  try { c = await window.mutosApp.client(); } catch (e) { fail('Could not connect. Check your internet and open the link again.'); return; }
+  // 1. signed in with Google?
+  let c, session;
+  try { c = await app.client(); session = await app.session(); } catch (e) { fail('Could not connect. Check your internet and try again.'); return; }
+  if (!session) {
+    card('<h2>Your wedding with Muto\'s</h2><p>Sign in with the Gmail you gave Muto\'s to fill in the details of your functions.</p>' +
+      '<button type="button" class="pillbtn" id="gsign" style="width:100%">Sign in with Google</button><p style="font-size:12px;margin-top:4px">Only the Gmail you gave us can open your page. <a href="/privacy.html">Privacy</a></p>');
+    $('gsign').addEventListener('click', () => { try { sessionStorage.setItem('mutos-client-k', wanted); } catch (e) {} app.signIn(); });
+    return;
+  }
+  $('out').hidden = false;
+  const email = String(session.user.email || '').toLowerCase();
+  // 2. which weddings this Gmail may open (the owner and managers may preview any page they open with ?k=)
+  const { data: mine, error: le } = await c.rpc('client_list');
+  if (le) { fail('Could not open your page (' + le.message + '). Try again in a minute.'); return; }
+  let remembered = ''; try { remembered = sessionStorage.getItem('mutos-client-k') || ''; } catch (e) {}
+  const want = wanted || remembered, list = mine || [];
+  const token = (list.find(w => w.token === want) || list[0] || {}).token || want;
+  if (!token) {
+    card('<h2>We could not find your wedding</h2><p>You are signed in as <b>' + esc(email) + '</b>, but this Gmail is not on Muto\'s list yet. Send this Gmail to Muto\'s on WhatsApp, then tap Try again. Or sign in with the Gmail you gave us.</p>' +
+      '<div class="pillrow"><button type="button" class="pillbtn" id="again">Try again</button><button type="button" class="pillbtn light" id="other">Another Gmail</button></div>');
+    $('again').addEventListener('click', () => location.reload()); $('other').addEventListener('click', () => app.signOut());
+    return;
+  }
+  if (list.length > 1) $('pick').innerHTML = list.map(w => '<a href="/client.html?k=' + esc(w.token) + '" style="text-decoration:none"><span class="' + (w.token === token ? 'dark' : '') + '">' + esc(w.title) + '</span></a>').join('');
   const { data: got, error } = await c.rpc('client_get', { p_token: token });
-  if (error || !got || got.error) { fail((got && got.error) || 'Could not open your details. Check your internet and try again.'); return; }
+  if (error || !got || got.error) {
+    if (got && got.not_listed) { card('<h2>Not your wedding?</h2><p>' + esc(got.error) + ' Sign in with the Gmail you gave Muto\'s.</p><button type="button" class="pillbtn light" id="other" style="width:100%">Use another Gmail</button>'); $('other').addEventListener('click', () => app.signOut()); }
+    else fail((got && got.error) || 'Could not open your details. Check your internet and try again.');
+    return;
+  }
+  try { sessionStorage.removeItem('mutos-client-k'); } catch (e) {}
+  const preview = !!got.preview;
 
   const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   const fns = (got.functions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
@@ -89,6 +122,7 @@
     $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">Welcome</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
       '<h2>' + esc(got.title) + '</h2><p>Please fill in the details of each function, so our team reaches the right place on time. It takes about 5 minutes, and you can change anything later.</p>' +
       '<div class="progress" aria-label="' + done + ' of ' + total + ' filled"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' filled</p>' +
+      (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
       (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. You can still change anything and send again.</div>' : '') + '</section>';
     let h = '';
     fns.forEach(f => {
@@ -105,7 +139,8 @@
         FIELDS.map(F => field('x' + i, a, F)).join('') + '</div></article>';
     });
     $('list').innerHTML = h || '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
-    $('more').hidden = false; $('bar').hidden = false;
+    $('more').hidden = preview; $('bar').hidden = preview;
+    if (preview) $('list').querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; });
     $('list').querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' || inp.tagName === 'SELECT' ? 'change' : 'input', () => {
       const k = inp.dataset.k, f = inp.dataset.f, obj = k[0] === 'x' && /^x\d+$/.test(k) ? ans.extra[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();

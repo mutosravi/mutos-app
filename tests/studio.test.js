@@ -55,10 +55,15 @@ function before(t, r, old, e) {
   return null;
 }
 function rpc(fn, a, e) {
+  // same rules as 005_client_login.sql
+  if (fn.startsWith('client_') && !e) return { data: null, error: { message: 'permission denied for function ' + fn, code: '42501' } };
+  if (fn === 'client_list') return { data: [...T.client_links.values()].filter(l => l.active && l.emails.includes(e)).map(l => ({ token: l.token, title: l.title })), error: null };
   if (fn === 'client_get' || fn === 'client_save') {
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active);
-    if (!l) return { data: { error: 'This link is not active.' }, error: null };
-    if (fn === 'client_get') { const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null }, error: null }; }
+    if (!l) return { data: { error: 'This page is not active.' }, error: null };
+    const listed = l.emails.includes(e);
+    if (fn === 'client_get') { if (!listed && !staff(e)) return { data: { error: 'This Gmail (' + e + ') is not on Muto\'s list for this wedding.', not_listed: true }, error: null }; const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null, preview: !listed }, error: null }; }
+    if (!listed) return { data: { error: 'Only the family\'s registered Gmail can fill this in.' }, error: null };
     const cur = T.client_itinerary.get(l.wedding_key) || { wedding_key: l.wedding_key };
     T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), submitted_at: a.p_submit ? new Date().toISOString() : cur.submitted_at || null }));
     return { data: { ok: true }, error: null };
@@ -99,7 +104,7 @@ function handle(e, d) {
   }
   if (d.op === 'insert' || d.op === 'upsert') {
     for (const r of d.rows) {
-      if (d.table === 'client_links') { r.token = r.token || crypto.randomUUID(); r.active = r.active !== false; if (d.op === 'insert' && t.has(keyOf(d.table, r))) return err('duplicate key'); }
+      if (d.table === 'client_links') { r.token = r.token || crypto.randomUUID(); r.active = r.active !== false; r.emails = (r.emails || []).map(x => x.trim().toLowerCase()); if (d.op === 'insert' && t.has(keyOf(d.table, r))) return err('duplicate key'); }
       if (d.table === 'att_requests' && !r.id) r.id = newId();
       const old = d.op === 'upsert' ? t.get(keyOf(d.table, r)) : null;
       if (!canWrite(d.table, r, e)) return { data: null, error: { message: 'new row violates row-level security policy', code: '42501' } };
@@ -140,17 +145,29 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-make]');
   const wed = await owner.evaluate(() => window.MUTOS_CLIENTS._weddings()[0]);
   ok(wed && wed.events.length >= 1, 'Clients lists upcoming weddings (first: ' + (wed && wed.title) + ', ' + (wed && wed.events.length) + ' functions)');
-  await owner.click('.sb-modal [data-make="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal [data-wa="' + wed.key + '"]');
-  const link = T.client_links.get(wed.key);
-  ok(link && link.token && T.client_feed.get(wed.key) && T.client_feed.get(wed.key).data.functions.length === wed.events.length, 'link made and the family\'s function list shared');
+  await owner.click('.sb-modal [data-make="' + wed.key + '"]'); await owner.waitForSelector('#cg-mails');
+  await owner.fill('#cg-mails', 'not-an-email'); await owner.click('#cg-save'); await owner.waitForTimeout(300);
+  ok(!T.client_links.get(wed.key), 'a wrong Gmail is not saved');
+  await owner.fill('#cg-mails', 'Akriti.Family@gmail.com, rohan.family@gmail.com'); await owner.click('#cg-save'); await owner.waitForSelector('.sb-modal [data-wa="' + wed.key + '"]');
+  const link = T.client_links.get(wed.key), FAM = 'akriti.family@gmail.com';
+  ok(link && link.token && link.emails.join() === FAM + ',rohan.family@gmail.com' && T.client_feed.get(wed.key) && T.client_feed.get(wed.key).data.functions.length === wed.events.length, 'client Gmails saved and the family\'s function list shared');
   const waHref = await owner.getAttribute('.sb-modal [data-wa="' + wed.key + '"]', 'href');
-  ok(/wa\.me\/\d*\?text=/.test(waHref) && decodeURIComponent(waHref).includes('/client.html?k=' + link.token), 'WhatsApp message carries the link');
+  ok(/wa\.me\/\d*\?text=/.test(waHref) && decodeURIComponent(waHref).includes('/client and sign in with ' + FAM + ' or rohan.family@gmail.com') && !decodeURIComponent(waHref).includes(link.token), 'WhatsApp message says where to sign in and with which Gmail (no secret link)');
   await owner.screenshot({ path: path.join(SHOTS, 'clients-window.png') });
   await owner.keyboard.press('Escape');
 
-  // ── 2. the family fills it in (no login) ──
-  const fam = await as(null);
-  await fam.goto(B + '/client.html?k=' + link.token); await fam.waitForSelector('.fn');
+  // ── 2. the family signs in with their Gmail and fills it in ──
+  const visitor = await as(null);
+  await visitor.goto(B + '/client.html?k=' + link.token); await visitor.waitForSelector('#gsign');
+  ok(!(await visitor.$('.fn')), 'not signed in: only a "Sign in with Google" button, no details');
+  ok(handle(null, { op: 'rpc', fn: 'client_get', args: { p_token: link.token } }).error, 'visitors cannot read a wedding even with the secret id');
+  const stranger = await as('someone.else@gmail.com');
+  await stranger.goto(B + '/client.html?k=' + link.token); await stranger.waitForFunction(() => /Not your wedding/.test(document.body.textContent));
+  ok(!(await stranger.$('.fn')), 'another Gmail cannot open the family\'s page');
+  await stranger.goto(B + '/client.html'); await stranger.waitForFunction(() => /could not find your wedding/.test(document.body.textContent));
+  ok((await stranger.textContent('#top')).includes('someone.else@gmail.com'), 'and is told which Gmail they used');
+  const fam = await as(FAM);
+  await fam.goto(B + '/'); await fam.waitForURL('**/client.html'); await fam.waitForSelector('.fn');
   ok((await fam.textContent('#top')).includes(wed.title) && (await fam.$$('.fn')).length === wed.events.length, 'client page shows their functions');
   const f0 = wed.events[0].id;
   await fam.fill('[data-k="' + f0 + '"][data-f="time"]', '19:30'); await fam.fill('[data-k="' + f0 + '"][data-f="venue"]', 'Taj Mahal Hotel'); await fam.fill('[data-k="' + f0 + '"][data-f="address"]', 'Vipin Khand, Gomti Nagar, Lucknow');
@@ -160,8 +177,9 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await fam.click('#send'); await fam.waitForFunction(() => /Sent to Muto/.test(document.getElementById('top').textContent));
   const it = T.client_itinerary.get(wed.key);
   ok(it && it.submitted_at && it.data[f0].venue === 'Taj Mahal Hotel' && it.data.extra[0].name === 'Tilak', 'answers and the extra function reach the studio');
-  await fam.goto(B + '/client.html?k=' + crypto.randomUUID()); await fam.waitForFunction(() => /not working/.test(document.body.textContent));
-  ok(true, 'a wrong link shows "Link not working"');
+  const prev = await as(OWNER);
+  await prev.goto(B + '/client.html?k=' + link.token); await prev.waitForSelector('.fn');
+  ok((await prev.textContent('#top')).includes('Preview') && await prev.isHidden('#bar') && await prev.$eval('.fn input', x => x.disabled), 'owner can preview the family\'s page but not fill it');
   ok(handle(null, { table: 'client_links', op: 'select', filters: [], order: [] }).error, 'visitors cannot list links');
 
   // ── 3. owner checks the answers and applies them ──

@@ -5,7 +5,10 @@
   let api = null, links = [], itin = [], lastSig = new Map();
   const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   const digits = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; if (d.length === 11 && d[0] === '0') d = '91' + d.slice(1); return d; };
-  const linkOf = l => location.origin + '/client.html?k=' + l.token;
+  const linkOf = () => location.origin + '/client';
+  const previewOf = l => location.origin + '/client.html?k=' + l.token;
+  const okMail = e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
+  const parseMails = t => [...new Set(String(t || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean))];
   const dayName = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
 
   // weddings on the board: shoots grouped by the client (wedding name, else phone, else shoot name)
@@ -63,29 +66,40 @@
       const s = stateOf(w);
       return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span></div>' +
         '<span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span></div><div class="sb-btn-row" style="margin-top:8px">' +
-        (s.l ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp link</a><button type="button" class="sb-btn-sm secondary" data-copy="' + esc(w.key) + '">Copy link</button>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
-          : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Make link</button>') + '</div></div>';
+        (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Preview</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
+          : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
+        (s.l && !(s.l.emails || []).length ? '<div class="sb-manage-sub" style="color:#7a2d1e;margin-top:4px">No Gmail yet: the family cannot sign in. Tap Gmails.</div>' : s.l ? '<div class="sb-manage-sub" style="margin-top:4px">Signs in with: ' + esc(s.l.emails.join(', ')) + '</div>' : '') + '</div>';
     }).join('') : '<p class="sb-modal-empty">No upcoming weddings on the board.</p>') + '</div>';
-    const modal = api.makeModal(api.modalHead('Clients', 'Each family gets one link to fill time, venue, address and contact for every function. No login needed; the link works only for their wedding.') + html + '<div class="sb-modal-foot"><button type="button" id="cl-done">Done</button></div>', true);
+    const modal = api.makeModal(api.modalHead('Clients', 'Add the family\'s Gmail(s) to a wedding. They sign in at ' + location.host + '/client with that Gmail and fill time, venue, address and contact for every function. Nobody else can open it.') + html + '<div class="sb-modal-foot"><button type="button" id="cl-done">Done</button></div>', true);
     modal.querySelector('#cl-done').addEventListener('click', api.closeModal);
     const byKey = k => ws.find(w => w.key === k);
-    modal.querySelectorAll('[data-make]').forEach(b => b.addEventListener('click', async () => {
-      const w = byKey(b.dataset.make); b.disabled = true;
-      const c = await app.client();
-      const { error } = await c.from('client_links').insert({ wedding_key: w.key, title: w.title.slice(0, 120), phone: w.phone || null });
-      if (error) { api.toast('Could not make the link: ' + error.message); b.disabled = false; return; }
-      await load(); lastSig.delete(w.key); await sync(); open();
-    }));
-    modal.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
-      const l = links.find(x => x.wedding_key === b.dataset.copy);
-      try { await navigator.clipboard.writeText(linkOf(l)); api.toast('Link copied.'); } catch (e) { prompt('Copy this link:', linkOf(l)); }
-    }));
+    modal.querySelectorAll('[data-make], [data-mails]').forEach(b => b.addEventListener('click', () => gmails(byKey(b.dataset.make || b.dataset.mails))));
     modal.querySelectorAll('[data-wa]').forEach(a => {
       const w = byKey(a.dataset.wa), l = links.find(x => x.wedding_key === w.key);
-      const msg = 'Namaste! This is Muto\'s. For ' + w.title + ', please fill in the details of each function (start time, venue, address and a contact person at the venue) so our team reaches on time:\n' + linkOf(l) + '\n\nIt takes about 5 minutes and you can change it any time. Thank you!';
+      const msg = 'Namaste! This is Muto\'s. For ' + w.title + ', please fill in the details of each function (start time, venue, address and a contact person at the venue) so our team reaches on time.\n\nOpen ' + linkOf() + ' and sign in with ' + l.emails.join(' or ') + '\n\nIt takes about 5 minutes and you can change it any time. Thank you!';
       a.href = 'https://wa.me/' + (digits(w.phone) || '') + '?text=' + encodeURIComponent(msg); a.target = '_blank'; a.rel = 'noopener';
     });
     modal.querySelectorAll('[data-see]').forEach(b => b.addEventListener('click', () => answers(byKey(b.dataset.see))));
+  }
+
+  // which Gmails may sign in for this wedding
+  function gmails(w) {
+    const l = links.find(x => x.wedding_key === w.key), cur = (l && l.emails) || [];
+    const modal = api.makeModal(api.modalHead('Client Gmails · ' + w.title, 'The family signs in with Google using one of these Gmails (bride, groom, a parent; up to 6). Write them one per line or separated by commas.') +
+      '<div style="padding:0 16px 8px"><textarea class="sb-field" id="cg-mails" rows="4" placeholder="akriti@gmail.com, rohan@gmail.com">' + esc(cur.join('\n')) + '</textarea>' +
+      (w.phone ? '' : '<div class="sb-manage-sub" style="margin-top:6px">No phone number on this wedding\'s shoots: WhatsApp will ask you to pick the chat.</div>') + '</div>' +
+      '<div class="sb-modal-foot"><button type="button" class="secondary" id="cg-back">← Clients</button><button type="button" id="cg-save">Save</button></div>');
+    modal.querySelector('#cg-back').addEventListener('click', open);
+    modal.querySelector('#cg-save').addEventListener('click', async () => {
+      const list = parseMails(modal.querySelector('#cg-mails').value), bad = list.filter(e => !okMail(e));
+      if (bad.length) { api.toast('Check these: ' + bad.join(', ')); return; }
+      if (list.length > 6) { api.toast('Up to 6 Gmails per wedding.'); return; }
+      const c = await app.client();
+      const { error } = l ? await c.from('client_links').update({ emails: list }).eq('wedding_key', w.key)
+        : await c.from('client_links').insert({ wedding_key: w.key, title: w.title.slice(0, 120), phone: w.phone || null, emails: list });
+      if (error) { api.toast('Could not save: ' + error.message); return; }
+      await load(); lastSig.delete(w.key); await sync(); api.toast(list.length ? 'Saved. Now send it on WhatsApp.' : 'Saved. Nobody can sign in for this wedding.'); open();
+    });
   }
 
   // what the family wrote, next to the board, with "Apply to board"

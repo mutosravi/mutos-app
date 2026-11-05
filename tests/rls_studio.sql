@@ -11,26 +11,37 @@ create or replace function pg_temp.check(ok boolean, label text) returns void la
 begin if ok then raise notice 'PASS %', label; else raise exception 'FAIL %', label; end if; end $$;
 grant execute on function pg_temp.check(boolean, text), pg_temp.expect_fail(text, text) to authenticated, anon;
 
--- ── clients: secret link, no login ──
+-- ── clients: sign in with the Gmail the studio registered ──
 set role authenticated; set request.jwt.claims = '{"email":"m@x.com"}';
-insert into client_links (wedding_key, title, phone) values ('akriti', 'Akriti & Rohan', '9876500000');
+insert into client_links (wedding_key, title, phone, emails) values ('akriti', 'Akriti & Rohan', '9876500000', '{" Akriti@Gmail.com ","rohan@gmail.com"}');
 insert into client_feed (wedding_key, data) values ('akriti', '{"functions":[{"id":"e1","name":"Akriti Mehndi","date":"2026-12-01"}]}');
 reset role;
+select pg_temp.check((select emails from client_links) = '{akriti@gmail.com,rohan@gmail.com}', 'client Gmails are stored in lower case');
 select set_config('t.tok', (select token::text from client_links where wedding_key='akriti'), false);
 set role anon; set request.jwt.claims = '{}';
 select pg_temp.expect_fail($$select * from client_links$$, 'visitor reading the list of links');
-select pg_temp.check(client_get(gen_random_uuid()) ? 'error', 'wrong link shows an error');
-select pg_temp.check(client_get(current_setting('t.tok')::uuid) ->> 'title' = 'Akriti & Rohan' and jsonb_array_length(client_get(current_setting('t.tok')::uuid) -> 'functions') = 1, 'client link shows their functions');
+select pg_temp.expect_fail($$select client_get(current_setting('t.tok')::uuid)$$, 'visitor who is not signed in opening the page');
+reset role;
+set role authenticated; set request.jwt.claims = '{"email":"stranger@gmail.com"}';
+select pg_temp.check(jsonb_array_length(client_list()) = 0, 'a Gmail not on the list sees no wedding');
+select pg_temp.check((client_get(current_setting('t.tok')::uuid)) ? 'not_listed', 'a Gmail not on the list cannot open it');
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"x"}}', false)) ? 'error', 'and cannot fill it');
+set request.jwt.claims = '{"email":"akriti@gmail.com"}';
+select pg_temp.check(client_list() -> 0 ->> 'title' = 'Akriti & Rohan', 'the family Gmail sees its wedding');
+select pg_temp.check(client_get(gen_random_uuid()) ? 'error', 'wrong page shows an error');
+select pg_temp.check(client_get(current_setting('t.tok')::uuid) ->> 'title' = 'Akriti & Rohan' and jsonb_array_length(client_get(current_setting('t.tok')::uuid) -> 'functions') = 1, 'client page shows their functions');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj"}}', false)) ? 'ok', 'client saves a draft');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj Gomti Nagar"}}', true)) ? 'ok', 'client submits');
-select pg_temp.check(client_get(current_setting('t.tok')::uuid) #>> '{answers,e1,venue}' = 'Taj Gomti Nagar', 'answers come back on the link');
+select pg_temp.check(client_get(current_setting('t.tok')::uuid) #>> '{answers,e1,venue}' = 'Taj Gomti Nagar', 'answers come back');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_object('x', repeat('a', 70000)), false)) ? 'error', 'oversized answers refused');
+set request.jwt.claims = '{"email":"m@x.com"}';
+select pg_temp.check((client_get(current_setting('t.tok')::uuid) ->> 'preview')::boolean, 'manager can preview the page');
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{}', false)) ? 'error', 'but cannot fill it in for the family');
 reset role;
 update client_links set active = false;
-set role anon;
-select pg_temp.check(client_get(current_setting('t.tok')::uuid) ? 'error', 'switched-off link stops working');
-reset role;
-set role authenticated; set request.jwt.claims = '{"email":"c@x.com"}';
+set role authenticated; set request.jwt.claims = '{"email":"akriti@gmail.com"}';
+select pg_temp.check(client_get(current_setting('t.tok')::uuid) ? 'error' and jsonb_array_length(client_list()) = 0, 'switched-off page stops working');
+set request.jwt.claims = '{"email":"c@x.com"}';
 select pg_temp.check((select count(*) from client_itinerary)=0 and (select count(*) from client_links)=0, 'crew cannot see client answers or links');
 set request.jwt.claims = '{"email":"m@x.com"}';
 select pg_temp.check((select data #>> '{e1,venue}' from client_itinerary)='Taj Gomti Nagar' and (select submitted_at from client_itinerary) is not null, 'manager reads the submitted itinerary');
