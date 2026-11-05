@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>My work · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.job { background: var(--surface); border-radius: 20px; padding: 14px; margin: 10px 0; box-shadow: var(--shadow); }
+.job.chg { box-shadow: var(--shadow), inset 4px 0 0 var(--no-ink); }
+.job-h { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.job-h b { font-size: 15px; line-height: 1.3; }
+.late { color: var(--no-ink); font-weight: 700; }
+.wbar { height: 6px; border-radius: 3px; background: var(--sand); overflow: hidden; margin: 10px 0 4px; }
+.wbar i { display: block; height: 100%; background: var(--rose); border-radius: 3px; }
+.mini { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.mini label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.mini .wide { grid-column: 1 / -1; }
+.acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.acts .pillbtn { flex: 1 1 120px; min-height: 40px; }
+.job .pillbtn.light { background: var(--bg); box-shadow: inset 0 0 0 1px var(--sand); }
+details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 8px; }
+.rline { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: start; background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); }
+.rline input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--rose); margin-top: 2px; }
+.rline .mini { grid-column: 1 / -1; margin-top: 0; }
+.rline .mini[hidden] { display: none; }
+.sent { font-size: 13.5px; border-top: 1px dashed var(--sand); padding: 8px 0; display: flex; justify-content: space-between; gap: 8px; }
+.code { font: 600 11px var(--font-body); background: var(--sand); border-radius: 6px; padding: 2px 6px; margin-right: 6px; }
+.x { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: 12.5px; }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/icons.js"></script>
+<script src="/work-core.js"></script>
+</head>
+<body>
+<main class="wrap">
+  <header class="hdr"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span><div class="hdr-acts"><a class="btn small" id="back" href="/" hidden>Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div></header>
+  <nav class="bnav" role="tablist" aria-label="Main">
+    <button type="button" role="tab" class="tab on" data-tab="jobs"><span data-ic="film"></span>My jobs<b class="dot" id="nav-chg" hidden></b></button>
+    <button type="button" role="tab" class="tab" data-tab="rep"><span data-ic="log"></span>Today's report<b class="dot" id="nav-rep" hidden></b></button>
+    <button type="button" role="tab" class="tab" data-tab="me"><span data-ic="idcard"></span>Me</button>
+    <a class="tab" id="nav-att" href="/work.html" hidden><span data-ic="clock"></span>Attendance</a>
+  </nav>
+  <section class="hello" style="display:block"><h1 id="hi">My work</h1><p class="sub" id="sub">Loading…</p></section>
+  <section id="tab-jobs"></section>
+  <section id="tab-rep" hidden></section>
+  <section id="tab-me" hidden></section>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), W = window.MutosWork, esc = W.esc;
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4500); };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  $('out').addEventListener('click', () => window.mutosApp.signOut());
+  const app = window.mutosApp; let me, c, person = null, jobs = [], todayReps = [];
+  try { me = await app.me(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not reach the app. Check your internet.</span>'; return; }
+  if (!me) { location.replace('/'); return; }
+  c = await app.client();
+  const home = app.homeFor(me.role); if (home !== '/' && home !== '/mywork.html') { $('back').href = home; $('back').hidden = false; }
+  const today = W.todayIST(), yesterday = W.addDays(today, -1);
+  const pr = await c.from('people').select('*').eq('email', me.email).maybeSingle();
+  if (pr.error) { $('sub').textContent = 'Work reports are not set up yet.'; return; }
+  person = pr.data;
+  if (!person) { $('sub').innerHTML = 'Your Gmail (<b>' + esc(me.email) + '</b>) is not on Muto\'s people list yet. Send it to Ravi on WhatsApp.'; return; }
+  $('hi').textContent = 'Hi ' + person.name.split(' ')[0];
+  c.from('employees').select('email').eq('email', me.email).maybeSingle().then(r => { if (r && r.data) $('nav-att').hidden = false; }).catch(() => {});
+
+  async function load() {
+    const [j, r] = await Promise.all([c.from('work_jobs').select('*').eq('assignee', person.id), c.from('work_reports').select('*').eq('person', person.id).gte('day', yesterday).order('at')]);
+    if (j.error) throw j.error;
+    jobs = j.data || []; todayReps = r.error ? [] : (r.data || []);
+    const open = jobs.filter(x => W.OPEN.includes(x.status)), chg = open.filter(x => x.status === 'changes').length, late = open.filter(W.overdue).length;
+    $('sub').textContent = person.code + ' · ' + open.length + ' open job' + (open.length === 1 ? '' : 's') + (chg ? ' · ' + chg + ' with changes asked' : '') + (late ? ' · ' + late + ' overdue' : '');
+    $('nav-chg').hidden = !chg; $('nav-chg').textContent = chg || '';
+    $('nav-rep').hidden = todayReps.some(r => r.day === today);
+  }
+  const order = ['changes', 'editing', 'todo', 'rendered', 'sent', 'paused', 'final'];
+  const myOpen = () => jobs.filter(x => W.OPEN.includes(x.status) || x.status === 'paused').sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || String(a.due || '9').localeCompare(String(b.due || '9')));
+
+  // ---------- my jobs ----------
+  function renderJobs() {
+    const list = myOpen(), done = jobs.filter(x => x.status === 'final').sort((a, b) => String(b.done_at).localeCompare(String(a.done_at))).slice(0, 5);
+    $('tab-jobs').innerHTML = (list.length ? list.map(j => {
+      const photo = W.isPhoto(j.kind), mine = ['todo', 'editing', 'rendered', 'changes'].includes(j.status);
+      return '<article class="job' + (j.status === 'changes' ? ' chg' : '') + '" data-j="' + j.id + '"><div class="job-h"><div><b>' + esc(j.wedding_title) + '</b><div class="meta">' + esc(W.jobName(j)) + (j.round > 1 ? ' · Round ' + j.round : '') + '</div></div>' + W.pill(j.status) + '</div>' +
+        '<div class="meta">' + (j.due ? (W.overdue(j) ? '<span class="late">Due ' + esc(W.dayLong(j.due)) + '</span>' : 'Due ' + esc(W.dayLong(j.due))) : 'No due date') + ' · ' + esc(W.progressText(j)) + (j.wedding_date ? ' · shot ' + esc(W.dayShort(j.wedding_date)) : '') + '</div>' +
+        (j.note ? '<div class="ans wait" style="margin-top:8px">' + esc(j.note) + '</div>' : '') +
+        W.bar(j).replace('class="wbar"', 'class="wbar" style="width:auto"') +
+        (mine ? '<div class="mini">' + (photo ? '<label>Photos done<input class="in" type="number" min="0" data-f="count_done" value="' + (j.count_done || 0) + '"></label><label>In total<input class="in" value="' + (j.count_total == null ? '–' : j.count_total) + '" disabled></label>'
+          : '<label>Progress (%)<input class="in" type="number" min="0" max="100" data-f="progress" value="' + (j.progress || 0) + '"></label><label>&nbsp;<span></span></label>') + '</div>' +
+          '<details' + (j.drive ? '' : ' open') + '><summary>Drives and link</summary><div class="mini"><label>Project on drive<input class="in" data-f="drive" maxlength="80" value="' + esc(j.drive || '') + '" placeholder="e.g. M 5"></label><label>Rendered to drive<input class="in" data-f="render_drive" maxlength="80" value="' + esc(j.render_drive || '') + '"></label>' +
+          '<label class="wide">Link<input class="in" type="url" data-f="link" maxlength="500" value="' + esc(j.link || '') + '" placeholder="Drive / YouTube link"></label></div></details>' +
+          '<div class="acts">' + (j.status === 'todo' || j.status === 'changes' ? '<button type="button" class="pillbtn light" data-st="editing">' + (j.status === 'changes' ? 'Start the changes' : 'Start') + '</button>' : '') +
+          (j.status === 'editing' ? '<button type="button" class="pillbtn light" data-st="rendered">Rendered ✓</button>' : '') + '<button type="button" class="pillbtn" data-save>Save</button></div>'
+          : '<p class="meta" style="margin-top:8px">' + (j.status === 'sent' ? 'With the client. The studio marks it Final or Changes asked.' : 'Paused by the studio.') + '</p>') + '</article>';
+    }).join('') : '<div class="empty" style="margin-top:12px">No jobs right now. New jobs from the studio show up here.</div>') +
+      (done.length ? '<h2 style="font-size:15px;margin:22px 0 4px">Recently finished</h2>' + done.map(j => '<div class="sent"><span>' + esc(j.wedding_title) + ' · ' + esc(W.jobName(j)) + '</span>' + W.pill('final') + '</div>').join('') : '');
+    $('tab-jobs').querySelectorAll('.job').forEach(card => {
+      const j = jobs.find(x => x.id === card.dataset.j);
+      const save = async st => {
+        const row = {}; card.querySelectorAll('[data-f]').forEach(i => { const k = i.dataset.f; row[k] = i.type === 'number' ? Math.max(0, Math.round(Number(i.value) || 0)) : (i.value.trim() || null); });
+        if ('progress' in row) row.progress = Math.min(100, row.progress);
+        if (st) row.status = st;
+        const { error } = await c.from('work_jobs').update(row).eq('id', j.id);
+        if (error) { toast('Could not save: ' + error.message, true); return; }
+        await load(); renderJobs(); toast(st === 'rendered' ? 'Marked rendered. The studio will send it to the client.' : st ? 'Started.' : 'Saved.');
+      };
+      card.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => save(b.dataset.st)));
+      const s = card.querySelector('[data-save]'); if (s) s.addEventListener('click', () => save(null));
+    });
+  }
+
+  // ---------- today's report ----------
+  let repDay = today;
+  function renderRep() {
+    const sentToday = todayReps.filter(r => r.day === repDay), list = myOpen().filter(j => j.status !== 'sent' && j.status !== 'paused');
+    const yJobs = new Set(todayReps.filter(r => r.day === W.addDays(repDay, -1) && r.job).map(r => r.job));
+    $('tab-rep').innerHTML = '<div class="chipset" style="margin:6px 0 10px"><span class="' + (repDay === today ? 'dark' : '') + '" data-day="' + today + '" style="cursor:pointer">Today</span><span class="' + (repDay === yesterday ? 'dark' : '') + '" data-day="' + yesterday + '" style="cursor:pointer">Yesterday (forgot)</span></div>' +
+      '<p class="sub" style="margin:0 0 6px">Tick what you worked on ' + (repDay === today ? 'today' : 'yesterday') + '. Takes 30 seconds.' + (yJobs.size && repDay === today ? ' <button type="button" class="x" id="same">Same as yesterday</button>' : '') + '</p>' +
+      list.map(j => { const photo = W.isPhoto(j.kind); return '<div class="rline" data-j="' + j.id + '"><input type="checkbox" aria-label="Worked on it"><div><b>' + esc(j.wedding_title) + '</b><div class="meta">' + esc(W.jobName(j)) + ' · now ' + esc(W.progressText(j)) + '</div></div>' +
+        '<div class="mini" hidden>' + (photo ? '<label>Photos done ' + (repDay === today ? 'today' : 'that day') + '<input class="in" type="number" min="0" data-r="count" placeholder="e.g. 350"></label>' : '<label>Progress now (%)<input class="in" type="number" min="0" max="100" data-r="progress" value="' + (j.progress || 0) + '"></label>') +
+        '<label>Hours<input class="in" type="number" min="0" max="16" step="0.5" data-r="hours" placeholder="e.g. 4"></label><label class="wide">Note (optional)<input class="in" data-r="note" maxlength="500" placeholder="what is left, any problem"></label></div></div>'; }).join('') +
+      '<div class="rline" data-j=""><input type="checkbox" aria-label="Other work"><div><b>Other work</b><div class="meta">Data copy, selection, shoot prep, office work…</div></div><div class="mini" hidden><label class="wide">What did you do<input class="in" data-r="note" maxlength="500"></label><label>Hours<input class="in" type="number" min="0" max="16" step="0.5" data-r="hours"></label></div></div>' +
+      '<button type="button" class="pillbtn rose" id="send" style="width:100%;margin-top:10px">Send report</button>' +
+      (sentToday.length ? '<h2 style="font-size:15px;margin:22px 0 4px">Sent ' + (repDay === today ? 'today' : 'for yesterday') + '</h2>' + sentToday.map(r => { const j = jobs.find(x => x.id === r.job); return '<div class="sent"><span><b>' + esc(j ? j.wedding_title + ' · ' + W.jobName(j) : 'Other work') + '</b> ' + esc([r.progress != null ? r.progress + '%' : '', r.count ? r.count + ' photos' : '', r.hours ? r.hours + ' h' : '', r.note].filter(Boolean).join(' · ')) + '</span>' + (r.day === today ? '<button type="button" class="x" data-del="' + r.id + '">Remove</button>' : '') + '</div>'; }).join('') : '');
+    const tab = $('tab-rep');
+    tab.querySelectorAll('[data-day]').forEach(b => b.addEventListener('click', () => { repDay = b.dataset.day; renderRep(); }));
+    tab.querySelectorAll('.rline').forEach(l => { const cb = l.querySelector('input[type=checkbox]'); cb.addEventListener('change', () => { l.querySelector('.mini').hidden = !cb.checked; if (cb.checked) { const f = l.querySelector('.mini input'); if (f) f.focus(); } }); });
+    const same = $('same'); if (same) same.addEventListener('click', () => tab.querySelectorAll('.rline').forEach(l => { if (yJobs.has(l.dataset.j)) { const cb = l.querySelector('input[type=checkbox]'); cb.checked = true; l.querySelector('.mini').hidden = false; } }));
+    tab.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { const { error } = await c.from('work_reports').delete().eq('id', b.dataset.del); if (error) { toast('Could not remove: ' + error.message, true); return; } await load(); renderRep(); }));
+    $('send').addEventListener('click', async () => {
+      const rows = [], ups = [];
+      for (const l of tab.querySelectorAll('.rline')) {
+        if (!l.querySelector('input[type=checkbox]').checked) continue;
+        const v = k => { const i = l.querySelector('[data-r="' + k + '"]'); return i ? i.value.trim() : ''; };
+        const j = l.dataset.j ? jobs.find(x => x.id === l.dataset.j) : null;
+        if (!j && !v('note')) { toast('Write what the other work was.', true); return; }
+        const hours = v('hours') === '' ? null : Math.min(16, Math.max(0, Number(v('hours')) || 0));
+        const row = { person: person.id, day: repDay, job: j ? j.id : null, hours, note: v('note') || null };
+        const u = {};
+        if (j && W.isPhoto(j.kind)) { row.count = v('count') === '' ? null : Math.max(0, Math.round(Number(v('count')) || 0)); if (row.count) u.count_done = (j.count_done || 0) + row.count; }
+        else if (j) { row.progress = v('progress') === '' ? null : Math.min(100, Math.max(0, Math.round(Number(v('progress')) || 0))); if (row.progress != null && row.progress !== j.progress) u.progress = row.progress; }
+        if (j && (j.status === 'todo' || j.status === 'changes')) u.status = 'editing';   // working on it = started
+        if (j && Object.keys(u).length) ups.push([j, u]);
+        rows.push(row);
+      }
+      if (!rows.length) { toast('Tick at least one line.', true); return; }
+      $('send').disabled = true;
+      const { error } = await c.from('work_reports').insert(rows);
+      if (error) { $('send').disabled = false; toast('Could not send: ' + error.message, true); return; }
+      for (const [j, u] of ups) await c.from('work_jobs').update(u).eq('id', j.id);
+      await load(); renderRep(); toast('Report sent. Thank you!');
+    });
+  }
+
+  // ---------- me ----------
+  async function renderMe() {
+    const { data } = await c.from('people_private').select('*').eq('person', person.id).maybeSingle();
+    const x = data || {};
+    $('tab-me').innerHTML = '<div class="job"><div class="job-h"><div><b><span class="code">' + esc(person.code) + '</span>' + esc(person.name) + '</b><div class="meta">' + esc(person.title || '') + '</div></div></div><div class="meta">' + esc([me.email, person.phone].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<p class="sub">Your details for salary and emergencies. Only you, Ravi and the accountant see them.</p><div class="job"><div class="mini">' +
+      '<label class="wide">Address<input class="in" id="ma" maxlength="300" value="' + esc(x.address || '') + '"></label>' +
+      '<label>UPI ID<input class="in" id="mu" maxlength="80" value="' + esc(x.upi || '') + '" placeholder="name@okhdfc"></label>' +
+      '<label>Govt ID<select class="in" id="mit"><option value="">—</option>' + ['Aadhaar', 'PAN', 'Voter ID', 'Driving licence', 'Passport'].map(t => '<option' + (x.id_type === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></label>' +
+      '<label>Last 4 digits of the ID<input class="in" id="mil" maxlength="4" value="' + esc(x.id_last4 || '') + '"></label>' +
+      '<label class="wide">Emergency contact<input class="in" id="mem" maxlength="120" value="' + esc(x.emergency || '') + '" placeholder="Name, relation, phone"></label></div>' +
+      '<p class="meta">Only the last 4 digits of your ID are kept, never the full number.</p><button type="button" class="pillbtn" id="msave" style="width:100%;margin-top:8px">Save my details</button></div>';
+    $('msave').addEventListener('click', async () => {
+      const last4 = $('mil').value.trim();
+      if (last4 && !/^[0-9A-Za-z]{4}$/.test(last4)) { toast('Only the last 4 digits, please.', true); return; }
+      const { error } = await c.from('people_private').upsert({ person: person.id, address: $('ma').value.trim() || null, upi: $('mu').value.trim() || null, id_type: $('mit').value || null, id_last4: last4 || null, emergency: $('mem').value.trim() || null });
+      toast(error ? 'Could not save: ' + error.message : 'Saved.', !!error);
+    });
+  }
+
+  function showTab(t) {
+    document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    ['jobs', 'rep', 'me'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    ({ jobs: renderJobs, rep: renderRep, me: renderMe })[t]();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load your jobs (' + esc(e.message || e) + ').</div>'; return; }
+  const first = new URLSearchParams(location.search).get('tab');
+  showTab(['jobs', 'rep', 'me'].includes(first) ? first : 'jobs');
+  try { c.channel('my-work').on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs', filter: 'assignee=eq.' + person.id }, () => { clearTimeout(window.__mw); window.__mw = setTimeout(async () => { if (document.activeElement && document.activeElement.matches('input')) return; await load(); if (!$('tab-jobs').hidden) renderJobs(); }, 800); }).subscribe(); } catch (e) {}
+})();
+</script>
+</body>
+</html>

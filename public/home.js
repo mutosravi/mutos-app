@@ -38,6 +38,7 @@
         '<button type="button" class="mh-t mh-desk" data-mh-view="home">' + ICON('home') + 'Home</button>' +
         '<button type="button" class="mh-t mh-desk" data-mh-view="board">' + ICON('board') + 'Board</button>' +
         '<button type="button" class="mh-t mh-bell" id="mutos-updates" aria-label="Team updates">' + ICON('bell') + '<span class="mh-desk-l">Team updates</span><b id="mutos-upd-n" class="mh-n" hidden></b></button>' +
+        '<a class="mh-t mh-desk" href="/desk.html">' + ICON('film') + 'Work desk</a>' +
         '<a class="mh-t mh-desk" href="/gear.html">' + ICON('box') + 'Gear desk</a>' +
         '<a class="mh-t mh-desk" href="/crew.html?preview=1">' + ICON('eye') + 'Crew view</a>' +
         (owner ? '<button type="button" class="mh-t mh-desk" id="mutos-logins">' + ICON('key') + 'Team logins</button><button type="button" class="mh-t mh-desk" id="mutos-backups">' + ICON('cloud') + 'Backups</button>' : '') +
@@ -80,6 +81,8 @@
     closeMore();
     const owner = who.role === 'owner';
     const rows = [
+      ['/desk.html', 'film', 'Work desk', 'Editing jobs and daily reports'],
+      ['/desk.html?tab=people', 'idcard', 'People', 'Everyone at Muto\'s, employee codes'],
       ['/gear.html', 'box', 'Gear desk', 'Hand out and take back gear'],
       ['/crew.html?preview=1', 'eye', 'Crew view', 'See what a crew member sees'],
       owner && ['#logins', 'key', 'Team logins', 'Managers, gear desk, who can sign in'],
@@ -109,6 +112,8 @@
   const TILES = [
     ['board', 'board', 'Shoot board', 'main'],
     ['clients', 'heart', 'Clients'],
+    ['/desk.html', 'film', 'Work desk'],
+    ['/desk.html?tab=people', 'idcard', 'People'],
     ['/attendance.html', 'clock', 'Attendance'],
     ['sb-new-wedding', 'plus', 'New wedding'],
     ['sb-manage-shooters', 'crew', 'Crew'],

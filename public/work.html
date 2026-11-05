@@ -50,6 +50,7 @@
   <button type="button" role="tab" class="tab" data-tab="month"><span data-ic="calendar"></span>Month</button>
   <button type="button" role="tab" class="tab" data-tab="req"><span data-ic="log"></span>Requests<b class="dot" id="nav-req" hidden></b></button>
   <button type="button" role="tab" class="tab" data-tab="pay"><span data-ic="money"></span>Pay</button>
+  <a class="tab" id="nav-jobs" href="/mywork.html" hidden><span data-ic="film"></span>Jobs</a>
 </nav>
   <section class="hello"><span class="avatar soft" id="av"></span><div><h1 id="hello">My work</h1><p class="sub" id="sub">Loading…</p></div></section>
   <section id="tab-today"><div id="today"></div><div class="sechead"><h2>This week</h2></div><div id="weekl"></div></section>
@@ -84,7 +85,13 @@
   if (!me || !me.role) { location.replace('/'); return; }
   c = await app.client();
   const er = await c.from('employees').select('*').eq('email', me.email).maybeSingle();
-  if (er.error || !er.data || !er.data.active) { $('sub').textContent = er.error ? 'Attendance is not set up yet.' : 'You are not on the employee list. Ask Ravi.'; return; }
+  c.from('people').select('id').eq('email', me.email).maybeSingle().then(r => { if (r && r.data) $('nav-jobs').hidden = false; }).catch(() => {});
+  if (er.error || !er.data || !er.data.active) {
+    // not on attendance yet, but on the people list (an editor): their page is My work
+    const pp = await c.from('people').select('id').eq('email', me.email).maybeSingle();
+    if (pp && pp.data) { location.replace('/mywork.html'); return; }
+    $('sub').textContent = er.error ? 'Attendance is not set up yet.' : 'You are not on the employee list. Ask Ravi.'; return;
+  }
   const emp = er.data;
   if (me.role === 'crew') $('to-shoots').hidden = false;
   $('hello').textContent = 'Hello, ' + String(emp.name).split(' ')[0];
@@ -138,6 +145,13 @@
     if (error || !r || r.error) { toast((r && r.error) || (error && error.message) || 'Could not save.', true); return; }
     toast({ in: 'Checked in. Have a good day!', lunch_out: 'Enjoy your lunch. 45 minutes.', lunch_in: 'Welcome back.', out: 'Checked out. See you tomorrow!' }[kind] + (r.flag === 'holiday_unasked' ? ' (Today is a holiday: Ravi will be told you came in.)' : ''));
     await load(); renderAll();
+    // checked out: if they are on the work desk and have not reported today, take them to today's report
+    if (kind === 'out' && !$('nav-jobs').hidden) {
+      const pp = await c.from('people').select('id').eq('email', me.email).maybeSingle();
+      const d = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+      const rr = pp && pp.data ? await c.from('work_reports').select('id').eq('person', pp.data.id).eq('day', d).limit(1) : null;
+      if (rr && !rr.error && !(rr.data || []).length) setTimeout(() => location.assign('/mywork.html?tab=rep'), 1200);
+    }
   }
   function askCode(label) {
     return new Promise(done => {

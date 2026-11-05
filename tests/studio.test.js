@@ -9,14 +9,15 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log'].forEach(t => { T[t] = new Map(); });
-const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id };
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports'].forEach(t => { T[t] = new Map(); });
+const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
 T.att_settings.set('1', { id: 1, office_lat: null, office_lng: null, radius_m: 150, code_on: true, late_night_min: 120 });
 const role = e => (T.members.get(e) || {}).role || null;
 const isOwner = e => role(e) === 'owner', staff = e => ['owner', 'manager'].includes(role(e)), payroll = e => ['owner', 'accountant'].includes(role(e));
 const pkOf = e => (T.members.get(e) || {}).person_key;
+const myPerson = e => { const p = [...T.people.values()].find(x => e && x.email === e && x.active); return p ? p.id : null; };
 function canSee(t, r, e) {
   if (!e) return false;
   if (t === 'docs' || t.startsWith('client_') || t === 'gear_feed') return staff(e) || (t === 'gear_feed' && role(e) === 'gear');
@@ -25,6 +26,11 @@ function canSee(t, r, e) {
   if (['employees', 'att_punch', 'att_requests', 'payslips'].includes(t)) return r.email === e || payroll(e);
   if (t === 'payroll_runs' || t === 'att_log') return payroll(e);
   if (t === 'att_settings' || t === 'holidays') return true;
+  // same rules as 007_work_desk.sql
+  if (t === 'people') return staff(e) || payroll(e) || r.id === myPerson(e);
+  if (t === 'people_private') return payroll(e) || r.person === myPerson(e);
+  if (t === 'work_jobs') return staff(e) || (r.assignee && r.assignee === myPerson(e));
+  if (t === 'work_reports') return staff(e) || r.person === myPerson(e);
   return staff(e);
 }
 function canWrite(t, r, e) {
@@ -34,6 +40,9 @@ function canWrite(t, r, e) {
   if (['employees', 'att_settings', 'holidays', 'payslips', 'att_punch'].includes(t)) return isOwner(e);
   if (t === 'payroll_runs') return payroll(e);
   if (t === 'att_requests') return true;
+  if (t === 'people') return staff(e);
+  if (t === 'people_private') return isOwner(e) || r.person === myPerson(e);
+  if (t === 'work_jobs' || t === 'work_reports') return staff(e) || (t === 'work_jobs' ? r.assignee && r.assignee === myPerson(e) : r.person === myPerson(e));
   return staff(e);
 }
 const match = (r, f) => f.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
@@ -52,6 +61,35 @@ function before(t, r, old, e) {
   if (t === 'payroll_runs') { if (old && old.status === 'locked') return 'This month is locked.'; if (r.status === 'locked' && !isOwner(e)) return 'Only the owner can lock a month.'; if (r.status === 'locked') r.locked_at = new Date().toISOString(); }
   if (t === 'att_settings' && old && old.code_on !== r.code_on) T.att_log.set(newId(), { id: newId(), at: new Date().toISOString(), by_email: e, what: 'Office code check turned ' + (r.code_on ? 'ON' : 'OFF') });
   if (t === 'holidays') { r.id = r.id || newId(); r.ask_in = r.ask_in || []; }
+  if (t === 'people') {
+    if (!old && !r.code) r.code = 'M' + String(Math.max(0, ...[...T.people.values()].map(x => Number(x.code.slice(1)))) + 1).padStart(3, '0');
+    if (old && r.code !== old.code) return 'The employee code cannot change.';
+    if (r.email && (r.email !== r.email.toLowerCase() || [...T.people.values()].some(x => x.email === r.email && x.id !== r.id))) return 'duplicate or bad email';
+    r.id = r.id || crypto.randomUUID(); r.name = String(r.name).trim(); r.active = r.active !== false; r.skills = r.skills || []; r.crew_keys = r.crew_keys || [];
+  }
+  if (t === 'people_private' && r.id_last4 && !/^[0-9A-Za-z]{4}$/.test(r.id_last4)) return 'check constraint id_last4';
+  if (t === 'work_jobs') {
+    const now = new Date().toISOString();
+    if (!old) Object.assign(r, Object.assign({ id: r.id || crypto.randomUUID(), status: 'todo', progress: 0, count_done: 0, count_total: null, round: 1, event_ids: [], created_by: e, created_at: now }, r));
+    if (old && !staff(e)) {
+      for (const k of ['wedding_key', 'wedding_title', 'wedding_date', 'fn_label', 'kind', 'title', 'assignee', 'due', 'round', 'count_total', 'created_by']) if ((r[k] ?? null) !== (old[k] ?? null)) return 'Only the studio can change who does a job, its due date or what it is.';
+      if (r.status !== old.status && !(['editing', 'rendered'].includes(r.status) && ['todo', 'editing', 'rendered', 'changes'].includes(old.status))) return 'You can mark a job as Editing or Rendered.';
+    } else if (old && r.status === 'changes' && old.status !== 'changes' && r.round === old.round) r.round = old.round + 1;
+    if (r.status === 'rendered' && !['top', 'lr', 'album_sel'].includes(r.kind)) r.progress = 100;
+    if (['editing', 'rendered'].includes(r.status) && !r.started_at) r.started_at = now;
+    if (r.status === 'final' && (!old || old.status !== 'final')) r.done_at = now;
+    if (r.status !== 'final') r.done_at = null;
+  }
+  if (t === 'work_reports') {
+    if (old) return 'permission denied for table work_reports';
+    r.id = r.id || crypto.randomUUID(); r.day = r.day || istDay(); r.by_email = e; r.at = new Date().toISOString();
+    if (!staff(e)) {
+      if (r.person !== myPerson(e)) return 'You can only write your own report.';
+      if (r.day < istDay(-1) || r.day > istDay()) return 'Reports are for today (or yesterday, if you forgot).';
+      if (r.job && !((T.work_jobs.get(r.job) || {}).assignee === r.person)) return 'That job is not yours.';
+    }
+    if (!r.job && !String(r.note || '').trim()) return 'Write what you worked on.';
+  }
   return null;
 }
 function rpc(fn, a, e) {
@@ -114,7 +152,8 @@ function handle(e, d) {
     return { data: null, error: null };
   }
   if (d.op === 'delete') {
-    [...t.values()].filter(r => match(r, d.filters) && canSee(d.table, r, e) && (canWrite(d.table, r, e) || (d.table === 'att_requests' && r.email === e && r.status === 'pending'))).forEach(r => t.delete(keyOf(d.table, r)));
+    const canDel = r => d.table === 'people' ? isOwner(e) : d.table === 'work_reports' ? (isOwner(e) || (r.person === myPerson(e) && r.day === istDay())) : d.table === 'work_jobs' ? staff(e) : (canWrite(d.table, r, e) || (d.table === 'att_requests' && r.email === e && r.status === 'pending'));
+    [...t.values()].filter(r => match(r, d.filters) && canSee(d.table, r, e) && canDel(r)).forEach(r => t.delete(keyOf(d.table, r)));
     return { data: null, error: null };
   }
 }
@@ -293,6 +332,98 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(true, 'crew employee sees the Work tab');
   await cr.click('#nav-work'); await cr.waitForURL('**/work.html'); await cr.waitForSelector('#to-shoots:not([hidden])');
   ok(true, '… and My shoots from the Work page');
+
+  // ── 9. work desk: people register, jobs, editors' daily report ──
+  const shooterId = n => [...T.docs.values()].filter(r => r.collection === 'shooters' && String(r.data.name).trim().toLowerCase() === n.toLowerCase()).map(r => r.id);
+  ['Shrey', 'Adesh', 'Hamza', 'Saif', 'Imran', 'Kaushal'].forEach((n, i) => { const id = crypto.randomUUID(); T.people.set(id, { id, code: 'M' + String(i + 1).padStart(3, '0'), name: n, title: n === 'Imran' ? 'Photo/Album Designer' : 'Video Editor', email: null, phone: null, skills: [], crew_keys: n === 'Hamza' ? ['hamza', ...shooterId('Hamza')] : shooterId(n), active: true }); });
+  const PP = n => [...T.people.values()].find(p => p.name === n);
+  const PARTNER = 'partner.test@gmail.com', IMRAN = 'imran.album@gmail.com';
+  T.members.set(PARTNER, { email: PARTNER, role: 'manager', display_name: 'Partner' });
+  owner.on('dialog', dg => dg.accept());
+  await owner.goto(B + '/desk.html?tab=people'); await owner.waitForSelector('[data-p]');
+  await owner.waitForFunction(() => /Filled 1 Gmail/.test(document.getElementById('toast').textContent));
+  ok(PP('Hamza').email === CREWE, 'People: Gmail filled from the crew login (Hamza)');
+  ok((await owner.textContent('#tab-people')).includes('M006') && (await owner.textContent('#tab-people')).includes('No Gmail yet'), 'People list shows codes and who cannot sign in yet');
+  await owner.click('[data-p="' + PP('Imran').id + '"]'); await owner.waitForSelector('#pe');
+  await owner.fill('#pe', 'Imran.Album@gmail.com'); await owner.fill('#pu', 'imran@okhdfc'); await owner.selectOption('#pit', 'Aadhaar'); await owner.fill('#pil', '4321'); await owner.check('#psk input[value="album"]');
+  await owner.click('#go'); await owner.waitForSelector('.sheet-bg', { state: 'detached' });
+  ok(PP('Imran').email === IMRAN && PP('Imran').skills.includes('album') && (T.people_private.get(PP('Imran').id) || {}).upi === 'imran@okhdfc' && T.people_private.get(PP('Imran').id).id_last4 === '4321', 'owner saves Gmail, skills, UPI and the last 4 ID digits');
+  ok((T.members.get(IMRAN) || {}).role === 'staff', 'an office-only editor gets a login');
+  await owner.click('#padd'); await owner.fill('#pn', ' Kuldeep '); await owner.fill('#pt', 'Data manager'); await owner.click('#go'); await owner.waitForSelector('.sheet-bg', { state: 'detached' });
+  ok((PP('Kuldeep') || {}).code === 'M007', 'a new person gets the next code (M007)');
+  // jobs
+  await owner.click('.bnav .tab[data-tab="jobs"]'); await owner.click('#add'); await owner.waitForSelector('#aw');
+  const wk = await owner.$eval('#aw', s => s.options[1].value); await owner.selectOption('#aw', wk); await owner.waitForSelector('#afn input');
+  const nFn = await owner.$$eval('#afn input', x => x.length);
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'desk-add.png') });
+  await owner.check('#ak input[value="reel"]'); await owner.check('#ak input[value="lr"]'); await owner.selectOption('#ap', PP('Hamza').id); await owner.fill('#ad', istDay(-1));
+  await owner.click('#go'); await owner.waitForSelector('.sheet-bg', { state: 'detached' });
+  const hj = () => [...T.work_jobs.values()].filter(j => j.assignee === PP('Hamza').id);
+  ok(hj().length === 2 && hj().every(j => j.wedding_key === wk && j.event_ids.length === nFn && j.fn_label === null && j.due === istDay(-1) && j.created_by === OWNER), 'owner adds Reel + LR edit for the whole wedding, assigned to Hamza');
+  ok((await owner.textContent('#tab-jobs')).includes('overdue') && await owner.$eval('[data-v="overdue"] b', b => b.textContent) === '2', 'jobs past their due date show as overdue');
+  await owner.click('#add'); await owner.selectOption('#aw', wk); await owner.waitForSelector('#afn input'); await owner.check('#ak input[value="reel"]'); await owner.click('#go');
+  await owner.waitForFunction(() => /already there/.test(document.getElementById('toast').textContent));
+  ok(hj().length === 2, 'the same job is not added twice');
+  await owner.click('#cx');
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'desk-jobs.png'), fullPage: true });
+  const sj = crypto.randomUUID(); T.work_jobs.set(sj, { id: sj, wedding_key: wk, wedding_title: 'X', kind: 'trailer', assignee: PP('Saif').id, status: 'todo', progress: 0, count_done: 0, round: 1, event_ids: [] });
+  // the editor
+  await cr.goto(B + '/crew.html'); await cr.waitForSelector('#nav-jobs:not([hidden])');
+  await cr.click('#nav-jobs'); await cr.waitForURL('**/mywork.html'); await cr.waitForSelector('.job');
+  ok(await cr.$$eval('.job', x => x.length) === 2, 'Hamza sees only his 2 jobs on My work (not Saif\'s)');
+  const reel = hj().find(j => j.kind === 'reel'), lr = hj().find(j => j.kind === 'lr');
+  await cr.fill('.job[data-j="' + reel.id + '"] [data-f="progress"]', '40'); await cr.fill('.job[data-j="' + reel.id + '"] [data-f="drive"]', 'M 5');
+  await cr.click('.job[data-j="' + reel.id + '"] [data-st="editing"]'); await cr.waitForFunction(() => /Started/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'editing' && reel.progress === 40 && reel.drive === 'M 5' && reel.started_at, 'editor starts the reel with progress and drive');
+  if (process.env.SHOTS) await cr.screenshot({ path: path.join(SHOTS, 'mywork-jobs.png'), fullPage: true });
+  ok(rpc('x', {}, CREWE) && handle(CREWE, { table: 'work_jobs', op: 'update', filters: [['eq', 'id', reel.id]], rows: [{ status: 'final' }] }).error && handle(CREWE, { table: 'work_jobs', op: 'update', filters: [['eq', 'id', reel.id]], rows: [{ due: '2030-01-01' }] }).error, 'editor cannot mark final or move the due date');
+  await cr.click('.bnav .tab[data-tab="rep"]'); await cr.waitForSelector('.rline');
+  await cr.check('.rline[data-j="' + reel.id + '"] input[type=checkbox]'); await cr.fill('.rline[data-j="' + reel.id + '"] [data-r="progress"]', '60'); await cr.fill('.rline[data-j="' + reel.id + '"] [data-r="hours"]', '4');
+  await cr.check('.rline[data-j="' + lr.id + '"] input[type=checkbox]'); await cr.fill('.rline[data-j="' + lr.id + '"] [data-r="count"]', '350');
+  await cr.check('.rline[data-j=""] input[type=checkbox]'); await cr.click('#send');
+  await cr.waitForFunction(() => /Write what the other work was/.test(document.getElementById('toast').textContent));
+  await cr.fill('.rline[data-j=""] [data-r="note"]', 'Data copy from cards'); await cr.fill('.rline[data-j=""] [data-r="hours"]', '2');
+  if (process.env.SHOTS) await cr.screenshot({ path: path.join(SHOTS, 'mywork-report.png'), fullPage: true }); await cr.click('#send');
+  await cr.waitForFunction(() => /Report sent/.test(document.getElementById('toast').textContent));
+  const reps = [...T.work_reports.values()].filter(r => r.person === PP('Hamza').id);
+  ok(reps.length === 3 && reps.every(r => r.day === istDay() && r.by_email === CREWE), 'daily report saved: 2 jobs + other work');
+  ok(reel.progress === 60 && lr.count_done === 350 && lr.status === 'editing', 'the report moves the jobs forward (60%, 350 photos, LR started)');
+  ok(handle(CREWE, { table: 'work_reports', op: 'insert', rows: [{ person: PP('Saif').id, note: 'fake' }] }).error && handle(CREWE, { table: 'work_reports', op: 'insert', rows: [{ person: PP('Hamza').id, job: sj }] }).error, 'cannot report for someone else or on someone else\'s job');
+  // the desk sees it
+  await owner.click('.bnav .tab[data-tab="today"]'); await owner.waitForFunction(() => /1 of 7 reported/.test(document.body.textContent));
+  const rt = await owner.textContent('#rl');
+  ok(rt.includes('Data copy from cards') && rt.includes('350 photos') && /No report yet:.*Saif/.test(rt), 'Reports: Hamza\'s lines and who has not reported');
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'desk-reports.png'), fullPage: true });
+  await owner.click('.bnav .tab[data-tab="jobs"]'); await owner.click('[data-job="' + reel.id + '"]'); await owner.waitForSelector('#chg');
+  await owner.click('#chg'); await owner.waitForFunction(() => /round 2/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'changes' && reel.round === 2, 'client asked for changes: round 2');
+  await cr.click('.bnav .tab[data-tab="jobs"]'); await cr.reload(); await cr.waitForSelector('.job.chg [data-st="editing"]');
+  ok((await cr.textContent('.job.chg')).includes('Round 2') && await cr.isVisible('#nav-chg'), 'editor sees the changes first, marked Round 2');
+  await cr.click('.job.chg [data-st="editing"]'); await cr.waitForFunction(() => /Started/.test(document.getElementById('toast').textContent));
+  await cr.click('.job[data-j="' + reel.id + '"] [data-st="rendered"]'); await cr.waitForFunction(() => /rendered/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'rendered' && reel.progress === 100, 'editor marks it rendered (100%)');
+  await owner.click('[data-job="' + reel.id + '"]'); await owner.waitForSelector('#fin');
+  ok(/60%.*4 h/.test(await owner.textContent('#hist')) || /4 h/.test(await owner.textContent('#hist')), 'the job shows its report history');
+  await owner.click('#fin'); await owner.waitForFunction(() => /Final/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'final' && reel.done_at, 'partner/owner marks it final');
+  await owner.click('.bnav .tab[data-tab="month"]'); await owner.waitForSelector('.tbl');
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'desk-month.png'), fullPage: true });
+  const hrow = await owner.$$eval('.tbl tbody tr', rs => rs.map(r => [...r.children].map(td => td.textContent)).find(c => c[0].includes('Hamza')));
+  ok(hrow && hrow[1] === '1' && hrow[2] === '6' && hrow[3] === '1' && hrow[4] === '1 Reel' && hrow[5] === '350' && hrow[6] === '1' && hrow[7] === '0%', 'Month: days, hours, finished, photos, change rounds, on time (was due yesterday)');
+  // office-only editor, partner, someone not on the list
+  const im = await as(IMRAN);
+  await im.goto(B + '/'); await im.waitForURL('**/mywork.html'); await im.waitForSelector('#tab-jobs .empty');
+  ok((await im.textContent('#sub')).includes('M005'), 'office-only editor signs in and lands on My work with their code');
+  await im.click('.bnav .tab[data-tab="me"]'); await im.waitForSelector('#mu'); ok(await im.inputValue('#mu') === 'imran@okhdfc', 'and sees their own private details');
+  const pa = await as(PARTNER);
+  await pa.goto(B + '/desk.html?tab=people'); await pa.waitForSelector('[data-p]');
+  await pa.click('[data-p="' + PP('Imran').id + '"]'); await pa.waitForSelector('#pn');
+  ok(!(await pa.$('#pu')), 'the partner sees the register but not UPI, address or ID');
+  ok(!handle(PARTNER, { table: 'people_private', op: 'select', filters: [], order: [] }).data.length, 'and cannot read them directly');
+  const nobody = await as('random.person@gmail.com');
+  await nobody.goto(B + '/mywork.html'); await nobody.waitForFunction(() => /not on Muto's people list/.test(document.body.textContent) || location.pathname === '/');
+  ok(true, 'a Gmail not on the people list gets no work page');
+  ok(handle(null, { table: 'work_jobs', op: 'select', filters: [], order: [] }).error && handle(null, { table: 'people', op: 'select', filters: [], order: [] }).error, 'visitors see no jobs or people');
 
   const errs = pages.flatMap(p => p.errs || []);
   ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));

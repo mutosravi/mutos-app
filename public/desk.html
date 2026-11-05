@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Work desk · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.card { background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); }
+.row2 { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+.wed { background: var(--surface); border-radius: 20px; padding: 6px 14px 8px; margin: 12px 0; box-shadow: var(--shadow); }
+.wed-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 0 4px; }
+.wed-h b { font-size: 15px; }
+.jrow { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-top: 1px dashed var(--sand); padding: 10px 0; font: inherit; color: var(--ink); cursor: pointer; }
+.jrow .nm { font-weight: 600; font-size: 14px; }
+.jrow .meta { grid-column: 1 / -1; margin: 0; }
+.late { color: var(--no-ink); font-weight: 700; }
+.wbar { height: 6px; border-radius: 3px; background: var(--sand); overflow: hidden; width: 90px; }
+.wbar i { display: block; height: 100%; background: var(--rose); border-radius: 3px; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 4px; }
+.tools .in { width: auto; min-height: 38px; padding: 6px 10px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-b { border: 0; background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 12.5px var(--font-body); color: var(--ink); cursor: pointer; box-shadow: var(--shadow); }
+.chip-b.on { background: var(--ink); color: #fff; }
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; font-size: 13px; }
+.tbl th, .tbl td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--sand); vertical-align: top; }
+.tbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: #fdfaf7; }
+.tbl td.n, .tbl th.n { text-align: right; white-space: nowrap; }
+.tblwrap { overflow-x: auto; margin-top: 10px; border-radius: 18px; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 620px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 10px; font-size: 19px; }
+.sheet h4 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.form-grid label { color: var(--muted); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; background: var(--bg); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--ink); font-weight: 400; cursor: pointer; }
+.checks input { accent-color: var(--rose); }
+.rep { border-top: 1px dashed var(--sand); padding: 7px 0; font-size: 13.5px; }
+.rep:first-of-type { border-top: 0; }
+.code { font: 600 11px var(--font-body); background: var(--sand); border-radius: 6px; padding: 2px 6px; margin-right: 6px; }
+.off { opacity: .55; }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/icons.js"></script>
+<script src="/work-core.js"></script>
+</head>
+<body>
+<main class="wrap wide">
+  <header class="hdr topbar">
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+    <div class="hdr-acts"><span class="badge-w" style="background:var(--surface);box-shadow:var(--shadow)">Work desk</span><a class="btn small" href="/board.html">Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+  </header>
+  <nav class="bnav" role="tablist" aria-label="Main">
+    <button type="button" role="tab" class="tab on" data-tab="jobs"><span data-ic="film"></span>Jobs</button>
+    <button type="button" role="tab" class="tab" data-tab="today"><span data-ic="log"></span>Reports</button>
+    <button type="button" role="tab" class="tab" data-tab="month"><span data-ic="bars"></span>Month</button>
+    <button type="button" role="tab" class="tab" data-tab="people"><span data-ic="idcard"></span>People</button>
+  </nav>
+  <p class="sub" id="who" style="margin-top:6px"></p>
+  <section id="tab-jobs"></section>
+  <section id="tab-today" hidden></section>
+  <section id="tab-month" hidden></section>
+  <section id="tab-people" hidden></section>
+  <datalist id="drives"></datalist>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), W = window.MutosWork, esc = W.esc;
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4500); };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  $('out').addEventListener('click', () => window.mutosApp.signOut());
+  const app = window.mutosApp; let me, c;
+  try { me = await app.me(); } catch (e) { $('who').innerHTML = '<span class="err">Could not reach the app.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  if (me.role !== 'owner' && me.role !== 'manager') { location.replace(app.homeFor(me.role)); return; }
+  c = await app.client();
+  const owner = me.role === 'owner';
+  $('who').textContent = me.email + ' · ' + (owner ? 'owner' : 'partner / manager');
+
+  let people = [], jobs = [], weddings = [], shooters = [], members = [];
+  const today = W.todayIST();
+  const f = { view: 'open', person: '', q: '' };
+  async function load() {
+    const [p, j] = await Promise.all([c.from('people').select('*').order('code'), c.from('work_jobs').select('*').order('created_at')]);
+    if (p.error) throw p.error; if (j.error) throw j.error;
+    people = p.data || []; jobs = j.data || [];
+    const drives = new Set(); jobs.forEach(x => { if (x.drive) drives.add(x.drive.trim()); if (x.render_drive) drives.add(x.render_drive.trim()); });
+    $('drives').innerHTML = [...drives].sort().map(d => '<option value="' + esc(d) + '">').join('');
+  }
+  async function loadBoard() {
+    try { const [ev, sh] = await Promise.all([W.loadDocs(c, 'events'), W.loadDocs(c, 'shooters')]); weddings = W.weddingsFrom(ev); shooters = sh; } catch (e) { toast('Could not read the board: ' + (e.message || e), true); }
+  }
+  const personOf = id => people.find(p => p.id === id);
+  const pname = id => { const p = personOf(id); return p ? p.name : 'Not assigned'; };
+  const activePeople = () => people.filter(p => p.active);
+  const personOptions = sel => '<option value="">Assign later</option>' + activePeople().map(p => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + (p.title ? ' · ' + esc(p.title.split('/')[0]) : '') + '</option>').join('');
+
+  // ---------- jobs ----------
+  const VIEWS = [['open', 'Open'], ['overdue', 'Overdue'], ['unassigned', 'Not assigned'], ['sent', 'With client'], ['changes', 'Changes asked'], ['final', 'Final'], ['all', 'All']];
+  const inView = j => ({ open: W.OPEN.includes(j.status), overdue: W.overdue(j), unassigned: !j.assignee && j.status !== 'final', sent: j.status === 'sent', changes: j.status === 'changes', final: j.status === 'final', all: true })[f.view];
+  function renderJobs() {
+    const n = k => jobs.filter(j => ({ open: W.OPEN.includes(j.status), overdue: W.overdue(j), unassigned: !j.assignee && j.status !== 'final', sent: j.status === 'sent' })[k]).length;
+    const q = f.q.trim().toLowerCase();
+    const list = jobs.filter(j => inView(j) && (!f.person || j.assignee === f.person) && (!q || (j.wedding_title + ' ' + W.jobName(j) + ' ' + pname(j.assignee) + ' ' + (j.drive || '')).toLowerCase().includes(q)));
+    const groups = new Map();
+    list.forEach(j => { if (!groups.has(j.wedding_key)) groups.set(j.wedding_key, { title: j.wedding_title, date: j.wedding_date, jobs: [] }); groups.get(j.wedding_key).jobs.push(j); });
+    const gs = [...groups.values()].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const order = ['changes', 'editing', 'todo', 'rendered', 'sent', 'paused', 'final'];
+    $('tab-jobs').innerHTML = '<div class="statgrid" style="margin-top:12px;grid-template-columns:repeat(4,minmax(0,1fr))">' +
+      '<button type="button" class="stat" data-v="open"><b>' + n('open') + '</b><span>open jobs</span></button>' +
+      '<button type="button" class="stat peach" data-v="overdue"><b>' + n('overdue') + '</b><span>overdue</span></button>' +
+      '<button type="button" class="stat honey" data-v="unassigned"><b>' + n('unassigned') + '</b><span>not assigned</span></button>' +
+      '<button type="button" class="stat lilac" data-v="sent"><b>' + n('sent') + '</b><span>with client</span></button></div>' +
+      '<div class="tools"><button type="button" class="pillbtn" id="add" style="min-height:40px">＋ Add jobs</button>' +
+      '<select class="in" id="fp" aria-label="Person"><option value="">Everyone</option>' + activePeople().map(p => '<option value="' + p.id + '"' + (p.id === f.person ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select>' +
+      '<input class="in" id="fq" type="search" placeholder="Search wedding, job, drive" value="' + esc(f.q) + '" style="flex:1 1 180px"></div>' +
+      '<div class="chips" style="margin:6px 0">' + VIEWS.map(([k, l]) => '<button type="button" class="chip-b' + (f.view === k ? ' on' : '') + '" data-v="' + k + '">' + l + '</button>').join('') + '</div>' +
+      (gs.length ? gs.map(g => '<div class="wed"><div class="wed-h"><b>' + esc(g.title) + '</b><span class="meta">' + esc(W.dayShort(g.date)) + ' · ' + g.jobs.length + ' job' + (g.jobs.length > 1 ? 's' : '') + '</span></div>' +
+        g.jobs.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || String(a.due || '9').localeCompare(String(b.due || '9'))).map(j =>
+          '<button type="button" class="jrow" data-job="' + j.id + '"><span class="nm">' + esc(W.jobName(j)) + (j.round > 1 ? ' <span class="pill mute">Round ' + j.round + '</span>' : '') + '</span><span style="display:flex;gap:8px;align-items:center">' + W.bar(j) + W.pill(j.status) + '</span>' +
+          '<span class="meta">' + [esc(pname(j.assignee)), j.due ? (W.overdue(j) ? '<span class="late">due ' + esc(W.dayShort(j.due)) + '</span>' : 'due ' + esc(W.dayShort(j.due))) : 'no due date', esc(W.progressText(j)), j.drive ? 'on ' + esc(j.drive) : ''].filter(Boolean).join(' · ') + '</span></button>').join('') + '</div>').join('')
+        : '<div class="empty" style="margin-top:12px">' + (jobs.length ? 'No jobs here.' : 'No jobs yet. Tap <b>＋ Add jobs</b>, pick a wedding and tick what has to be delivered.') + '</div>');
+    $('tab-jobs').querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => { f.view = b.dataset.v; renderJobs(); }));
+    $('fp').addEventListener('change', e => { f.person = e.target.value; renderJobs(); });
+    $('fq').addEventListener('input', e => { f.q = e.target.value; clearTimeout(renderJobs.t); renderJobs.t = setTimeout(() => { renderJobs(); const q = $('fq'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 350); });
+    $('add').addEventListener('click', addJobs);
+    $('tab-jobs').querySelectorAll('[data-job]').forEach(b => b.addEventListener('click', () => editJob(jobs.find(j => j.id === b.dataset.job))));
+  }
+
+  function addJobs() {
+    const ws = weddings.filter(w => w.last >= W.addDays(today, -200) && w.first <= W.addDays(today, 60))
+      .sort((a, b) => (a.first > today) - (b.first > today) || (a.first > today ? a.first.localeCompare(b.first) : b.first.localeCompare(a.first)));
+    const bg = W.sheet('<h3>Add jobs</h3><div class="form-grid">' +
+      '<label class="wide">Wedding<select class="in" id="aw"><option value="">Pick a wedding (already shot first)</option>' + ws.map(w => '<option value="' + esc(w.key) + '">' + esc(w.title) + ' · ' + esc(W.dayShort(w.first)) + (w.last !== w.first ? '–' + esc(W.dayShort(w.last)) : '') + '</option>').join('') + '</select></label></div>' +
+      '<div id="afn"></div><h4>What has to be delivered</h4><div class="checks" id="ak">' + W.KINDS.map(([k, l]) => '<label><input type="checkbox" value="' + k + '">' + esc(l) + '</label>').join('') + '</div>' +
+      '<div class="form-grid" style="margin-top:12px"><label>Who does it<select class="in" id="ap">' + personOptions('') + '</select></label>' +
+      '<label>Due date<input class="in" id="ad" type="date"></label>' +
+      '<label class="wide">Note (optional)<input class="in" id="an" maxlength="500" placeholder="e.g. client wants the reel by the reception"></label>' +
+      '<label class="wide" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="aper" style="width:20px;height:20px;accent-color:var(--rose)">One job for each function (e.g. a reel per function)</label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Add</button></div>');
+    const w = () => ws.find(x => x.key === bg.querySelector('#aw').value);
+    bg.querySelector('#aw').addEventListener('change', () => {
+      const x = w(); if (!x) { bg.querySelector('#afn').innerHTML = ''; return; }
+      bg.querySelector('#afn').innerHTML = '<h4>Functions</h4><div class="checks">' + x.events.map(ev => '<label><input type="checkbox" value="' + esc(ev.id) + '" checked>' + esc(W.fnName(ev, x)) + ' · ' + esc(W.dayShort(ev.date)) + '</label>').join('') + '</div>';
+    });
+    bg.querySelector('#cx').addEventListener('click', () => bg.remove());
+    bg.querySelector('#go').addEventListener('click', async () => {
+      const x = w(); if (!x) { toast('Pick a wedding.', true); return; }
+      const ids = [...bg.querySelectorAll('#afn input:checked')].map(i => i.value), kinds = [...bg.querySelectorAll('#ak input:checked')].map(i => i.value);
+      if (!ids.length) { toast('Tick at least one function.', true); return; }
+      if (!kinds.length) { toast('Tick what has to be delivered.', true); return; }
+      const evs = x.events.filter(ev => ids.includes(ev.id)), whole = evs.length === x.events.length;
+      const parts = bg.querySelector('#aper').checked ? evs.map(ev => ({ ids: [ev.id], label: W.fnName(ev, x) })) : [{ ids, label: whole ? '' : evs.map(ev => W.fnName(ev, x)).join(', ') }];
+      const rows = [], skipped = [];
+      kinds.forEach(k => parts.forEach(pt => {
+        if (jobs.some(j => j.wedding_key === x.key && j.kind === k && (j.fn_label || '') === pt.label.slice(0, 120))) { skipped.push(W.kindLabel(k) + (pt.label ? ' · ' + pt.label : '')); return; }
+        rows.push({ wedding_key: x.key, wedding_title: x.title.slice(0, 120), wedding_date: x.first, event_ids: pt.ids, fn_label: pt.label.slice(0, 120) || null, kind: k, assignee: bg.querySelector('#ap').value || null, due: bg.querySelector('#ad').value || null, note: bg.querySelector('#an').value.trim() || null });
+      }));
+      if (!rows.length) { toast('These jobs are already there: ' + skipped.join(', '), true); return; }
+      const { error } = await c.from('work_jobs').insert(rows);
+      if (error) { toast('Could not add: ' + error.message, true); return; }
+      bg.remove(); await load(); f.view = 'open'; renderJobs();
+      toast(rows.length + ' job' + (rows.length > 1 ? 's' : '') + ' added' + (skipped.length ? ' (already there: ' + skipped.join(', ') + ')' : '') + '.');
+    });
+  }
+
+  async function editJob(j) {
+    const photo = W.isPhoto(j.kind);
+    const bg = W.sheet('<h3>' + esc(W.jobName(j)) + '</h3><p class="sub" style="margin:-4px 0 10px">' + esc(j.wedding_title) + (j.wedding_date ? ' · ' + esc(W.dayShort(j.wedding_date)) : '') + (j.round > 1 ? ' · Round ' + j.round : '') + '</p><div class="form-grid">' +
+      '<label>Who does it<select class="in" id="ep">' + personOptions(j.assignee) + '</select></label>' +
+      '<label>Due date<input class="in" id="ed" type="date" value="' + esc(j.due || '') + '"></label>' +
+      '<label>Status<select class="in" id="es">' + Object.keys(W.STATUS).map(s => '<option value="' + s + '"' + (s === j.status ? ' selected' : '') + '>' + esc(W.STATUS[s][0]) + '</option>').join('') + '</select></label>' +
+      (photo ? '<label>Photos done<input class="in" id="ec" type="number" min="0" value="' + (j.count_done || 0) + '"></label><label>Photos in total<input class="in" id="et" type="number" min="0" value="' + (j.count_total == null ? '' : j.count_total) + '" placeholder="if known"></label>'
+        : '<label>Progress (%)<input class="in" id="eg" type="number" min="0" max="100" value="' + (j.progress || 0) + '"></label>') +
+      '<label>Project on drive<input class="in" id="edr" list="drives" maxlength="80" value="' + esc(j.drive || '') + '"></label>' +
+      '<label>Rendered to drive<input class="in" id="err" list="drives" maxlength="80" value="' + esc(j.render_drive || '') + '"></label>' +
+      '<label class="wide">Link (Drive / YouTube / WeTransfer)<input class="in" id="el" type="url" maxlength="500" value="' + esc(j.link || '') + '"></label>' +
+      '<label class="wide">Note<input class="in" id="en" maxlength="500" value="' + esc(j.note || '') + '"></label></div>' +
+      '<div class="pillrow" style="margin-bottom:8px"><button type="button" class="pillbtn light" id="chg">Client asked for changes</button><button type="button" class="pillbtn light" id="fin">Mark final ✓</button></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="cx">Close</button><button type="button" class="pillbtn" id="go">Save</button></div>' +
+      '<h4>Reports on this job</h4><div id="hist" class="sub">Loading…</div>' +
+      '<p style="margin-top:14px"><button type="button" class="pillbtn light" id="del" style="min-height:36px;color:var(--no-ink)">Delete this job</button></p>');
+    const g = id => bg.querySelector(id);
+    const save = async extra => {
+      const num = (id, max) => { const el = g(id); if (!el || el.value === '') return null; const v = Math.max(0, Math.round(Number(el.value))); return max ? Math.min(max, v) : v; };
+      const row = Object.assign({ assignee: g('#ep').value || null, due: g('#ed').value || null, status: g('#es').value, drive: g('#edr').value.trim() || null, render_drive: g('#err').value.trim() || null, link: g('#el').value.trim() || null, note: g('#en').value.trim() || null },
+        photo ? { count_done: num('#ec') || 0, count_total: num('#et') } : { progress: num('#eg', 100) || 0 }, extra || {});
+      const { error } = await c.from('work_jobs').update(row).eq('id', j.id);
+      if (error) { toast('Could not save: ' + error.message, true); return false; }
+      bg.remove(); await load(); renderJobs(); return true;
+    };
+    g('#cx').addEventListener('click', () => bg.remove());
+    g('#go').addEventListener('click', () => save().then(ok => ok && toast('Saved.')));
+    g('#chg').addEventListener('click', () => save({ status: 'changes' }).then(ok => ok && toast('Changes asked: round ' + (j.status === 'changes' ? j.round : j.round + 1) + '. ' + pname(j.assignee) + ' sees it on My work.')));
+    g('#fin').addEventListener('click', () => save({ status: 'final' }).then(ok => ok && toast('Final ✓')));
+    g('#del').addEventListener('click', async () => {
+      if (!confirm('Delete "' + W.jobName(j) + '" of ' + j.wedding_title + '? Its reports stay in the history.')) return;
+      const { error } = await c.from('work_jobs').delete().eq('id', j.id);
+      if (error) { toast('Could not delete: ' + error.message, true); return; }
+      bg.remove(); await load(); renderJobs(); toast('Deleted.');
+    });
+    const { data } = await c.from('work_reports').select('*').eq('job', j.id).order('at', { ascending: false });
+    const h = g('#hist'); if (!h) return;
+    h.innerHTML = (data || []).length ? data.map(r => '<div class="rep"><b>' + esc(W.dayLong(r.day)) + '</b> · ' + esc(pname(r.person)) + ' · ' + esc([r.progress != null ? r.progress + '%' : '', r.count ? r.count + ' photos' : '', r.hours ? r.hours + ' h' : '', r.note].filter(Boolean).join(' · ')) + '</div>').join('') : 'No reports yet.';
+  }
+
+  // ---------- reports (one day) ----------
+  let repDay = today;
+  async function renderToday() {
+    $('tab-today').innerHTML = '<div class="tools"><input class="in" type="date" id="rd" value="' + repDay + '" max="' + today + '"><span class="sub" id="rs"></span></div><div id="rl" class="sub">Loading…</div>';
+    $('rd').addEventListener('change', e => { repDay = e.target.value || today; renderToday(); });
+    const { data, error } = await c.from('work_reports').select('*').eq('day', repDay).order('at');
+    if (error) { $('rl').textContent = 'Could not load reports: ' + error.message; return; }
+    const by = new Map(); (data || []).forEach(r => { if (!by.has(r.person)) by.set(r.person, []); by.get(r.person).push(r); });
+    const act = activePeople(), done = act.filter(p => by.has(p.id)), missing = act.filter(p => !by.has(p.id));
+    const jobOf = id => jobs.find(j => j.id === id);
+    $('rs').textContent = done.length + ' of ' + act.length + ' reported'; $('rl').className = '';
+    $('rl').innerHTML = done.map(p => {
+      const rs = by.get(p.id), hrs = rs.reduce((s, r) => s + Number(r.hours || 0), 0);
+      return '<div class="card"><div class="row2"><b><span class="code">' + esc(p.code) + '</span>' + esc(p.name) + '</b><span class="meta">' + (hrs ? hrs + ' h' : '') + '</span></div>' +
+        rs.map(r => { const j = r.job && jobOf(r.job); return '<div class="rep">' + (j ? '<b>' + esc(j.wedding_title) + '</b> · ' + esc(W.jobName(j)) : r.job ? '<b>(deleted job)</b>' : '<b>Other work</b>') + ' · ' + esc([r.progress != null ? r.progress + '%' : '', r.count ? r.count + ' photos' : '', r.hours ? r.hours + ' h' : '', r.note].filter(Boolean).join(' · ')) + '</div>'; }).join('') + '</div>';
+    }).join('') + (missing.length ? '<div class="ans wait" style="margin-top:12px"><b>No report ' + (repDay === today ? 'yet' : 'that day') + ':</b> ' + missing.map(p => esc(p.name)).join(', ') + '</div>' : '') +
+      (!act.length ? '<div class="empty">No people yet. Add them in People.</div>' : '');
+  }
+
+  // ---------- month ----------
+  let repMonth = today.slice(0, 7);
+  async function renderMonth() {
+    const [y, m] = repMonth.split('-').map(Number), last = new Date(Date.UTC(y, m, 0)).getUTCDate(), from = repMonth + '-01', to = repMonth + '-' + String(last).padStart(2, '0');
+    $('tab-month').innerHTML = '<div class="tools"><input class="in" type="month" id="mm" value="' + repMonth + '" max="' + today.slice(0, 7) + '"><button type="button" class="btn small" id="csv">Download for Excel</button></div><div id="ml" class="sub">Loading…</div>';
+    $('mm').addEventListener('change', e => { repMonth = e.target.value || today.slice(0, 7); renderMonth(); });
+    const { data, error } = await c.from('work_reports').select('*').gte('day', from).lte('day', to);
+    if (error) { $('ml').textContent = 'Could not load: ' + error.message; return; }
+    const reps = data || [], kindOf = id => { const j = jobs.find(x => x.id === id); return j ? j.kind : null; };
+    const fin = jobs.filter(j => j.status === 'final' && j.done_at && W.istDate(j.done_at) >= from && W.istDate(j.done_at) <= to);
+    const rows = people.filter(p => p.active || reps.some(r => r.person === p.id)).map(p => {
+      const mine = reps.filter(r => r.person === p.id), f2 = fin.filter(j => j.assignee === p.id), withDue = f2.filter(j => j.due);
+      const kinds = {}; f2.forEach(j => { kinds[W.kindLabel(j.kind)] = (kinds[W.kindLabel(j.kind)] || 0) + 1; });
+      return { p, days: new Set(mine.map(r => r.day)).size, hours: mine.reduce((s, r) => s + Number(r.hours || 0), 0), done: f2.length, kinds: Object.entries(kinds).map(([k, n]) => n + ' ' + k).join(', '),
+        photos: mine.filter(r => W.isPhoto(kindOf(r.job))).reduce((s, r) => s + Number(r.count || 0), 0), rounds: f2.reduce((s, j) => s + (j.round - 1), 0),
+        ontime: withDue.length ? Math.round(100 * withDue.filter(j => W.istDate(j.done_at) <= j.due).length / withDue.length) + '%' : '–',
+        open: jobs.filter(j => j.assignee === p.id && W.OPEN.includes(j.status)).length };
+    }).sort((a, b) => b.done - a.done || b.days - a.days);
+    $('ml').className = ''; $('ml').innerHTML = '<p class="sub" style="margin:4px 0">Finished = marked Final this month. Change rounds = extra rounds clients asked for on those jobs.</p><div class="tblwrap"><table class="tbl"><thead><tr><th>Person</th><th class="n">Days reported</th><th class="n">Hours</th><th class="n">Finished</th><th>What</th><th class="n">Photos edited</th><th class="n">Change rounds</th><th class="n">On time</th><th class="n">Open now</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td><span class="code">' + esc(r.p.code) + '</span>' + esc(r.p.name) + '</td><td class="n">' + r.days + '</td><td class="n">' + (r.hours || '') + '</td><td class="n">' + r.done + '</td><td>' + esc(r.kinds) + '</td><td class="n">' + (r.photos || '') + '</td><td class="n">' + (r.rounds || '') + '</td><td class="n">' + r.ontime + '</td><td class="n">' + r.open + '</td></tr>').join('') + '</tbody></table></div>';
+    $('csv').addEventListener('click', () => {
+      const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const lines = [['Code', 'Person', 'Days reported', 'Hours', 'Finished', 'What', 'Photos edited', 'Change rounds', 'On time', 'Open now'].map(q).join(',')].concat(rows.map(r => [r.p.code, r.p.name, r.days, r.hours, r.done, r.kinds, r.photos, r.rounds, r.ontime, r.open].map(q).join(',')));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv' })); a.download = 'work-' + repMonth + '.csv'; a.click();
+    });
+  }
+
+  // ---------- people ----------
+  async function fillGmailsFromCrew() {
+    // the owner's crew logins already know most Gmails: copy them onto people linked to those crew entries
+    if (!owner) return 0;
+    const { data } = await c.from('members').select('email, role, person_key');
+    members = data || [];
+    let n = 0;
+    for (const p of people.filter(x => !x.email && x.crew_keys && x.crew_keys.length)) {
+      const m = [...new Set(members.filter(r => r.role === 'crew' && p.crew_keys.includes(r.person_key)).map(r => r.email))];
+      if (m.length !== 1 || people.some(x => x.email === m[0])) continue;
+      const { error } = await c.from('people').update({ email: m[0] }).eq('id', p.id);
+      if (!error) { p.email = m[0]; n++; }
+    }
+    return n;
+  }
+  const shooterLabel = k => { const s = shooters.find(x => x.id === k); return s ? s.name + (s.role ? ' (' + s.role + ')' : '') : k; };
+  async function renderPeople() {
+    if (!renderPeople.filled) { renderPeople.filled = true; const n = await fillGmailsFromCrew(); if (n) toast('Filled ' + n + ' Gmail' + (n > 1 ? 's' : '') + ' from the crew logins.'); }
+    const list = people.slice().sort((a, b) => (b.active - a.active) || a.code.localeCompare(b.code));
+    $('tab-people').innerHTML = '<div class="tools"><button type="button" class="pillbtn" id="padd" style="min-height:40px">＋ Add person</button><span class="sub">' + people.filter(p => p.active).length + ' working here · codes are made automatically</span></div>' +
+      (list.length ? list.map(p => '<button type="button" class="card jrow' + (p.active ? '' : ' off') + '" data-p="' + p.id + '" style="border-top:0;padding:12px 14px"><span class="nm"><span class="code">' + esc(p.code) + '</span>' + esc(p.name) + (p.active ? '' : ' · left') + '</span><span class="meta" style="grid-column:auto">' + esc(p.title || '') + '</span>' +
+        '<span class="meta">' + [p.email ? esc(p.email) : '<span class="late">No Gmail yet: cannot sign in</span>', p.phone ? esc(p.phone) : '', (p.crew_keys || []).length ? 'Crew: ' + esc(p.crew_keys.map(shooterLabel).join(', ')) : '', (p.skills || []).map(s => (W.SKILLS.find(x => x[0] === s) || [s, s])[1]).join(', ')].filter(Boolean).join(' · ') + '</span></button>').join('')
+        : '<div class="empty">Nobody yet.</div>');
+    $('padd').addEventListener('click', () => editPerson(null));
+    $('tab-people').querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => editPerson(people.find(p => p.id === b.dataset.p))));
+  }
+  async function editPerson(p) {
+    const x = p || { name: '', active: true, skills: [], crew_keys: [] };
+    const sorted = shooters.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const bg = W.sheet('<h3>' + (p ? '<span class="code">' + esc(p.code) + '</span>' + esc(p.name) : 'Add person') + '</h3><div class="form-grid">' +
+      '<label>Name<input class="in" id="pn" maxlength="80" value="' + esc(x.name) + '"></label>' +
+      '<label>What they do<input class="in" id="pt" maxlength="200" value="' + esc(x.title || '') + '" placeholder="Video Editor/Cinematographer"></label>' +
+      '<label>Gmail they sign in with<input class="in" id="pe" type="email" value="' + esc(x.email || '') + '"></label>' +
+      '<label>Phone<input class="in" id="pph" type="tel" maxlength="20" value="' + esc(x.phone || '') + '"></label>' +
+      '<label>Joined<input class="in" id="pj" type="date" value="' + esc(x.joined || '') + '"></label>' +
+      '<label class="wide">Notes<input class="in" id="pno" maxlength="500" value="' + esc(x.notes || '') + '"></label></div>' +
+      '<h4>Post-production work</h4><div class="checks" id="psk">' + W.SKILLS.map(([k, l]) => '<label><input type="checkbox" value="' + k + '"' + ((x.skills || []).includes(k) ? ' checked' : '') + '>' + esc(l) + '</label>').join('') + '</div>' +
+      '<h4>Same person on the crew list (tick every role they shoot as)</h4><div class="checks" id="pck">' + (sorted.length ? sorted.map(s => '<label><input type="checkbox" value="' + esc(s.id) + '"' + ((x.crew_keys || []).includes(s.id) ? ' checked' : '') + '>' + esc(s.name) + (s.role ? ' · ' + esc(s.role) : '') + '</label>').join('') : '<span class="sub">The crew list is still loading or empty.</span>') + '</div>' +
+      (owner ? '<h4>Private (only you, the accountant and the person see this)</h4><div class="form-grid" id="priv"><label class="wide">Address<input class="in" id="pa" maxlength="300"></label><label>UPI ID<input class="in" id="pu" maxlength="80" placeholder="name@okhdfc"></label>' +
+        '<label>Govt ID<select class="in" id="pit"><option value="">—</option>' + ['Aadhaar', 'PAN', 'Voter ID', 'Driving licence', 'Passport'].map(t => '<option>' + t + '</option>').join('') + '</select></label><label>Last 4 digits of the ID<input class="in" id="pil" maxlength="4" inputmode="text" placeholder="1234"><span class="hint">Only the last 4: the full number is not stored, for safety.</span></label>' +
+        '<label class="wide">Emergency contact<input class="in" id="pem" maxlength="120" placeholder="Name, relation, phone"></label></div>' : '') +
+      '<label style="display:flex;align-items:center;gap:8px;margin:12px 0"><input type="checkbox" id="pac"' + (x.active ? ' checked' : '') + ' style="width:20px;height:20px;accent-color:var(--rose)">Working here now</label>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Save</button></div>');
+    const g = id => bg.querySelector(id);
+    if (owner && p) {
+      const { data } = await c.from('people_private').select('*').eq('person', p.id).maybeSingle();
+      if (data && g('#pa')) { g('#pa').value = data.address || ''; g('#pu').value = data.upi || ''; g('#pit').value = data.id_type || ''; g('#pil').value = data.id_last4 || ''; g('#pem').value = data.emergency || ''; }
+    }
+    g('#cx').addEventListener('click', () => bg.remove());
+    g('#go').addEventListener('click', async () => {
+      const email = g('#pe').value.trim().toLowerCase();
+      if (!g('#pn').value.trim()) { toast('Write a name.', true); return; }
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('Check the Gmail.', true); return; }
+      if (email && people.some(o => o.email === email && (!p || o.id !== p.id))) { toast('Another person already has this Gmail.', true); return; }
+      const row = { name: g('#pn').value.trim(), title: g('#pt').value.trim() || null, email: email || null, phone: g('#pph').value.trim() || null, joined: g('#pj').value || null, notes: g('#pno').value.trim() || null,
+        skills: [...bg.querySelectorAll('#psk input:checked')].map(i => i.value), crew_keys: [...bg.querySelectorAll('#pck input:checked')].map(i => i.value), active: g('#pac').checked };
+      let id = p && p.id;
+      if (p) { const { error } = await c.from('people').update(row).eq('id', p.id); if (error) { toast('Could not save: ' + error.message, true); return; } }
+      else { id = crypto.randomUUID(); const { error } = await c.from('people').insert(Object.assign({ id }, row)); if (error) { toast('Could not add: ' + error.message, true); return; } }
+      if (owner && g('#pa')) {
+        const last4 = g('#pil').value.trim();
+        if (last4 && !/^[0-9A-Za-z]{4}$/.test(last4)) { toast('Only the last 4 digits of the ID, please.', true); return; }
+        const pr = { person: id, address: g('#pa').value.trim() || null, upi: g('#pu').value.trim() || null, id_type: g('#pit').value || null, id_last4: last4 || null, emergency: g('#pem').value.trim() || null };
+        const { error } = await c.from('people_private').upsert(pr); if (error) { toast('Saved, but private details failed: ' + error.message, true); }
+      }
+      // a Gmail with no login yet: let them sign in (as office staff; crew logins come from the board's crew list)
+      let note = '';
+      if (email && owner) {
+        if (!members.length) { const { data } = await c.from('members').select('email, role, person_key'); members = data || []; }
+        if (!members.some(m => m.email === email)) {
+          const { error } = await c.from('members').insert({ email, role: 'staff', display_name: row.name });
+          note = error ? ' (could not make the login: ' + error.message + ')' : ' They can now sign in and see My work.';
+          if (!error) members.push({ email, role: 'staff' });
+        }
+      } else if (email && !owner) note = ' Ask Ravi to give this Gmail a login if they are not on the crew list.';
+      bg.remove(); await load(); renderPeople(); toast((p ? 'Saved.' : 'Added as ' + ((people.find(o => o.id === id) || {}).code || 'new') + '.') + note);
+    });
+  }
+
+  // ---------- tabs ----------
+  function showTab(t) {
+    document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    ['jobs', 'today', 'month', 'people'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    ({ jobs: renderJobs, today: renderToday, month: renderMonth, people: renderPeople })[t]();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load the work desk (' + esc(e.message || e) + '). Run supabase/007_work_desk.sql first.</div>'; return; }
+  await loadBoard();
+  const first = new URLSearchParams(location.search).get('tab');
+  showTab(['jobs', 'today', 'month', 'people'].includes(first) ? first : 'jobs');
+  // live: an editor's progress shows up without reloading
+  try {
+    c.channel('work-desk').on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs' }, () => { clearTimeout(window.__wd); window.__wd = setTimeout(async () => { if (document.querySelector('.sheet-bg')) return; await load(); if (!$('tab-jobs').hidden) renderJobs(); }, 800); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'work_reports' }, () => { if (!$('tab-today').hidden && !document.querySelector('.sheet-bg')) renderToday(); }).subscribe();
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
