@@ -37,6 +37,24 @@ select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_ob
 set request.jwt.claims = '{"email":"m@x.com"}';
 select pg_temp.check((client_get(current_setting('t.tok')::uuid) ->> 'preview')::boolean, 'manager can preview the page');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{}', false)) ? 'error', 'but cannot fill it in for the family');
+-- phone numbers (006): written one way, a listed phone works like a listed Gmail
+update client_links set phones = '{"098765 43210","+91 91234-56789","9876543210"}' where wedding_key = 'akriti';
+reset role;
+select pg_temp.check((select phones from client_links) = '{919123456789,919876543210}', 'phone numbers are stored one way, without repeats');
+select pg_temp.expect_fail($$update client_links set phones = '{12345}'$$, 'a wrong phone number');
+select pg_temp.expect_fail($$update client_links set phones = '{9112345678901}'$$, 'an Indian number with too many digits');
+set role authenticated; set request.jwt.claims = '{"email":"","phone":"919999999999"}';
+select pg_temp.check(jsonb_array_length(client_list()) = 0 and client_get(current_setting('t.tok')::uuid) ? 'not_listed', 'a phone not on the list sees nothing');
+select pg_temp.check(client_get(current_setting('t.tok')::uuid) ->> 'error' like '%+919999999999%', 'and is told which number it used');
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"x"}}', false)) ? 'error', 'and cannot fill it');
+set request.jwt.claims = '{"email":"","phone":"919876543210"}';
+select pg_temp.check(client_list() -> 0 ->> 'title' = 'Akriti & Rohan' and not (client_get(current_setting('t.tok')::uuid) ->> 'preview')::boolean, 'the family phone opens its wedding');
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj Gomti Nagar"}}', true)) ? 'ok', 'and can fill it in');
+select pg_temp.check(jsonb_array_length(client_get(current_setting('t.tok')::uuid) -> 'functions') = 1, 'and sees the functions');
+set request.jwt.claims = '{"email":"","phone":"+91 98765 43210"}';
+select pg_temp.check(jsonb_array_length(client_list()) = 1, 'the phone matches however it is written');
+set request.jwt.claims = '{"email":"","phone":""}';
+select pg_temp.check(jsonb_array_length(client_list()) = 0, 'an empty phone matches nothing');
 reset role;
 update client_links set active = false;
 set role authenticated; set request.jwt.claims = '{"email":"akriti@gmail.com"}';

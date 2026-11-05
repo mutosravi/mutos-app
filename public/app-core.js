@@ -20,11 +20,11 @@
   }
   // prompt=select_account: Google always shows the account list, so after signing out you can pick a different Gmail
   async function signIn() { const c = await client(); await c.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + '/', queryParams: { prompt: 'select_account' } } }); }
-  async function signOut() {
+  async function signOut(to) {
     const c = await client();
     try { await c.auth.signOut(); } catch (e) {}
     try { Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k)); } catch (e) {} // also when offline
-    location.replace('/');
+    location.replace(typeof to === 'string' ? to : '/'); // the client page sends families back to its own sign-in
   }
   // each login type's first page
   const HOME = { owner: '/board.html', manager: '/board.html', crew: '/crew.html', gear: '/gear.html', staff: '/work.html', accountant: '/attendance.html', kiosk: '/office.html' };

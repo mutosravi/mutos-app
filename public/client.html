@@ -27,6 +27,13 @@
 .bar .pillbtn { flex: 1; }
 .saved { font-size: 12px; color: var(--muted); text-align: center; margin: 6px 0 0; min-height: 16px; }
 .progress { height: 8px; border-radius: 4px; background: rgba(255,255,255,.7); overflow: hidden; }
+.otp-row { display: flex; gap: 8px; align-items: stretch; }
+.otp-row .cc { display: flex; align-items: center; padding: 0 12px; border-radius: 14px; background: var(--surface); font-weight: 600; color: var(--muted); }
+.otp-row .in { flex: 1 1 auto; min-width: 0; font-size: 17px; letter-spacing: .5px; }
+#code { letter-spacing: 6px; text-align: center; font-size: 22px; font-weight: 700; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: rgba(90,47,59,.18); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--ink); text-decoration: underline; font: inherit; font-size: 13px; cursor: pointer; }
 .progress i { display: block; height: 100%; background: var(--rose); border-radius: 4px; transition: width .3s; }
 @media (max-width: 380px) { .fn .grid { grid-template-columns: 1fr; } }
 </style>
@@ -58,19 +65,62 @@
   const fail = m => card('<h2>Something is not right</h2><p>' + esc(m) + '</p>');
   const app = window.mutosApp;
   $('out').innerHTML = window.MUTOS_ICON('logout', 20);
-  $('out').addEventListener('click', () => app.signOut());
+  $('out').addEventListener('click', () => app.signOut('/client.html'));
 
-  // 1. signed in with Google?
+  // 1. signed in? (Google, or a phone number with a code on WhatsApp)
   let c, session;
   try { c = await app.client(); session = await app.session(); } catch (e) { fail('Could not connect. Check your internet and try again.'); return; }
+  const norm = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; if (d.length === 11 && d[0] === '0') d = '91' + d.slice(1); return d; };
+  const nice = d => d.length === 12 && d.startsWith('91') ? '+91 ' + d.slice(2, 7) + ' ' + d.slice(7) : '+' + d;
+  const remember = () => { try { sessionStorage.setItem('mutos-client-k', wanted); } catch (e) {} };
   if (!session) {
-    card('<h2>Your wedding with Muto\'s</h2><p>Sign in with the Gmail you gave Muto\'s to fill in the details of your functions.</p>' +
-      '<button type="button" class="pillbtn" id="gsign" style="width:100%">Sign in with Google</button><p style="font-size:12px;margin-top:4px">Only the Gmail you gave us can open your page. <a href="/privacy.html">Privacy</a></p>');
-    $('gsign').addEventListener('click', () => { try { sessionStorage.setItem('mutos-client-k', wanted); } catch (e) {} app.signIn(); });
+    let phoneOn = false;
+    try { const r = await fetch('/api/otp-status', { cache: 'no-store' }); phoneOn = r.ok && (await r.json()).ready === true; } catch (e) {}
+    const google = () => { remember(); app.signIn(); };
+    const start = () => {
+      card('<h2>Your wedding with Muto\'s</h2><p>Sign in with the phone number or Gmail you gave Muto\'s to fill in the details of your functions.</p>' +
+        (phoneOn ? '<div class="otp-row"><span class="cc">+91</span><input class="in" id="ph" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="16" placeholder="98765 43210" aria-label="Phone number"></div>' +
+          '<button type="button" class="pillbtn" id="psend" style="width:100%">Send code on WhatsApp</button><div class="or">or</div>' : '') +
+        '<button type="button" class="pillbtn' + (phoneOn ? ' light' : '') + '" id="gsign" style="width:100%">Sign in with Google</button><p style="font-size:12px;margin-top:4px">Only the number or Gmail you gave us can open your page. <a href="/privacy.html">Privacy</a></p>');
+      $('gsign').addEventListener('click', google);
+      if (!phoneOn) return;
+      const send = async () => {
+        const raw = $('ph').value.trim(), d = raw.startsWith('+') ? raw.replace(/\D/g, '') : norm(raw);
+        if (!/^\d{11,15}$/.test(d) || (d.startsWith('91') && d.length !== 12)) { toast('Please type your 10-digit mobile number.', true); $('ph').focus(); return; }
+        $('psend').disabled = true; $('psend').textContent = 'Sending…';
+        const { error } = await c.auth.signInWithOtp({ phone: '+' + d });
+        if (error) { $('psend').disabled = false; $('psend').textContent = 'Send code on WhatsApp'; toast(error.message || 'Could not send the code. Try again.', true); return; }
+        codeStep(d);
+      };
+      $('psend').addEventListener('click', send);
+      $('ph').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    };
+    const codeStep = d => {
+      card('<h2>Check WhatsApp</h2><p>We sent a 6-digit code to <b>' + esc(nice(d)) + '</b> on WhatsApp from Muto\'s. Tap <b>Copy code</b> there and paste it here.</p>' +
+        '<input class="in" id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" aria-label="Code">' +
+        '<button type="button" class="pillbtn" id="pverify" style="width:100%">Sign in</button>' +
+        '<p style="font-size:13px;display:flex;justify-content:space-between;gap:8px"><button type="button" class="linkbtn" id="pchange">Change number</button><button type="button" class="linkbtn" id="presend" disabled>Send again in 60 s</button></p>');
+      $('code').focus();
+      let left = 60; const tick = setInterval(() => { left--; const b = $('presend'); if (!b) { clearInterval(tick); return; } if (left <= 0) { clearInterval(tick); b.disabled = false; b.textContent = 'Send again'; } else b.textContent = 'Send again in ' + left + ' s'; }, 1000);
+      $('pchange').addEventListener('click', () => { clearInterval(tick); start(); });
+      $('presend').addEventListener('click', async () => { const { error } = await c.auth.signInWithOtp({ phone: '+' + d }); if (error) toast(error.message || 'Could not send the code.', true); else { clearInterval(tick); codeStep(d); toast('Sent again.'); } });
+      const verify = async () => {
+        const code = $('code').value.replace(/\D/g, '');
+        if (code.length !== 6) { toast('The code has 6 digits.', true); return; }
+        $('pverify').disabled = true; $('pverify').textContent = 'Checking…';
+        const { data, error } = await c.auth.verifyOtp({ phone: '+' + d, token: code, type: 'sms' });
+        if (error || !data || !data.session) { $('pverify').disabled = false; $('pverify').textContent = 'Sign in'; toast((error && error.message) || 'Wrong or old code. Try again.', true); return; }
+        clearInterval(tick); remember(); location.reload();
+      };
+      $('pverify').addEventListener('click', verify);
+      $('code').addEventListener('input', () => { if ($('code').value.replace(/\D/g, '').length === 6) verify(); });
+    };
+    start();
     return;
   }
   $('out').hidden = false;
-  const email = String(session.user.email || '').toLowerCase();
+  const email = String(session.user.email || '').toLowerCase(), phone = norm(session.user.phone);
+  const who = email || (phone ? nice(phone) : 'this account'), kind = email ? 'Gmail' : 'number';
   // 2. which weddings this Gmail may open (the owner and managers may preview any page they open with ?k=)
   const { data: mine, error: le } = await c.rpc('client_list');
   if (le) { fail('Could not open your page (' + le.message + '). Try again in a minute.'); return; }
@@ -78,15 +128,15 @@
   const want = wanted || remembered, list = mine || [];
   const token = (list.find(w => w.token === want) || list[0] || {}).token || want;
   if (!token) {
-    card('<h2>We could not find your wedding</h2><p>You are signed in as <b>' + esc(email) + '</b>, but this Gmail is not on Muto\'s list yet. Send this Gmail to Muto\'s on WhatsApp, then tap Try again. Or sign in with the Gmail you gave us.</p>' +
-      '<div class="pillrow"><button type="button" class="pillbtn" id="again">Try again</button><button type="button" class="pillbtn light" id="other">Another Gmail</button></div>');
-    $('again').addEventListener('click', () => location.reload()); $('other').addEventListener('click', () => app.signOut());
+    card('<h2>We could not find your wedding</h2><p>You are signed in as <b>' + esc(who) + '</b>, but this ' + kind + ' is not on Muto\'s list yet. Send it to Muto\'s on WhatsApp, then tap Try again. Or sign in with the number or Gmail you gave us.</p>' +
+      '<div class="pillrow"><button type="button" class="pillbtn" id="again">Try again</button><button type="button" class="pillbtn light" id="other">Sign in another way</button></div>');
+    $('again').addEventListener('click', () => location.reload()); $('other').addEventListener('click', () => app.signOut('/client.html'));
     return;
   }
   if (list.length > 1) $('pick').innerHTML = list.map(w => '<a href="/client.html?k=' + esc(w.token) + '" style="text-decoration:none"><span class="' + (w.token === token ? 'dark' : '') + '">' + esc(w.title) + '</span></a>').join('');
   const { data: got, error } = await c.rpc('client_get', { p_token: token });
   if (error || !got || got.error) {
-    if (got && got.not_listed) { card('<h2>Not your wedding?</h2><p>' + esc(got.error) + ' Sign in with the Gmail you gave Muto\'s.</p><button type="button" class="pillbtn light" id="other" style="width:100%">Use another Gmail</button>'); $('other').addEventListener('click', () => app.signOut()); }
+    if (got && got.not_listed) { card('<h2>Not your wedding?</h2><p>' + esc(got.error) + ' Sign in with the number or Gmail you gave Muto\'s.</p><button type="button" class="pillbtn light" id="other" style="width:100%">Sign in another way</button>'); $('other').addEventListener('click', () => app.signOut('/client.html')); }
     else fail((got && got.error) || 'Could not open your details. Check your internet and try again.');
     return;
   }

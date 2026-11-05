@@ -4,6 +4,7 @@
 import { sendPush } from './push.js';
 import { runBackup, listAll } from './backup.js';
 import { parseServiceAccount, exportSheetXlsx } from './google.js';
+import { smsHook, otpReady } from './whatsapp.js';
 
 const pad = n => String(n).padStart(2, '0');
 function istDate(offsetDays) { const d = new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 864e5); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
@@ -161,6 +162,10 @@ export default {
     if (url.pathname === '/api/team-sheet' && request.method === 'POST') {
       try { return await teamSheetApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
+    if (url.pathname === '/api/sms-hook' && request.method === 'POST') {
+      try { return await smsHook(request, env); } catch (e) { console.log('sms-hook', e); return Response.json({ error: { http_code: 500, message: 'Could not send the code. Please try again.' } }, { status: 500 }); }
+    }
+    if (url.pathname === '/api/otp-status') return Response.json({ ready: otpReady(env) }, { headers: { 'Cache-Control': 'no-store' } });
     if (url.pathname.startsWith('/api/backups')) {
       try { return await backupApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }

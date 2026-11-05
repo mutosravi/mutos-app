@@ -47,7 +47,7 @@
     // a client: their Gmail is on a wedding's list
     const cl = await (await app.client()).rpc('client_list');
     if (cl && cl.data && cl.data.length) { msg.textContent = 'Opening your wedding…'; location.replace('/client.html'); return; }
-    msg.textContent = 'Almost there.'; $('unk-email').textContent = me.email; $('unknown').hidden = false;
+    msg.textContent = 'Almost there.'; $('unk-email').textContent = me.email || (me.user.phone ? '+' + String(me.user.phone).replace(/^\+/, '') : ''); $('unknown').hidden = false;
   } catch (e) {
     msg.innerHTML = ''; const s = document.createElement('span'); s.className = 'err'; s.textContent = 'Could not reach the app (' + (e && e.message || e) + '). Check your internet and reload.'; msg.appendChild(s);
   }
