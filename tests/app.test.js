@@ -136,9 +136,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.waitForURL('**/board.html');
   await owner.waitForSelector('#mutos-bar');
   // the owner opens on Home: Today, Needs you, Quick menu, Coming up
-  await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
+  await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
   ok(await owner.isHidden('#sb-root'), 'owner: opens on Home with the board hidden underneath');
-  ok((await owner.$$('#mh-tiles .tile')).length >= 14 && (await owner.textContent('#mh-body')).includes('Coming up'), 'owner Home: quick menu tiles and coming-up list');
+  ok((await owner.$$('#mh-desks .desk')).length === 6 && (await owner.textContent('#mh-body')).includes('Coming up'), 'owner Home: six desks and the coming-up list');
+  await owner.click('[data-desk="shoots"]'); await owner.waitForSelector('#mh-desk #mh-tiles .tile');
+  ok((await owner.$$('#mh-desk .tile')).length >= 12 && (await owner.textContent('#mh-desk')).includes('Drones & freelancers'), 'Shoots desk opens its tools (board, crew, rentals, call sheet, billing…)');
+  await owner.click('#mh-desk .mh-x');
   await owner.waitForTimeout(800);
   await owner.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-home.png') });
   await owner.click('#mutos-bar [data-mh-view="board"]');
@@ -149,7 +152,8 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await settle(owner);
   const syncTxt = await owner.evaluate(() => document.body.innerText.match(/Saved to cloud[^\n]*/)?.[0] || '');
   ok(/Saved to cloud · \d+ shoots/.test(syncTxt), 'owner: board loaded from database (' + syncTxt + ' / ' + await owner.evaluate(() => document.getElementById('sb-sync-text').textContent) + ')');
-  ok(!!(await owner.$('#mutos-logins')), 'owner: Team logins button present');
+  await owner.click('#mutos-settings'); await owner.waitForSelector('#mh-more');
+  ok((await owner.textContent('#mh-more')).includes('Team logins'), 'owner: Team logins in Settings'); await owner.click('#mh-more .mh-x');
 
   // 3. give a shooter with upcoming shoots a Login Gmail
   const pick = await owner.evaluate(() => {
@@ -165,7 +169,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const CREW = 'crew.member@gmail.com';
   await owner.click('#mutos-bar [data-mh-view="home"]');
   ok(await owner.isVisible('#mutos-home'), 'Home button goes back to Home');
-  await owner.click('[data-tile="sb-manage-shooters"]');
+  await owner.click('[data-desk="shoots"]'); await owner.click('#mh-desk [data-tile="sb-manage-shooters"]');
   await owner.waitForSelector('.sb-modal');
   ok(true, 'Crew tile opens Manage shooters on top of Home');
   // open that person's edit form
@@ -315,15 +319,15 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await prev.context().close();
   // owner on a phone: Home, bottom bar, More, Board
   const oph = await as(OWNER, { width: 390, height: 844 });
-  await oph.goto(B + '/'); await oph.waitForURL('**/board.html'); await oph.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
+  await oph.goto(B + '/'); await oph.waitForURL('**/board.html'); await oph.waitForSelector('#mh-desks .desk', { timeout: 20000 });
   await oph.waitForTimeout(600);
-  ok(await oph.isVisible('.mh-bnav') && await oph.isHidden('#mutos-logins') && !(await oph.evaluate(() => document.documentElement.scrollWidth > innerWidth)), 'owner phone: bottom bar, no sideways scroll');
+  ok(await oph.isVisible('.mh-bnav') && await oph.isHidden('#mutos-settings') && !(await oph.evaluate(() => document.documentElement.scrollWidth > innerWidth)), 'owner phone: bottom bar, no sideways scroll');
   await oph.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-home-phone.png') });
   await oph.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-home-phone-full.png'), fullPage: true });
   await oph.click('#mh-nav-more'); await oph.waitForSelector('#mh-more');
-  ok((await oph.textContent('#mh-more')).includes('Team logins') && (await oph.textContent('#mh-more')).includes('Export to Excel'), 'More sheet has logins, backups and files');
+  ok((await oph.textContent('#mh-more')).includes('Team logins') && (await oph.textContent('#mh-more')).includes('Export to Excel'), 'Settings sheet has logins, backups and files');
   await oph.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-more-phone.png') });
-  await oph.click('#mh-more [data-act="logins"]'); await oph.waitForSelector('#lg-email'); ok(true, 'Team logins opens from More');
+  await oph.click('#mh-more [data-act="logins"]'); await oph.waitForSelector('#lg-email'); ok(true, 'Team logins opens from Settings');
   await oph.keyboard.press('Escape'); await oph.waitForTimeout(300);
   await oph.click('.mh-bnav [data-mh-view="board"]'); await oph.waitForTimeout(800);
   ok(await oph.isVisible('#sb-root') && await oph.isVisible('#sb-fab'), 'owner phone: Board tab shows the board and Plan button');
@@ -334,7 +338,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
   // 6. owner adds a manager in Team logins
   await owner.keyboard.press('Escape'); await owner.waitForTimeout(300);
-  await owner.click('#mutos-logins');
+  await owner.click('#mutos-settings'); await owner.click('#mh-more [data-act="logins"]');
   await owner.waitForSelector('#lg-email');
   await owner.fill('#lg-name', 'Test Manager'); await owner.fill('#lg-email', MANAGER); await owner.click('#lg-add');
   await owner.waitForTimeout(800);
@@ -346,7 +350,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
   // 6b. Gear desk: owner adds a gear manager, who hands out and takes back gear
   const GEAR = 'gear.desk@gmail.com';
-  await owner.click('#mutos-logins'); await owner.waitForSelector('#lg-gemail');
+  await owner.click('#mutos-settings'); await owner.click('#mh-more [data-act="logins"]'); await owner.waitForSelector('#lg-gemail');
   await owner.fill('#lg-gname', 'Desk Person'); await owner.fill('#lg-gemail', GEAR); await owner.click('#lg-gadd'); await owner.waitForTimeout(800);
   ok(roleOf(GEAR) === 'gear', 'owner added a gear manager');
   await owner.keyboard.press('Escape');
@@ -421,7 +425,8 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const mgr = await as(MANAGER);
   await mgr.goto(B + '/'); await mgr.waitForURL('**/board.html'); await mgr.waitForSelector('#mutos-bar');
   await mgr.waitForTimeout(2500);
-  ok(!(await mgr.$('#mutos-logins')), 'manager: no Team logins button');
+  await mgr.click('#mutos-settings'); await mgr.waitForSelector('#mh-more');
+  ok(!(await mgr.textContent('#mh-more')).includes('Team logins'), 'manager: no Team logins in Settings'); await mgr.click('#mh-more .mh-x');
   await mgr.evaluate(id => { const ev = window.__boardApi.state().events.find(e => e.id === id); ev.notes = 'Changed by manager'; }, target.id);
   await mgr.evaluate(() => window.__boardApi.save());
   await mgr.waitForTimeout(1500);

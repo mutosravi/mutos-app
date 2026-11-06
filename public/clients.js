@@ -278,6 +278,7 @@
   window.MUTOS_CLIENTS = {
     attach(a) { const first = !api; api = a; if (first) { load().then(() => { sync(); document.dispatchEvent(new Event('mutos:updates')); }).catch(() => {}); setInterval(() => load().then(sync).catch(() => {}), 10 * 60 * 1000); } },
     changed() { clearTimeout(this._t); this._t = setTimeout(sync, 3500); },
-    open, summary, money, _weddings: () => weddings(), _sync: sync, _load: load
+    open, summary, money, _weddings: () => weddings(), _sync: sync, _load: load,
+    packages() { if (!api) { alert('The board is still loading.'); return; } load().then(packagesWin).catch(e => api.toast('Could not load packages: ' + (e.message || e))); }
   };
 })();

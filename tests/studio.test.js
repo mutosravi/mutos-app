@@ -254,10 +254,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
   // ── 1. owner makes a client link from Home → Clients ──
   const owner = await as(OWNER, { viewport: { width: 1280, height: 900 } });
-  await owner.goto(B + '/'); await owner.waitForURL('**/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
-  ok(await owner.isVisible('[data-tile="clients"]') && await owner.isVisible('#mh-tiles a[href="/attendance.html"]'), 'owner Home has Clients and Attendance tiles');
+  await owner.goto(B + '/'); await owner.waitForURL('**/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
+  await owner.click('[data-desk="people"]'); await owner.waitForSelector('#mh-desk');
+  ok(await owner.isVisible('#mh-desk a[href="/attendance.html"]') && await owner.isVisible('#mh-desk a[href="/desk.html?tab=people"]'), 'owner Home → People desk has People and Attendance');
+  await owner.click('#mh-desk .mh-x'); await owner.click('[data-desk="clients"]'); await owner.waitForSelector('#mh-desk [data-tile="clients"]');
   ok(!(await owner.textContent('#mutos-bar .logo')).includes('Studio'), 'logo is just "Muto\'s"');
-  await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-make]');
+  await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-make]');
   const wed = await owner.evaluate(() => window.MUTOS_CLIENTS._weddings()[0]);
   ok(wed && wed.events.length >= 1, 'Clients lists upcoming weddings (first: ' + (wed && wed.title) + ', ' + (wed && wed.events.length) + ' functions)');
   await owner.click('.sb-modal [data-make="' + wed.key + '"]'); await owner.waitForSelector('#cg-mails');
@@ -563,8 +565,11 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
   // ── 11. packages, payments, client lock, jobs from the package ──
   [['Basic (edit me)', 0, [{ kind: 'top', per: 'wedding' }, { kind: 'lr', per: 'wedding' }]], ['Premium (edit me)', 0, [{ kind: 'reel', per: 'function' }, { kind: 'trailer', per: 'wedding' }, { kind: 'album', per: 'wedding', note: '40 sheets' }]]].forEach(([name, price, items]) => { const id = crypto.randomUUID(); T.packages.set(id, { id, name, price, items, active: true }); });
-  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
-  await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-book="' + wed.key + '"]');
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
+  await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-book="' + wed.key + '"]');
+  await owner.click('#cl-done'); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="packages"]'); await owner.waitForSelector('#pk-new');
+  ok(await owner.$$eval('[data-pk]', x => x.length) === 2, 'Clients desk → Packages opens the package list');
+  await owner.click('#pk-back'); await owner.waitForSelector('#cl-packages');
   await owner.click('#cl-packages'); await owner.waitForSelector('[data-pk]'); await owner.click('[data-pk="' + [...T.packages.values()].find(p => p.name.startsWith('Premium')).id + '"]'); await owner.waitForSelector('#pk-p');
   await owner.fill('#pk-p', '300000'); await owner.click('#pk-save'); await owner.waitForSelector('#pk-new');
   ok([...T.packages.values()].some(p => p.price === 300000), 'owner sets a package price in Clients → Packages');
@@ -599,7 +604,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await fam.click('#save'); await fam.waitForFunction(() => /Saved/.test(document.getElementById('saved').textContent));
   const it2 = T.client_itinerary.get(wed.key).data;
   ok(it2.contacts.length === 1 && it2.contacts[0].name === 'Rohit' && it2.vip.length === 1 && /^data:image\/jpeg;base64,/.test(it2.vip[0].photo) && it2.vip[0].photo.length < 60000, 'family saves a person to call and Dadi with a small photo');
-  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 }); await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
   await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal img');
   ok((await owner.textContent('.sb-modal')).includes('Rohit') && (await owner.textContent('.sb-modal')).includes('Dadi'), 'See answers shows the people to call and the important people with photos');
   const evId = T.client_feed.get(wed.key).data.functions[0].id;
@@ -629,12 +634,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(ih.includes('Before the app') && ih.includes('29,516') && !ih.includes('6,187'), 'Imran sees his own months before the app on his Pay tab (not Hamza\'s)');
 
   // ── 12. shooter profile and bill (board → Crew → profile) ──
-  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
   const who = await owner.evaluate(() => { const a = window.__boardApi, st = a.state(), today = a.todayStr(), n = new Map();
     st.events.filter(e => e.status !== 'cancelled' && e.date >= today).forEach(e => e.assignments.forEach(x => { const p = st.shooters.find(s => s.id === x.memberId); if (p && !/team/i.test(p.role || '')) n.set(p.name, (n.get(p.name) || 0) + 1); }));
     return [...n.entries()].sort((x, y) => y[1] - x[1])[0]; });
   await owner.evaluate(n => { const st = window.__boardApi.state(); st.shooters.filter(s => s.name === n).forEach(s => { s.rateShort = 3000; s.rateFull = 6000; }); }, who[0]);
-  await owner.click('[data-tile="sb-manage-shooters"]'); await owner.waitForSelector('#sb-manage-list .sb-manage-row');
+  await owner.click('[data-desk="shoots"]'); await owner.click('#mh-desk [data-tile="sb-manage-shooters"]'); await owner.waitForSelector('#sb-manage-list .sb-manage-row');
   const rowIdx = await owner.$$eval('#sb-manage-list .sb-manage-row', (rs, n) => rs.findIndex(r => (r.querySelector('.sb-manage-name') || {}).textContent.trim().startsWith(n)), who[0]);
   await owner.click('#sb-manage-list .sb-manage-row:nth-child(' + (rowIdx + 1) + ') .act-prof'); await owner.waitForSelector('#pf-bill');
   const prof = await owner.textContent('.sb-modal');
