@@ -9,8 +9,8 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments'].forEach(t => { T[t] = new Map(); });
-const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key };
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history'].forEach(t => { T[t] = new Map(); });
+const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
 T.att_settings.set('1', { id: 1, office_lat: null, office_lng: null, radius_m: 150, code_on: true, late_night_min: 120 });
@@ -38,6 +38,7 @@ function canSee(t, r, e) {
   // same rules as 008_drives.sql
   if (t === 'drives' || t === 'drive_items' || t === 'drive_log') return staff(e) || !!myPerson(e);
   if (['packages', 'bookings', 'booking_payments'].includes(t)) return staff(e) || payroll(e);
+  if (t === 'salary_history') return payroll(e) || r.person === myPerson(e);
   if (t === 'drive_moves') return staff(e) || keeper(e) || r.from_person === myPerson(e) || r.to_person === myPerson(e) || r.given_by === e;
   return staff(e);
 }
@@ -53,6 +54,7 @@ function canWrite(t, r, e) {
   if (t === 'drives') return r.id && T.drives.has(r.id) ? canDrive(e, r.id) : staff(e) || keeper(e);
   if (t === 'drive_items') return canDrive(e, r.drive);
   if (['packages', 'bookings', 'booking_payments'].includes(t)) return staff(e);
+  if (t === 'salary_history') return isOwner(e);
   if (t === 'drive_moves' || t === 'drive_log') return false;
   if (t === 'work_jobs' || t === 'work_reports') return staff(e) || (t === 'work_jobs' ? r.assignee && r.assignee === myPerson(e) : r.person === myPerson(e));
   return staff(e);
@@ -614,6 +616,18 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const pj = [...T.work_jobs.values()].filter(j => j.wedding_key === wed.key);
   const perFn = pj.filter(j => j.kind === 'reel' && j.fn_label);  // the wedding now has 2 functions (Tilak was added from the family's answers)
   ok(perFn.length === 2 && T.work_jobs.size - before === perFn.length + 1 /* the trailer was already on the desk */ && pj.some(j => j.kind === 'trailer') && pj.some(j => j.kind === 'album' && j.title === '40 sheets'), 'Add everything in the package: a reel per function + trailer + album (40 sheets)');
+
+  // ── 11b. salary history from before the app ──
+  [['2026-09', 15000, 20, 13500, 'Paid'], ['2026-10', 30000, 24, 29516, 'Paid']].forEach(([m, sal, pres, net, st]) => T.salary_history.set(PP('Imran').id + '|' + m, { person: PP('Imran').id, month: m, data: { profile: 'Photo/Album Designer', salary: sal, presents: pres, net, status: st, payment_note: 'UPI' } }));
+  T.salary_history.set(PP('Hamza').id + '|2026-10', { person: PP('Hamza').id, month: '2026-10', data: { salary: 9000, presents: 12, half_days: 10, net: 6187 } });
+  await owner.goto(B + '/attendance.html?tab=hist'); await owner.waitForSelector('#h-month');
+  const ht = await owner.textContent('#tab-hist');
+  ok(/Oct(ober)? 2026/.test(ht) && ht.includes('Imran') && ht.includes('29,516') && ht.includes('Hamza') && /2 people/.test(ht), 'Attendance → History shows the imported month with net pay per person');
+  await owner.selectOption('#h-month', '2026-09'); await owner.waitForFunction(() => /13,500/.test(document.getElementById('tab-hist').textContent));
+  ok(true, '… and earlier months');
+  const imp = await as(IMRAN); await imp.goto(B + '/work.html'); await imp.waitForSelector('.bnav .tab[data-tab="pay"]'); await imp.click('.bnav .tab[data-tab="pay"]'); await imp.waitForSelector('#hist .evrow');
+  const ih = await imp.textContent('#hist');
+  ok(ih.includes('Before the app') && ih.includes('29,516') && !ih.includes('6,187'), 'Imran sees his own months before the app on his Pay tab (not Hamza\'s)');
 
   // ── 12. shooter profile and bill (board → Crew → profile) ──
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });

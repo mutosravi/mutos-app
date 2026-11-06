@@ -66,6 +66,7 @@
   <section id="tab-pay" hidden>
     <div class="sechead"><h2>Salary this month so far</h2></div><div id="pay-now"></div>
     <div class="sechead"><h2>Payslips</h2></div><div id="slips"></div><div id="slip"></div>
+    <div id="hist"></div>
   </section>
   <p class="foot" id="foot"></p>
   <div class="toast" id="toast" hidden></div>
@@ -246,6 +247,13 @@
       $('slip').innerHTML = '<div class="sechead"><h2>Payslip · ' + esc(A.monthLabel(s.month)) + '</h2><button type="button" class="allbtn noprint" onclick="window.print()">Save as PDF</button></div><p class="sub">' + esc(emp.name) + ' · Muto\'s</p>' + linesHtml(s.data.lines || [], s.data.net);
       $('slip').scrollIntoView({ behavior: 'smooth' });
     }));
+    // months before the app (from the salary sheet)
+    try {
+      const pp = await c.from('people').select('id').eq('email', me.email).maybeSingle();
+      const { data: hs } = pp && pp.data ? await c.from('salary_history').select('month, data').eq('person', pp.data.id).order('month', { ascending: false }) : { data: [] };
+      $('hist').innerHTML = (hs || []).length ? '<div class="sechead"><h2>Before the app</h2></div><p class="sub" style="margin:0 0 6px">As written in the salary sheet.</p>' + hs.map(h => { const d = h.data || {};
+        return '<div class="evrow" style="cursor:default"><span class="txt"><b>' + esc(A.monthLabel(h.month)) + '</b><span>' + esc([d.presents != null ? d.presents + ' present' : '', d.half_days ? d.half_days + ' half day' : '', d.leave ? d.leave + ' leave' : '', d.late ? d.late + ' late' : '', d.status || ''].filter(Boolean).join(' · ')) + '</span></span><span class="pill mute">' + (d.net != null ? A.rs(d.net) : '–') + '</span></div>'; }).join('') : '';
+    } catch (e) {}
   }
 
   function showTab(t) {

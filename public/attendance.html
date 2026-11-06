@@ -50,6 +50,7 @@
   <button type="button" role="tab" class="tab" data-tab="pay"><span data-ic="money"></span>Salary</button>
   <button type="button" role="tab" class="tab" data-tab="people"><span data-ic="crew"></span>People</button>
   <button type="button" role="tab" class="tab" data-tab="hol"><span data-ic="calendar"></span>Holidays</button>
+  <button type="button" role="tab" class="tab" data-tab="hist"><span data-ic="list"></span>History</button>
   <button type="button" role="tab" class="tab" data-tab="set"><span data-ic="settings"></span>Settings</button>
 </nav>
   <p class="sub" id="who" style="margin-top:6px"></p>
@@ -58,6 +59,7 @@
   <section id="tab-pay" hidden></section>
   <section id="tab-people" hidden></section>
   <section id="tab-hol" hidden></section>
+  <section id="tab-hist" hidden></section>
   <section id="tab-set" hidden></section>
   <div class="toast" id="toast" hidden></div>
 </main>
@@ -242,6 +244,29 @@
     });
   }
 
+  // ---------- history: months before the app (salary sheet, as written) ----------
+  let histMonth = null;
+  async function renderHist() {
+    $('tab-hist').innerHTML = '<p class="sub">Loading…</p>';
+    const { data, error } = await c.from('salary_history').select('person, month, data').order('month', { ascending: false });
+    if (error) { $('tab-hist').innerHTML = '<div class="empty">History is not set up yet (run supabase/010_history.sql, then the history import file).</div>'; return; }
+    const months = [...new Set((data || []).map(h => h.month))];
+    if (!months.length) { $('tab-hist').innerHTML = '<div class="empty">No history yet. Run the history import file once in Supabase.</div>'; return; }
+    if (!months.includes(histMonth)) histMonth = months[0];
+    const rows = data.filter(h => h.month === histMonth).map(h => ({ p: people.find(x => x.id === h.person) || { name: '?', code: '' }, d: h.data || {} })).sort((x, y) => String(x.p.code).localeCompare(String(y.p.code)));
+    const n = v => v == null || v === 0 ? '' : String(v), total = rows.reduce((s, r) => s + Number(r.d.net || 0), 0);
+    $('tab-hist').innerHTML = '<div class="sechead"><h2>Before the app</h2></div><p class="sub">Copied as it was in the salary sheet. From November the app works it out from check-ins.</p>' +
+      '<div class="row2" style="margin:8px 0"><select class="in" id="h-month" style="width:auto">' + months.map(m => '<option value="' + m + '"' + (m === histMonth ? ' selected' : '') + '>' + esc(A.monthLabel(m)) + '</option>').join('') + '</select><span class="sub">' + rows.length + ' people · ' + A.rs(total) + ' net</span><button type="button" class="btn small" id="h-csv">Download for Excel</button></div>' +
+      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Person</th><th class="n">Salary</th><th class="n">Present</th><th class="n">Half</th><th class="n">Leave</th><th class="n">Paid leave</th><th class="n">Late</th><th class="n">Week off worked</th><th class="n">OT h</th><th class="n">Net</th><th>Paid</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td>' + (r.p.code ? '<span class="pill mute" style="margin-right:6px">' + esc(r.p.code) + '</span>' : '') + esc(r.p.name) + (r.d.profile ? '<div class="meta">' + esc(r.d.profile) + '</div>' : '') + '</td><td class="n">' + (r.d.salary != null ? A.rs(r.d.salary) : '') + '</td><td class="n">' + n(r.d.presents) + '</td><td class="n">' + n(r.d.half_days) + '</td><td class="n">' + n(r.d.leave) + '</td><td class="n">' + n(r.d.paid_leave) + '</td><td class="n">' + n(r.d.late) + '</td><td class="n">' + n(r.d.worked_week_off) + '</td><td class="n">' + n(r.d.ot_hours) + '</td><td class="n"><b>' + (r.d.net != null ? A.rs(r.d.net) : '') + '</b></td><td>' + esc([r.d.status, r.d.payment_note].filter(Boolean).join(' · ')) + '</td></tr>').join('') + '</tbody></table></div>';
+    $('h-month').addEventListener('change', e => { histMonth = e.target.value; renderHist(); });
+    $('h-csv').addEventListener('click', () => {
+      const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"', cols = ['salary', 'presents', 'half_days', 'leave', 'paid_leave', 'late', 'worked_week_off', 'ot_hours', 'net', 'status', 'payment_note'];
+      const lines = [['Code', 'Person', 'Salary', 'Present', 'Half day', 'Leave', 'Paid leave', 'Late', 'Week off worked', 'OT hours', 'Net', 'Status', 'Payment note'].map(q).join(',')].concat(rows.map(r => [r.p.code, r.p.name].concat(cols.map(k => r.d[k])).map(q).join(',')));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv' })); a.download = 'salary-history-' + histMonth + '.csv'; a.click();
+    });
+  }
+
   // ---------- holidays ----------
   async function renderHol() {
     const y = today.slice(0, 4), { data: hs } = await c.from('holidays').select('*').gte('day', y + '-01-01').order('day');
@@ -310,8 +335,8 @@
 
   function showTab(t) {
     document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-    ['today', 'req', 'pay', 'people', 'hol', 'set'].forEach(x => { $('tab-' + x).hidden = x !== t; });
-    ({ today: renderToday, req: renderReq, pay: renderPay, people: renderPeople, hol: renderHol, set: renderSet })[t]();
+    ['today', 'req', 'pay', 'people', 'hol', 'hist', 'set'].forEach(x => { $('tab-' + x).hidden = x !== t; });
+    ({ today: renderToday, req: renderReq, pay: renderPay, people: renderPeople, hol: renderHol, hist: renderHist, set: renderSet })[t]();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
