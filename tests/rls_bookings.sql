@@ -19,31 +19,31 @@ insert into bookings (wedding_key, title, package_name, items, total, plan, grac
 insert into booking_payments (wedding_key, amount, mode) values ('w:akriti', 100000, 'Bank');
 select pg_temp.check((select by_email from booking_payments) = 'm@x.com', 'the partner records the advance (with who recorded it)');
 select pg_temp.check((booking_summary('w:akriti') ->> 'paid')::numeric = 100000 and (booking_summary('w:akriti') ->> 'pending')::numeric = 200000 and (booking_summary('w:akriti') ->> 'overdue')::numeric = 150000
-  and (booking_summary('w:akriti') ->> 'locked')::boolean and booking_summary('w:akriti') ->> 'next_label' = 'Before the wedding', 'summary: paid 1L, pending 2L, 1.5L overdue → locked; next = Before the wedding');
+  and booking_summary('w:akriti') ->> 'next_label' = 'Before the wedding', 'summary: paid 1L, pending 2L, 1.5L overdue; next = Before the wedding');
 delete from booking_payments;
 select pg_temp.check((select count(*) from booking_payments) = 1, 'the partner cannot delete a payment (only the owner)');
 reset role;
 select set_config('t.tok', (select token::text from client_links), false);
 -- the family
 set role authenticated; set request.jwt.claims = '{"email":"akriti@gmail.com"}';
-select pg_temp.check((client_get(current_setting('t.tok')::uuid)) #>> '{booking,package}' = 'Premium' and ((client_get(current_setting('t.tok')::uuid)) #>> '{booking,locked}')::boolean, 'the family sees the package, payments and that the page is locked');
-select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"x"}}', false)) ? 'locked', 'locked: the family cannot change details');
+select pg_temp.check((client_get(current_setting('t.tok')::uuid)) #>> '{booking,package}' = 'Premium' and ((client_get(current_setting('t.tok')::uuid)) #>> '{booking,overdue}')::numeric = 150000, 'the family sees the package, payments and what is overdue');
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"x"}}', false)) ? 'ok', 'overdue does not lock: the family can still change their details');
 select pg_temp.expect_fail($$select * from bookings$$ || ' where 1/(select count(*) from bookings) = 1', 'the family reading bookings directly');
 reset role;
 set role authenticated; set request.jwt.claims = '{"email":"m@x.com"}';
 insert into booking_payments (wedding_key, amount, mode) values ('w:akriti', 150000, 'UPI');
 reset role;
 set role authenticated; set request.jwt.claims = '{"email":"akriti@gmail.com"}';
-select pg_temp.check(not ((client_get(current_setting('t.tok')::uuid)) #>> '{booking,locked}')::boolean and (client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj"}}', false)) ? 'ok', 'paid: the page opens again');
+select pg_temp.check(((client_get(current_setting('t.tok')::uuid)) #>> '{booking,overdue}')::numeric = 0, 'paid: nothing overdue');
 select pg_temp.check((client_get(current_setting('t.tok')::uuid)) #>> '{booking,next_label}' = 'On delivery', 'next due shown: On delivery');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_object('vip', repeat('a', 900000)), false)) ? 'ok', 'room for small photos of important people');
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_object('vip', repeat('a', 1600000)), false)) ? 'error', 'but not unlimited');
 reset role;
 set role authenticated; set request.jwt.claims = '{"email":"m@x.com"}';
-update bookings set lock_on = false, plan = jsonb_build_array(jsonb_build_object('label', 'All', 'due', current_date - 30, 'amount', 300000));
+update bookings set plan = jsonb_build_array(jsonb_build_object('label', 'All', 'due', current_date - 30, 'amount', 300000));
 reset role;
 set role authenticated; set request.jwt.claims = '{"email":"akriti@gmail.com"}';
-select pg_temp.check(not ((client_get(current_setting('t.tok')::uuid)) #>> '{booking,locked}')::boolean and ((client_get(current_setting('t.tok')::uuid)) #>> '{booking,overdue}')::numeric = 50000, 'lock switched off: overdue shown, page stays open');
+select pg_temp.check(((client_get(current_setting('t.tok')::uuid)) #>> '{booking,overdue}')::numeric = 50000 and (client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj"}}', false)) ? 'ok', 'overdue shown, page stays open');
 set request.jwt.claims = '{"email":"someone@gmail.com"}';
 select pg_temp.check(booking_summary('w:akriti') is null, 'a stranger gets no money details');
 set request.jwt.claims = '{"email":"c@x.com"}';

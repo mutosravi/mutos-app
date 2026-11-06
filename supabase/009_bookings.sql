@@ -3,8 +3,9 @@
 -- packages          the studio's packages: price and what is delivered (Reel per function, Trailer, Full film, LR edit, Album …)
 -- bookings          one per wedding (same wedding_key as the board/Clients): package, deliverables (editable), total, payment plan, lock rule
 -- booking_payments  money received (append-only for managers; only the owner deletes a wrong entry)
--- The client page shows the package and payments; when a payment is overdue (past its date + grace days) and the lock is on,
--- the family can still see everything but cannot change their details (client_save refuses) until it is paid. Only the studio can.
+-- The client page shows the package and payments, and a reminder when a payment is overdue (past its date + grace days).
+-- Decided 6 Nov: the family's details (itinerary) are NEVER locked for money. lock_on is kept for later: holding back
+-- deliveries (photo / film links) while a payment is late, once deliveries are on the client page.
 -- NOTE: client_get / client_save are redefined here (from 005). The parked phone sign-in (006, branch wip-phone-otp) also redefines them:
 -- merge both when the phone sign-in comes back.
 
@@ -29,7 +30,7 @@ create table if not exists public.bookings (
   items        jsonb not null default '[]' check (jsonb_typeof(items) = 'array'),
   total        numeric not null default 0 check (total >= 0),
   plan         jsonb not null default '[]' check (jsonb_typeof(plan) = 'array'),    -- [{ label, due: 'YYYY-MM-DD', amount }]
-  lock_on      boolean not null default true,
+  lock_on      boolean not null default false,   -- later: hold deliveries while late (never the itinerary)
   grace_days   smallint not null default 3 check (grace_days between 0 and 60),
   notes        text check (length(notes) <= 1000),
   created_by   text not null default public.my_email(),
@@ -55,7 +56,7 @@ begin new.by_email := public.my_email(); new.at := now(); return new; end $$;
 drop trigger if exists payment_by on public.booking_payments;
 create trigger payment_by before insert on public.booking_payments for each row execute function public.payment_by();
 
--- money summary of one wedding: what is paid, what is due by today, the next due date, and whether the client page is locked
+-- money summary of one wedding: what is paid, what is due by today, the next due date, what is overdue
 create or replace function public.booking_summary(p_key text) returns jsonb
   language plpgsql stable security definer set search_path = public as $$
 declare b public.bookings; paid numeric; due_now numeric; late numeric; nxt record; today date := (now() at time zone 'Asia/Kolkata')::date;
@@ -72,7 +73,7 @@ begin
   where upto > paid order by (x ->> 'due')::date limit 1;
   return jsonb_build_object('package', b.package_name, 'items', b.items, 'total', b.total, 'paid', paid, 'pending', greatest(b.total - paid, 0),
     'due_now', greatest(due_now - paid, 0), 'next_label', nxt.label, 'next_due', nxt.due, 'next_amount', case when nxt.due is null then null else least(nxt.amount, greatest(b.total - paid, 0)) end,
-    'locked', b.lock_on and late - paid > 0, 'overdue', greatest(late - paid, 0));
+    'hold_deliveries', b.lock_on and late - paid > 0, 'overdue', greatest(late - paid, 0));
 end $$;
 
 -- ── client page: now also shows the package and payments, and respects the lock ──
@@ -93,15 +94,11 @@ end $$;
 
 create or replace function public.client_save(p_token uuid, p_data jsonb, p_submit boolean) returns jsonb
   language plpgsql security definer set search_path = public as $$
-declare l public.client_links; s jsonb;
+declare l public.client_links;
 begin
   select * into l from public.client_links where token = p_token and active;
   if not found then return jsonb_build_object('error', 'This page is not active. Please ask Muto''s.'); end if;
   if not (public.my_email() <> '' and public.my_email() = any(l.emails)) then return jsonb_build_object('error', 'Only the family''s registered Gmail can fill this in.'); end if;
-  s := public.booking_summary(l.wedding_key);
-  if s is not null and (s ->> 'locked')::boolean then
-    return jsonb_build_object('error', 'Your details are locked until the pending payment of ₹' || to_char((s ->> 'overdue')::numeric, 'FM99,99,99,999') || ' is cleared. Please call Muto''s.', 'locked', true);
-  end if;
   -- room for small photos of the family's important people (each photo is shrunk on the phone first)
   if p_data is null or jsonb_typeof(p_data) <> 'object' or length(p_data::text) > 1500000 then return jsonb_build_object('error', 'Too much to save. Remove a few photos or shorten the notes.'); end if;
   insert into public.client_itinerary as c (wedding_key, data, submitted_at, updated_at)

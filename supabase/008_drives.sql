@@ -273,3 +273,6 @@ do $$ begin
   begin alter publication supabase_realtime add table public.drive_moves; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.drives; exception when duplicate_object then null; end;
 end $$;
+
+-- Kuldeep looks after the office drives (decided 6 Nov): he is the first drive keeper ("Data & drives" on People)
+update public.people set skills = array_append(skills, 'data') where lower(name) = 'kuldeep' and not ('data' = any(skills));

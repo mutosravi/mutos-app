@@ -126,7 +126,7 @@ function bookingSummary(key) {
   const plan = (b.plan || []).slice().sort((x, y) => x.due.localeCompare(y.due));
   const dueNow = plan.filter(x => x.due <= today).reduce((s, x) => s + x.amount, 0), late = plan.filter(x => plus(x.due, b.grace_days) < today).reduce((s, x) => s + x.amount, 0);
   let upto = 0, nxt = null; for (const x of plan) { upto += x.amount; if (upto > paid) { nxt = x; break; } }
-  return { package: b.package_name, items: b.items, total: b.total, paid, pending: Math.max(b.total - paid, 0), due_now: Math.max(dueNow - paid, 0), next_label: nxt && nxt.label, next_due: nxt && nxt.due, next_amount: nxt ? Math.min(nxt.amount, Math.max(b.total - paid, 0)) : null, locked: b.lock_on && late - paid > 0, overdue: Math.max(late - paid, 0) };
+  return { package: b.package_name, items: b.items, total: b.total, paid, pending: Math.max(b.total - paid, 0), due_now: Math.max(dueNow - paid, 0), next_label: nxt && nxt.label, next_due: nxt && nxt.due, next_amount: nxt ? Math.min(nxt.amount, Math.max(b.total - paid, 0)) : null, hold_deliveries: b.lock_on && late - paid > 0, overdue: Math.max(late - paid, 0) };
 }
 function rpc(fn, a, e) {
   // same rules as 005_client_login.sql
@@ -138,7 +138,6 @@ function rpc(fn, a, e) {
     const listed = l.emails.includes(e);
     if (fn === 'client_get') { if (!listed && !staff(e)) return { data: { error: 'This Gmail (' + e + ') is not on Muto\'s list for this wedding.', not_listed: true }, error: null }; const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null, preview: !listed, booking: bookingSummary(l.wedding_key) }, error: null }; }
     if (!listed) return { data: { error: 'Only the family\'s registered Gmail can fill this in.' }, error: null };
-    const bs = bookingSummary(l.wedding_key); if (bs && bs.locked) return { data: { error: 'Your details are locked until the pending payment is cleared.', locked: true }, error: null };
     const cur = T.client_itinerary.get(l.wedding_key) || { wedding_key: l.wedding_key };
     T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), submitted_at: a.p_submit ? new Date().toISOString() : cur.submitted_at || null }));
     return { data: { ok: true }, error: null };
@@ -577,21 +576,21 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   for (const [i, [l, d, amt]] of plan.entries()) { await owner.click('#bk-add-pl'); const r = '.bk-pl[data-i="' + i + '"] '; await owner.fill(r + '[data-f="label"]', l); await owner.fill(r + '[data-f="due"]', d); await owner.fill(r + '[data-f="amount"]', amt); }
   await owner.click('#bk-save'); await owner.waitForSelector('#py-add');
   const bk = T.bookings.get(wed.key);
-  ok(bk && bk.total === 300000 && bk.plan.length === 3 && bk.items.length === 3 && bk.lock_on === true && bk.package_name.startsWith('Premium'), 'booking saved: package, 3 deliverables, 3 instalments, lock on');
+  ok(bk && bk.total === 300000 && bk.plan.length === 3 && bk.items.length === 3 && bk.lock_on === false && bk.package_name.startsWith('Premium'), 'booking saved: package, 3 deliverables, 3 instalments');
   await owner.fill('#py-amt', '100000'); await owner.selectOption('#py-mode', 'Bank'); await owner.click('#py-add'); await owner.waitForFunction(() => /recorded/.test(document.querySelector('.sb-toast, #sb-toast, .toast') ? document.body.textContent : document.body.textContent));
   ok([...T.booking_payments.values()].some(p => p.amount === 100000 && p.by_email === OWNER), 'advance of ₹1,00,000 recorded');
   ok(/₹1,50,000 overdue/.test(await owner.textContent('.sb-modal')), 'the money line shows ₹1,50,000 overdue');
   ok((await owner.getAttribute('#bk-wa', 'href') || '').includes(encodeURIComponent('was due')), 'a WhatsApp payment reminder is ready');
   if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'booking.png') });
   await owner.click('#bk-back'); await owner.waitForSelector('.sb-modal [data-book]');
-  ok(/overdue · locked/.test(await owner.textContent('.sb-modal')), 'Clients list: "₹1,50,000 overdue · locked"');
+  ok(/₹1,50,000 overdue/.test(await owner.textContent('.sb-modal')), 'Clients list: "₹1,50,000 overdue"');
   await fam.goto(B + '/client.html'); await fam.waitForSelector('.fn');
   const ft = await fam.textContent('#top') + await fam.textContent('#list');
-  ok(ft.includes('Your package: Premium') && ft.includes('₹1,00,000') && /Payment pending/.test(ft) && await fam.isHidden('#bar') && await fam.$eval('.fn input.in', i => i.disabled), 'the family sees the package and payments; overdue → changes paused');
-  ok(rpc('client_save', { p_token: link.token, p_data: {}, p_submit: false }, FAM).data.locked, 'and the server refuses changes while locked');
+  ok(ft.includes('Your package: Premium') && ft.includes('₹1,00,000') && /Payment reminder/.test(ft) && await fam.isVisible('#bar') && !(await fam.$eval('.fn:not(.sec) input.in', i => i.disabled)), 'the family sees the package, payments and a reminder; their details stay editable');
+  ok(rpc('client_save', { p_token: link.token, p_data: {}, p_submit: false }, FAM).data.ok, 'and the server keeps saving while a payment is overdue');
   T.booking_payments.set('p2', { id: 'p2', wedding_key: wed.key, amount: 150000, paid_on: istDay(), mode: 'UPI' });
   await fam.reload(); await fam.waitForSelector('#bar:not([hidden])');
-  ok(!(await fam.textContent('#top')).includes('Payment pending') && (await fam.textContent('#list')).includes('On delivery'), 'paid: the page opens again and shows the next payment');
+  ok(!(await fam.textContent('#top')).includes('Payment reminder') && (await fam.textContent('#list')).includes('On delivery'), 'paid: the reminder goes and the next payment shows');
   // the family adds people to call and important people with a photo; the crew on that shoot see them
   await fam.click('#add-c'); await fam.fill('#sec-contacts [data-f="name"]', 'Rohit'); await fam.fill('#sec-contacts [data-f="rel"]', 'Bride\'s brother'); await fam.fill('#sec-contacts [data-f="phone"]', '9876500011');
   await fam.click('#add-v'); await fam.fill('#sec-vip [data-f="name"]', 'Dadi'); await fam.fill('#sec-vip [data-f="rel"]', 'Grandmother');

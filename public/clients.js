@@ -15,7 +15,7 @@
     const lateBy = plan.filter(x => addDaysStr(x.due, b.grace_days) < t).reduce((s2, x) => s2 + Number(x.amount), 0);
     let upto = 0, next = null; for (const x of plan) { upto += Number(x.amount); if (upto > paid) { next = x; break; } }
     const overdue = Math.max(0, lateBy - paid);
-    return { b, paid, pending: Math.max(0, Number(b.total) - paid), overdue, locked: b.lock_on && overdue > 0, next, soon: next && next.due >= t && next.due <= addDaysStr(t, 7) };
+    return { b, paid, pending: Math.max(0, Number(b.total) - paid), overdue, next, soon: next && next.due >= t && next.due <= addDaysStr(t, 7) };
   }
   const todayIST = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   const addDaysStr = (d, n) => { const x = new Date(String(d) + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + Number(n || 0)); return x.toISOString().slice(0, 10); };
@@ -108,7 +108,7 @@
   }
   function moneyPill(key) {
     const m = money(key); if (!m) return '';
-    if (m.overdue > 0) return '<span class="pill no" style="font-size:11px;white-space:nowrap">' + inr(m.overdue) + ' overdue' + (m.locked ? ' · locked' : '') + '</span>';
+    if (m.overdue > 0) return '<span class="pill no" style="font-size:11px;white-space:nowrap">' + inr(m.overdue) + ' overdue' + '</span>';
     if (m.pending <= 0) return '<span class="pill ok" style="font-size:11px">Paid in full</span>';
     return '<span class="pill mute" style="font-size:11px;white-space:nowrap">' + inr(m.pending) + ' to come' + (m.next ? ' · next ' + dayName(m.next.due) : '') + '</span>';
   }
@@ -116,7 +116,7 @@
   // ---------- package & payments of one wedding ----------
   function booking(w) {
     const old = bookings.find(b => b.wedding_key === w.key), m = money(w.key);
-    const x = old ? JSON.parse(JSON.stringify(old)) : { items: [], plan: [], total: 0, lock_on: true, grace_days: 3, package_id: null, package_name: '' };
+    const x = old ? JSON.parse(JSON.stringify(old)) : { items: [], plan: [], total: 0, lock_on: false, grace_days: 3, package_id: null, package_name: '' };
     const pays = payments.filter(p => p.wedding_key === w.key);
     const itemRow = (it, i) => '<div class="bk-it" data-i="' + i + '" style="display:grid;grid-template-columns:1.3fr 1fr .7fr auto;gap:6px;margin:4px 0"><select class="sb-field" data-f="kind">' + KIND_LABELS.map(([k, l]) => '<option value="' + k + '"' + (it.kind === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>' +
       '<select class="sb-field" data-f="per"><option value="wedding"' + (it.per !== 'function' ? ' selected' : '') + '>whole wedding</option><option value="function"' + (it.per === 'function' ? ' selected' : '') + '>each function</option></select>' +
@@ -124,12 +124,12 @@
     const planRow = (p2, i) => '<div class="bk-pl" data-i="' + i + '" style="display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:6px;margin:4px 0"><input class="sb-field" data-f="label" placeholder="Advance / Before wedding" value="' + esc(p2.label || '') + '"><input class="sb-field" type="date" data-f="due" value="' + esc(p2.due || '') + '">' +
       '<input class="sb-field" type="number" min="0" data-f="amount" placeholder="₹" value="' + esc(p2.amount || '') + '"><button type="button" class="sb-btn-sm secondary" data-rm-pl="' + i + '">✕</button></div>';
     const html = '<div style="padding:0 16px 8px;overflow-y:auto;flex:1;min-height:0">' +
-      (m ? '<div class="sb-manage-sub" style="margin-bottom:8px;font-size:13px"><b>' + inr(m.paid) + '</b> received of ' + inr(m.b.total) + ' · <b>' + inr(m.pending) + '</b> to come' + (m.overdue ? ' · <b style="color:#7a2d1e">' + inr(m.overdue) + ' overdue' + (m.locked ? ', the family\'s page is locked' : '') + '</b>' : '') + (m.next ? ' · next: ' + esc(m.next.label || '') + ' ' + inr(m.next.amount) + ' on ' + esc(dayName(m.next.due)) : '') + '</div>' : '') +
+      (m ? '<div class="sb-manage-sub" style="margin-bottom:8px;font-size:13px"><b>' + inr(m.paid) + '</b> received of ' + inr(m.b.total) + ' · <b>' + inr(m.pending) + '</b> to come' + (m.overdue ? ' · <b style="color:#7a2d1e">' + inr(m.overdue) + ' overdue' + '' + '</b>' : '') + (m.next ? ' · next: ' + esc(m.next.label || '') + ' ' + inr(m.next.amount) + ' on ' + esc(dayName(m.next.due)) : '') + '</div>' : '') +
       '<label class="sb-manage-sub">Package<select class="sb-field" id="bk-pkg"><option value="">Custom (no package)</option>' + packages.filter(p2 => p2.active || p2.id === x.package_id).map(p2 => '<option value="' + p2.id + '"' + (p2.id === x.package_id ? ' selected' : '') + '>' + esc(p2.name) + (Number(p2.price) ? ' · ' + inr(p2.price) : '') + '</option>').join('') + '</select></label>' +
       '<label class="sb-manage-sub" style="display:block;margin-top:8px">Total agreed (₹)<input class="sb-field" id="bk-total" type="number" min="0" value="' + esc(x.total || '') + '"></label>' +
       '<div class="sb-manage-sub" style="margin-top:10px"><b>Deliverables</b> (the work desk can add these as jobs in one tap)</div><div id="bk-items">' + x.items.map(itemRow).join('') + '</div><button type="button" class="sb-btn-sm secondary" id="bk-add-it">＋ Deliverable</button>' +
       '<div class="sb-manage-sub" style="margin-top:12px"><b>Payment plan</b></div><div id="bk-plan">' + x.plan.map(planRow).join('') + '</div><button type="button" class="sb-btn-sm secondary" id="bk-add-pl">＋ Instalment</button>' +
-      '<label class="sb-manage-sub" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="bk-lock"' + (x.lock_on ? ' checked' : '') + '> Lock the family\'s page (no changes) when a payment is more than <input class="sb-field" id="bk-grace" type="number" min="0" max="60" value="' + esc(x.grace_days) + '" style="width:60px;display:inline-block"> days late</label>' +
+      '<label class="sb-manage-sub" style="display:flex;gap:8px;align-items:center;margin-top:12px">A payment counts as overdue <input class="sb-field" id="bk-grace" type="number" min="0" max="60" value="' + esc(x.grace_days) + '" style="width:60px;display:inline-block"> days after its date (the family sees a reminder; their details never lock)</label>' +
       '<label class="sb-manage-sub" style="display:block;margin-top:8px">Notes<textarea class="sb-field" id="bk-notes" rows="2">' + esc(x.notes || '') + '</textarea></label>' +
       '<div class="sb-manage-sub" style="margin-top:14px"><b>Payments received</b></div>' + (pays.length ? pays.map(p2 => '<div class="sb-manage-sub" style="display:flex;justify-content:space-between;border-top:1px dashed #e8dccf;padding:5px 0"><span>' + esc(dayName(p2.paid_on)) + ' · ' + esc(p2.mode) + (p2.note ? ' · ' + esc(p2.note) : '') + '</span><b>' + inr(p2.amount) + '</b></div>').join('') : '<div class="sb-manage-sub">None yet.</div>') +
       (old ? '<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-top:6px"><input class="sb-field" id="py-amt" type="number" min="1" placeholder="Amount ₹"><input class="sb-field" id="py-date" type="date" value="' + todayIST() + '"><select class="sb-field" id="py-mode">' + ['UPI', 'Bank', 'Cash', 'Cheque', 'Other'].map(o => '<option>' + o + '</option>').join('') + '</select><button type="button" class="sb-btn-sm" id="py-add">Add</button></div><input class="sb-field" id="py-note" placeholder="Note (optional)" style="margin-top:4px">' : '<div class="sb-manage-sub">Save first, then add payments.</div>') +
@@ -161,7 +161,7 @@
       if (planSum > total) { api.toast('The instalments (' + inr(planSum) + ') are more than the total (' + inr(total) + ').'); return; }
       const p2 = packages.find(k => k.id === q('#bk-pkg').value);
       const row = { wedding_key: w.key, title: w.title.slice(0, 120), package_id: p2 ? p2.id : null, package_name: p2 ? p2.name : (x.package_name && !x.package_id ? x.package_name : 'Custom'), items: x.items, total, plan: x.plan.map(p3 => ({ label: p3.label || 'Instalment', due: p3.due, amount: p3.amount })),
-        lock_on: q('#bk-lock').checked, grace_days: Math.max(0, Math.min(60, Number(q('#bk-grace').value) || 0)), notes: q('#bk-notes').value.trim() || null };
+        lock_on: !!x.lock_on, grace_days: Math.max(0, Math.min(60, Number(q('#bk-grace').value) || 0)), notes: q('#bk-notes').value.trim() || null };
       const c = await app.client(); const { error } = await c.from('bookings').upsert(row);
       if (error) { api.toast('Could not save: ' + error.message + (/bookings/.test(error.message) ? ' (run supabase/009_bookings.sql)' : '')); return; }
       await load(); document.dispatchEvent(new Event('mutos:updates')); api.toast(planSum < total ? 'Saved. ' + inr(total - planSum) + ' of the total has no instalment date yet.' : 'Saved.'); booking(w);
