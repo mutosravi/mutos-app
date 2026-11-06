@@ -15,11 +15,13 @@
 
   // crew members with a login, and what their page shows right now (computed from the board, so always current)
   function people() {
-    const st = api.state(), m = new Map();
-    st.shooters.concat(st.assistants).forEach(p => { if (!p.email || p.left) return; const k = api.normalizeName(p.name); if (!m.has(k)) m.set(k, { key: k, name: p.name }); });
-    m.forEach(p => { p.shoots = api.crewFeedFor(p.key, addDays(today(), -30)); });
+    const A = window.MUTOS_APP, st = api.state();
+    const m = A && A.crewGroups ? A.crewGroups() : new Map();
+    if (!m.size) st.shooters.concat(st.assistants).forEach(p => { if (!p.email || p.left) return; const k = api.normalizeName(p.name); if (!m.has(k)) m.set(k, { key: k, name: p.name, keys: [k] }); });
+    m.forEach(p => { const seen = new Set(); p.shoots = []; (p.keys || [p.key]).forEach(k => api.crewFeedFor(k, addDays(today(), -30)).forEach(s => { if (!seen.has(s.id)) { seen.add(s.id); p.shoots.push(s); } })); });
     return m;
   }
+  const keysOf = key => (window.MUTOS_APP && window.MUTOS_APP.keysFor ? window.MUTOS_APP.keysFor(key) : [key]);
   function nameOf(key) { const r = api.recordsForKey(key)[0]; return r ? r.name : key; }
 
   async function load() {
@@ -37,9 +39,13 @@
   function mirror() {
     const st = api.state(), want = new Map();
     aways.filter(r => r.status === 'auto' || r.status === 'approved').forEach(r => {
-      const rec = st.shooters.find(p => api.normalizeName(p.name) === r.person_key) || st.assistants.find(p => api.normalizeName(p.name) === r.person_key);
-      if (!rec) return;
-      want.set(MIRROR + r.id, { id: MIRROR + r.id, personType: st.shooters.includes(rec) ? 'shooter' : 'assistant', personId: rec.id, date: r.date, slot: r.slot, reason: 'Not available (from app)' + (r.reason ? ': ' + r.reason : '') });
+      // one away entry per board name of this person (a name blocks all its roles; a second name with the same Gmail needs its own)
+      keysOf(r.person_key).forEach((k, i) => {
+        const rec = st.shooters.find(p => api.normalizeName(p.name) === k) || st.assistants.find(p => api.normalizeName(p.name) === k);
+        if (!rec) return;
+        const id = MIRROR + r.id + (i ? '~' + i : '');
+        want.set(id, { id, personType: st.shooters.includes(rec) ? 'shooter' : 'assistant', personId: rec.id, date: r.date, slot: r.slot, reason: 'Not available (from app)' + (r.reason ? ': ' + r.reason : '') });
+      });
     });
     let changed = 0;
     st.unavailability = st.unavailability.filter(u => {

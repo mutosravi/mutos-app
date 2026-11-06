@@ -5,16 +5,34 @@
   let api = null, timer = null, busy = false, again = false, known = null, last = { at: '', feeds: 0, error: '' };
   const sigOf = d => JSON.stringify([d.name, d.shoots]);
 
-  // people with a Login Gmail, grouped by name (a shooter and an assistant with one name are one person)
-  function wanted() {
-    const st = api.state(), byKey = new Map();
-    st.shooters.concat(st.assistants).forEach(p => {
+  // people with a Login Gmail, grouped by name (a shooter and an assistant with one name are one person: "Ravi · Cine" and
+  // "Ravi · Drone" share one page). Entries with different names but the same Gmail are one person too: their page shows
+  // the shoots of all of them (keys), under the first name's key.
+  function groupCrew(records, norm) {
+    const byKey = new Map();
+    records.forEach(p => {
       if (!p.email || p.left) return;
-      const k = api.normalizeName(p.name);
-      if (!byKey.has(k)) byKey.set(k, { key: k, name: p.name, emails: new Set() });
-      byKey.get(k).emails.add(p.email);
+      const k = norm(p.name);
+      if (!byKey.has(k)) byKey.set(k, { key: k, name: p.name, emails: new Set(), keys: [k] });
+      byKey.get(k).emails.add(String(p.email).toLowerCase());
     });
+    // join groups that share a Gmail
+    const byMail = new Map();
+    for (const g of [...byKey.values()]) {
+      const other = [...g.emails].map(e => byMail.get(e)).find(Boolean);
+      if (other && other !== g) { g.keys.forEach(k => other.keys.push(k)); g.emails.forEach(e => other.emails.add(e)); byKey.delete(g.key); other.emails.forEach(e => byMail.set(e, other)); }
+      else g.emails.forEach(e => byMail.set(e, g));
+    }
     return byKey;
+  }
+  function wanted() { const st = api.state(); return groupCrew(st.shooters.concat(st.assistants), api.normalizeName); }
+  // every board key that belongs to the person whose page key is `key`
+  function keysFor(key) { if (!api) return [key]; const g = wanted().get(key); return g ? g.keys : [key]; }
+  function feedFor(g, since) {
+    if (g.keys.length === 1) return api.crewFeedFor(g.key, since);
+    const seen = new Set(), all = [];
+    g.keys.forEach(k => api.crewFeedFor(k, since).forEach(s => { if (!seen.has(s.id)) { seen.add(s.id); all.push(s); } }));
+    return all.sort((a, b) => a.date.localeCompare(b.date) || String(a.slot).localeCompare(String(b.slot)));
   }
 
   async function push() {
@@ -29,7 +47,7 @@
       let wrote = 0;
       const d30 = new Date(Date.now() - 45 * 864e5), pad = n => String(n).padStart(2, '0'), since = d30.getFullYear() + '-' + pad(d30.getMonth() + 1) + '-' + pad(d30.getDate());
       for (const p of want.values()) {
-        const data = { name: p.name, shoots: api.crewFeedFor(p.key, since), updated: new Date().toISOString() }; // includes the last 30 days, for data handover and gear return
+        const data = { name: p.name, shoots: feedFor(p, since), updated: new Date().toISOString() }; // includes the last 30 days, for data handover and gear return
         const sig = sigOf(data);
         if (known.get(p.key) === sig) continue;
         const { error } = await c.from('crew_feed').upsert({ person_key: p.key, name: p.name, data });
@@ -179,7 +197,7 @@
   window.MUTOS_APP = {
     attach(a) { const first = !api; api = a; window.__boardApi = a; if (first) { push(); setInterval(push, 10 * 60 * 1000); } if (window.MUTOS_UPDATES) window.MUTOS_UPDATES.attach(a); if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.attach(a); },
     changed() { clearTimeout(timer); timer = setTimeout(push, 3000); if (window.MUTOS_UPDATES) window.MUTOS_UPDATES.changed(); if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.changed(); },
-    openLogins, openBackups,
+    openLogins, openBackups, keysFor, groupCrew, crewGroups: () => (api ? wanted() : new Map()),
     _push: push, _last: () => last
   };
 })();

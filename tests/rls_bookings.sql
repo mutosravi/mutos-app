@@ -59,4 +59,15 @@ reset role;
 set role anon; set request.jwt.claims = '{}';
 select pg_temp.expect_fail($$select * from bookings$$, 'visitor reading bookings');
 reset role;
+-- crew see the family's important people only for their own shoots
+insert into client_feed (wedding_key, data) values ('w:akriti', '{"functions":[{"id":"e1","name":"Haldi"},{"id":"e2","name":"Wedding"}]}') on conflict (wedding_key) do update set data = excluded.data;
+update client_itinerary set data = '{"vip":[{"name":"Dadi","rel":"Grandmother","photo":"data:image/jpeg;base64,xx"}],"contacts":[{"name":"Rohit","phone":"98","fn":"e2"},{"name":"Papa","phone":"97","fn":""}]}' where wedding_key = 'w:akriti';
+insert into crew_feed (person_key, name, data) values ('hamza', 'Hamza', '{"shoots":[{"id":"e1"}]}') on conflict (person_key) do update set data = excluded.data;
+set role authenticated; set request.jwt.claims = '{"email":"c@x.com"}';
+select pg_temp.check(crew_vip('e1') #>> '{vip,0,name}' = 'Dadi' and jsonb_array_length(crew_vip('e1') -> 'contacts') = 1 and crew_vip('e1') #>> '{contacts,0,name}' = 'Papa', 'crew on the Haldi see Dadi and the contacts for all functions (not the Wedding-only one)');
+select pg_temp.check(crew_vip('e2') ? 'error', 'but not for a shoot they are not on');
+reset role;
+set role authenticated; set request.jwt.claims = '{"email":"someone@gmail.com"}';
+select pg_temp.check(crew_vip('e1') ? 'error', 'strangers see nothing');
+reset role;
 select 'ALL BOOKING CHECKS PASSED';

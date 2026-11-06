@@ -14,11 +14,38 @@
 <link rel="stylesheet" href="/app.css">
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
+<style>
+/* sign-in: centred, Blush & gold */
+body { background: var(--bg); }
+.si-bg { position: fixed; inset: 0; overflow: hidden; z-index: 0; pointer-events: none; }
+.si-bg i { position: absolute; border-radius: 50%; filter: blur(60px); opacity: .75; }
+.si-bg i:nth-child(1) { width: 380px; height: 380px; background: #f4d9d0; top: -120px; left: -110px; }
+.si-bg i:nth-child(2) { width: 300px; height: 300px; background: #f2dfa7; bottom: -90px; right: -80px; opacity: .6; }
+.si-bg i:nth-child(3) { width: 220px; height: 220px; background: #e6d8ec; top: 38%; right: -120px; opacity: .55; }
+main.signin { position: relative; z-index: 1; align-items: center; text-align: center; justify-content: center; gap: 0; }
+.si-mark { position: relative; width: 168px; height: 168px; margin: 0 auto 18px; display: grid; place-items: center; }
+.si-mark svg { position: absolute; inset: 0; animation: si-turn 28s linear infinite; }
+@keyframes si-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .si-mark svg { animation: none; } }
+.si-mark .logo { position: relative; z-index: 1; } .si-mark .logo b { font-size: 36px; }
+.signin h1 { margin: 6px 0 4px; font-size: 24px; font-weight: 600; }
+.si-tag { color: var(--muted); font-size: 14px; margin: 0 0 22px; }
+.signin .card { width: 100%; text-align: center; padding: 22px 20px; border-radius: 28px; box-shadow: 0 18px 50px rgba(158,79,98,.14); }
+.signin .btn.primary { min-height: 52px; font-size: 15.5px; border-radius: 999px; }
+.si-who { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 18px; }
+.si-who span { font-size: 12px; background: rgba(255,255,255,.75); border-radius: 999px; padding: 5px 11px; color: var(--ink); }
+.signin #msg { min-height: 20px; }
+</style>
 </head>
 <body>
+<div class="si-bg" aria-hidden="true"><i></i><i></i><i></i></div>
 <main class="signin">
-  <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
-  <h1>Team app</h1>
+  <div class="si-mark">
+    <svg viewBox="0 0 168 168" aria-hidden="true"><circle cx="84" cy="84" r="80" fill="none" stroke="#c9973f" stroke-width="1.3" stroke-dasharray="2 8" stroke-linecap="round"/><circle cx="84" cy="84" r="70" fill="#fff" fill-opacity=".8"/><circle cx="84" cy="84" r="70" fill="none" stroke="#f4d9d0" stroke-width="6"/></svg>
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+  </div>
+  <h1 id="hello">Welcome</h1>
+  <p class="si-tag">Shoots, editing, drives, attendance and your wedding page, all in one place.</p>
   <p class="sub" id="msg">Checking your sign-in…</p>
   <div id="signin" class="card" hidden>
     <button type="button" class="btn primary" id="go-google">
@@ -27,6 +54,7 @@
     </button>
     <p class="sub" style="margin:14px 0 0">Use the Gmail address you gave the studio. <a href="/privacy.html">Privacy</a></p>
   </div>
+  <div class="si-who" aria-label="Who signs in here"><span>Crew</span><span>Editors</span><span>Office</span><span>Families</span></div>
   <div id="unknown" class="card" hidden>
     <p class="sub" style="margin:0 0 14px">You are signed in as <b id="unk-email"></b>, but this account is not on the team list yet. Send this address to Ravi on WhatsApp, then come back and tap Try again.</p>
     <div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn primary" id="retry">Try again</button><button type="button" class="btn" id="other">Use another Google account</button></div>
@@ -35,6 +63,7 @@
 <script>
 (async function () {
   const $ = id => document.getElementById(id), msg = $('msg'), app = window.mutosApp;
+  const hr = new Date(Date.now() + 330 * 60000).getUTCHours(); $('hello').textContent = hr < 5 ? 'Welcome' : hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   const cfg = window.MUTOS_CONFIG || {};
   if (!window.__mutosTestClient && (!cfg.supabaseUrl || cfg.supabaseUrl.includes('YOUR-PROJECT'))) { msg.textContent = 'The app is not set up yet: fill in config.js (see README).'; return; }
   $('go-google').addEventListener('click', () => { msg.textContent = 'Opening Google…'; window.mutosApp.signIn(); });
@@ -42,7 +71,7 @@
   $('other').addEventListener('click', () => window.mutosApp.signOut());
   try {
     const me = await window.mutosApp.me();
-    if (!me) { msg.textContent = 'Sign in to see your shoots.'; $('signin').hidden = false; return; }
+    if (!me) { msg.textContent = 'Sign in to continue.'; $('signin').hidden = false; return; }
     if (me.role && app.homeFor(me.role) !== '/') { msg.textContent = 'Opening…'; location.replace(app.homeFor(me.role)); return; }
     // a client: their Gmail is on a wedding's list
     const cl = await (await app.client()).rpc('client_list');

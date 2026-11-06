@@ -143,3 +143,22 @@ select * from (values
   ('Premium (edit me)', 0::numeric, '[{"kind":"reel","per":"function"},{"kind":"trailer","per":"wedding"},{"kind":"full","per":"wedding"},{"kind":"top","per":"wedding"},{"kind":"lr","per":"wedding"},{"kind":"album_sel","per":"wedding"},{"kind":"album","per":"wedding","qty":40,"note":"40 sheets"}]'::jsonb, 'Placeholder: set the real price and deliverables')
 ) as v(name, price, items, notes)
 where not exists (select 1 from public.packages);
+
+-- ── crew see the family's important people and contacts for a shoot they are on ──
+-- (the board keeps client_feed.functions = the wedding's shoots; crew_feed.data.shoots = a crew member's shoots)
+create or replace function public.crew_vip(p_event text) returns jsonb
+  language plpgsql stable security definer set search_path = public as $$
+declare k text; d jsonb;
+begin
+  if not (public.is_staff() or exists (select 1 from public.crew_feed f, jsonb_array_elements(coalesce(f.data -> 'shoots', '[]'::jsonb)) s
+                                       where f.person_key = public.my_person_key() and s ->> 'id' = p_event)) then
+    return jsonb_build_object('error', 'Only the crew on this shoot can see the family''s details.');
+  end if;
+  select cf.wedding_key into k from public.client_feed cf, jsonb_array_elements(coalesce(cf.data -> 'functions', '[]'::jsonb)) fn where fn ->> 'id' = p_event limit 1;
+  if k is null then return jsonb_build_object('vip', '[]'::jsonb, 'contacts', '[]'::jsonb); end if;
+  select data into d from public.client_itinerary where wedding_key = k;
+  return jsonb_build_object('vip', coalesce(d -> 'vip', '[]'::jsonb),
+    'contacts', coalesce((select jsonb_agg(c) from jsonb_array_elements(coalesce(d -> 'contacts', '[]'::jsonb)) c where coalesce(c ->> 'fn', '') in ('', p_event)), '[]'::jsonb));
+end $$;
+revoke all on function public.crew_vip(text) from public, anon;
+grant execute on function public.crew_vip(text) to authenticated;

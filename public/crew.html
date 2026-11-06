@@ -223,6 +223,7 @@
     if (s.team && s.team.length) h += '<div class="row"><span class="k">Team with you</span><ul class="team">' + s.team.map(t => '<li>' + esc(t.name) + ' <span class="meta" style="display:inline">' + esc(t.role) + '</span>' + (t.phone ? ' · <a href="' + tel(t.phone) + '">call</a>' : '') + '</li>').join('') + '</ul></div>';
     (s.travel || []).forEach(t => { h += '<div class="row">' + esc(t) + '</div>'; });
     if (s.notes) h += '<div class="row note"><span class="k" style="color:inherit">Note from the studio</span>' + esc(s.notes) + '</div>';
+    h += '<div class="row small"><button type="button" class="chip" data-act="vip">👪 Family: important people & who to call</button><div class="vipbox"></div></div>';
     return h + '</article>';
   }
 
@@ -335,6 +336,16 @@
       on('ics', () => downloadIcs([s], s.shoot.replace(/[^\w]+/g, '-')));
       on('gear-out', () => saveStatus(s, { gear_out_at: new Date().toISOString() }, 'Marked: gear picked up.'));
       on('gear-back', () => saveStatus(s, Object.assign({ gear_back_at: new Date().toISOString() }, (statusBy.get(s.id) || {}).gear_out_at ? {} : { gear_out_at: new Date().toISOString() }), 'Marked: gear returned.'));
+      on('vip', async () => {
+        const box = el.querySelector('.vipbox'); if (box.dataset.open) { box.innerHTML = ''; delete box.dataset.open; return; }
+        box.dataset.open = '1'; box.textContent = 'Loading…';
+        const { data, error } = await c.rpc('crew_vip', { p_event: s.id });
+        if (error || !data || data.error) { box.textContent = (data && data.error) || 'Not available yet.'; return; }
+        const v = data.vip || [], k = data.contacts || [];
+        box.innerHTML = (!v.length && !k.length ? '<div class="meta">The family has not added anyone yet.</div>' : '') +
+          (v.length ? '<div class="meta" style="margin-top:8px">Must be in the photos</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">' + v.map(x => '<div style="width:84px;text-align:center;font-size:12px;line-height:1.3">' + (x.photo ? '<img src="' + esc(x.photo) + '" alt="" style="width:76px;height:76px;object-fit:cover;border-radius:16px;display:block;margin:0 auto 4px">' : '') + '<b>' + esc(x.name || '') + '</b><br><span class="meta" style="display:inline">' + esc(x.rel || '') + '</span></div>').join('') + '</div>' : '') +
+          (k.length ? '<div class="meta" style="margin-top:10px">Family to call</div>' + k.map(x => '<div style="margin-top:4px">' + esc(x.name || '') + (x.rel ? ' <span class="meta" style="display:inline">' + esc(x.rel) + '</span>' : '') + (x.phone ? ' <a class="chip" href="' + tel(x.phone) + '">Call</a>' : '') + '</div>').join('') : '');
+      });
       on('data', () => { const n = el.querySelector('[data-role="data-note"]'); saveStatus(s, { data_at: new Date().toISOString(), data_note: n && n.value.trim() || null }, 'Marked: data handed over.'); });
     });
     const ia = $('ics-all'); if (ia) ia.addEventListener('click', () => downloadIcs(shoots, 'mutos-shoots'));

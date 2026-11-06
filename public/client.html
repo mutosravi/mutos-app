@@ -27,6 +27,14 @@
 .bar .pillbtn { flex: 1; }
 .saved { font-size: 12px; color: var(--muted); text-align: center; margin: 6px 0 0; min-height: 16px; }
 .progress { height: 8px; border-radius: 4px; background: rgba(255,255,255,.7); overflow: hidden; }
+.ppl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--sand); }
+.ppl .wide { grid-column: 1 / -1; }
+.ppl label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.vip { display: grid; grid-template-columns: 72px 1fr; gap: 10px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--sand); }
+.vip .ph { width: 72px; height: 72px; border-radius: 16px; background: var(--blush) center/cover no-repeat; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); text-align: center; cursor: pointer; position: relative; overflow: hidden; }
+.vip .ph input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.vip .f { display: grid; gap: 6px; }
+.addrow { background: none; border: 1.5px dashed var(--line); border-radius: 14px; padding: 10px; width: 100%; margin-top: 10px; font: 600 13px var(--font-body); color: var(--ink); cursor: pointer; }
 .progress i { display: block; height: 100%; background: var(--rose); border-radius: 4px; transition: width .3s; }
 @media (max-width: 380px) { .fn .grid { grid-template-columns: 1fr; } }
 </style>
@@ -99,6 +107,15 @@
   const fns = (got.functions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const ans = Object.assign({ extra: [] }, got.answers || {});
   if (!Array.isArray(ans.extra)) ans.extra = [];
+  if (!Array.isArray(ans.contacts)) ans.contacts = [];
+  if (!Array.isArray(ans.vip)) ans.vip = [];
+  // a photo from the phone, shrunk to a small JPEG (about 20–40 KB) so it saves quickly
+  const shrink = file => new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { const max = 360, k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); res(cv.toDataURL('image/jpeg', 0.72)); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('That file is not a photo.')); };
+    img.src = url;
+  });
   let submittedAt = got.submitted_at, dirty = false;
 
   const FIELDS = [
@@ -128,7 +145,7 @@
       (locked ? '<div class="ans no" style="margin:0"><b>Payment pending:</b> ' + inr(bk.overdue) + ' is overdue, so changes are paused. You can still see everything. Please clear it or call Muto\'s, and the page opens again.</div>' : '') +
       (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. You can still change anything and send again.</div>' : '') + '</section>';
     let h = '';
-    if (bk) h += '<article class="fn"><div class="fn-head"><div class="txt"><h2>Your package' + (bk.package && bk.package !== 'Custom' ? ': ' + esc(bk.package) : '') + '</h2><div class="meta">What Muto\'s will deliver</div></div></div>' +
+    if (bk) h += '<article class="fn sec"><div class="fn-head"><div class="txt"><h2>Your package' + (bk.package && bk.package !== 'Custom' ? ': ' + esc(bk.package) : '') + '</h2><div class="meta">What Muto\'s will deliver</div></div></div>' +
       ((bk.items || []).length ? '<ul style="margin:10px 0 0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +
       '<div class="grid" style="margin-top:12px"><div><div class="meta">Paid</div><b>' + inr(bk.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(bk.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(bk.pending) + '</b></div>' +
       (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div></article>';
@@ -145,15 +162,35 @@
         '<label>Time of day<select class="in" data-k="x' + i + '" data-f="slot">' + ['Morning', 'Evening', 'Full day'].map(s => '<option' + (a.slot === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></label>' +
         FIELDS.map(F => field('x' + i, a, F)).join('') + '</div></article>';
     });
+    const fnOpts = sel => '<option value="">All functions</option>' + fns.map(f => '<option value="' + esc(f.id) + '"' + (sel === f.id ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('');
+    h += '<article class="fn sec" id="sec-contacts"><div class="fn-head"><div class="txt"><h2>People to call on the day</h2><div class="meta">Family members our team can call at the venue (who knows the rituals, timings, where to be)</div></div></div>' +
+      ans.contacts.map((p, i) => '<div class="ppl"><label>Name<input class="in" data-k="c' + i + '" data-f="name" maxlength="80" value="' + esc(p.name || '') + '"></label><label>Relation<input class="in" data-k="c' + i + '" data-f="rel" maxlength="60" value="' + esc(p.rel || '') + '" placeholder="e.g. Bride\'s brother"></label>' +
+        '<label>Phone<input class="in" type="tel" inputmode="tel" data-k="c' + i + '" data-f="phone" maxlength="20" value="' + esc(p.phone || '') + '"></label><label>For<select class="in" data-k="c' + i + '" data-f="fn">' + fnOpts(p.fn) + '</select></label>' +
+        '<button type="button" class="x" data-rmc="' + i + '" style="justify-self:start">Remove</button></div>').join('') +
+      (ans.contacts.length < 12 ? '<button type="button" class="addrow" id="add-c">＋ Add a person to call</button>' : '') + '</article>';
+    h += '<article class="fn sec" id="sec-vip"><div class="fn-head"><div class="txt"><h2>Important people to photograph</h2><div class="meta">Add a photo and name of family members who must be in the pictures (grandparents, close relatives). Our team sees them before the shoot.</div></div></div>' +
+      ans.vip.map((p, i) => '<div class="vip"><label class="ph" style="' + (p.photo ? 'background-image:url(' + esc(p.photo) + ')' : '') + '">' + (p.photo ? '' : 'Add photo') + '<input type="file" accept="image/*" data-vph="' + i + '" aria-label="Photo"></label>' +
+        '<div class="f"><input class="in" data-k="v' + i + '" data-f="name" maxlength="80" placeholder="Name" value="' + esc(p.name || '') + '"><input class="in" data-k="v' + i + '" data-f="rel" maxlength="60" placeholder="Relation, e.g. Groom\'s grandmother" value="' + esc(p.rel || '') + '"><button type="button" class="x" data-rmv="' + i + '" style="justify-self:start">Remove</button></div></div>').join('') +
+      (ans.vip.length < 15 ? '<button type="button" class="addrow" id="add-v">＋ Add an important person</button>' : '') + '</article>';
     $('list').innerHTML = h || '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
     $('more').hidden = preview || locked; $('bar').hidden = preview || locked;
     if (preview || locked) $('list').querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; });
     $('list').querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' || inp.tagName === 'SELECT' ? 'change' : 'input', () => {
-      const k = inp.dataset.k, f = inp.dataset.f, obj = k[0] === 'x' && /^x\d+$/.test(k) ? ans.extra[Number(k.slice(1))] : (ans[k] = ans[k] || {});
+      const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcv]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
       dirty = true; $('saved').textContent = 'Not saved yet'; scheduleSave();
-      const card = inp.closest('.fn'); card.classList.toggle('done', filled(obj));
+      const card = inp.closest('.fn'); if (!list || k[0] === 'x') card.classList.toggle('done', filled(obj));
     }));
+    const on = (id, fn) => { const b = $(id); if (b) b.addEventListener('click', fn); };
+    on('add-c', () => { ans.contacts.push({}); render(); const r = document.querySelectorAll('#sec-contacts .ppl'); r[r.length - 1].querySelector('input').focus(); });
+    on('add-v', () => { ans.vip.push({}); render(); const r = document.querySelectorAll('#sec-vip .vip'); r[r.length - 1].scrollIntoView({ block: 'center' }); });
+    $('list').querySelectorAll('[data-rmc]').forEach(b => b.addEventListener('click', () => { ans.contacts.splice(Number(b.dataset.rmc), 1); dirty = true; render(); scheduleSave(); }));
+    $('list').querySelectorAll('[data-rmv]').forEach(b => b.addEventListener('click', () => { ans.vip.splice(Number(b.dataset.rmv), 1); dirty = true; render(); scheduleSave(); }));
+    $('list').querySelectorAll('[data-vph]').forEach(inp => inp.addEventListener('change', async () => {
+      const file = inp.files && inp.files[0]; if (!file) return;
+      try { ans.vip[Number(inp.dataset.vph)].photo = await shrink(file); dirty = true; render(); scheduleSave(); } catch (e) { toast(e.message, true); }
+    }));
+    if (preview || locked) $('list').querySelectorAll('.addrow, [data-rmc], [data-rmv]').forEach(x => { x.hidden = true; });
     $('list').querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { ans.extra.splice(Number(b.dataset.rm), 1); dirty = true; render(); scheduleSave(); }));
   }
   let saveT = null, saving = false;
@@ -162,7 +199,7 @@
     clearTimeout(saveT);
     if (saving) { setTimeout(() => save(submit), 400); return false; }
     saving = true; $('saved').textContent = 'Saving…';
-    const clean = { extra: ans.extra.filter(a => Object.values(a).some(Boolean)) };
+    const clean = { extra: ans.extra.filter(a => Object.values(a).some(Boolean)), contacts: ans.contacts.filter(a => a.name || a.phone), vip: ans.vip.filter(a => a.name || a.photo) };
     fns.forEach(f => { if (ans[f.id] && Object.values(ans[f.id]).some(Boolean)) clean[f.id] = ans[f.id]; });
     try {
       const { data, error } = await c.rpc('client_save', { p_token: token, p_data: clean, p_submit: !!submit });
@@ -179,7 +216,7 @@
     if (missing.length && !confirm('Not filled yet: ' + missing.join(', ') + '.\n\nSend what you have now? You can fill the rest later.')) return;
     if (await save(true)) { render(); toast('Thank you! Muto\'s has received your details.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   });
-  $('add-fn').addEventListener('click', () => { ans.extra.push({ slot: 'Evening' }); render(); const cards = document.querySelectorAll('.fn'); cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  $('add-fn').addEventListener('click', () => { ans.extra.push({ slot: 'Evening' }); render(); const cards = document.querySelectorAll('.fn:not(.sec)'); cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' }); });
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
   render();
 })();

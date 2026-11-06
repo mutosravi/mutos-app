@@ -175,6 +175,12 @@ function rpc(fn, a, e) {
       dlog(it.drive, e, (a.p_copy ? 'Copied ' : 'Moved ') + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + (a.p_copy ? ' copied' : ' moved') + ' here'); return { data: { ok: true, id }, error: null };
     }
   }
+  if (fn === 'crew_vip') {
+    if (!e) return err('permission denied');
+    const fd = T.crew_feed.get(pkOf(e)); if (!staff(e) && !(fd && (fd.data.shoots || []).some(s => s.id === a.p_event))) return { data: { error: 'Only the crew on this shoot can see the family\'s details.' }, error: null };
+    const cf = [...T.client_feed.values()].find(f => (f.data.functions || []).some(x => x.id === a.p_event)); const d = cf && (T.client_itinerary.get(cf.wedding_key) || {}).data || {};
+    return { data: { vip: d.vip || [], contacts: (d.contacts || []).filter(c => !c.fn || c.fn === a.p_event) }, error: null };
+  }
   if (fn === 'att_office_code') return ['owner', 'kiosk'].includes(role(e)) ? { data: { code: CODE, seconds_left: 25 }, error: null } : err('Only the office screen can show the code.');
   if (fn === 'att_punch') {
     const emp = T.employees.get(e); if (!emp || !emp.active) return { data: { error: 'You are not on the employee list. Ask Ravi.' }, error: null };
@@ -276,7 +282,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok((await stranger.textContent('#top')).includes('someone.else@gmail.com'), 'and is told which Gmail they used');
   const fam = await as(FAM);
   await fam.goto(B + '/'); await fam.waitForURL('**/client.html'); await fam.waitForSelector('.fn');
-  ok((await fam.textContent('#top')).includes(wed.title) && (await fam.$$('.fn')).length === wed.events.length, 'client page shows their functions');
+  ok((await fam.textContent('#top')).includes(wed.title) && (await fam.$$('.fn:not(.sec)')).length === wed.events.length, 'client page shows their functions');
   const f0 = wed.events[0].id;
   await fam.fill('[data-k="' + f0 + '"][data-f="time"]', '19:30'); await fam.fill('[data-k="' + f0 + '"][data-f="venue"]', 'Taj Mahal Hotel'); await fam.fill('[data-k="' + f0 + '"][data-f="address"]', 'Vipin Khand, Gomti Nagar, Lucknow');
   await fam.fill('[data-k="' + f0 + '"][data-f="map"]', 'https://maps.app.goo.gl/abc123'); await fam.fill('[data-k="' + f0 + '"][data-f="contact"]', 'Rahul (brother)'); await fam.fill('[data-k="' + f0 + '"][data-f="phone"]', '9876511111');
@@ -584,6 +590,24 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   T.booking_payments.set('p2', { id: 'p2', wedding_key: wed.key, amount: 150000, paid_on: istDay(), mode: 'UPI' });
   await fam.reload(); await fam.waitForSelector('#bar:not([hidden])');
   ok(!(await fam.textContent('#top')).includes('Payment pending') && (await fam.textContent('#list')).includes('On delivery'), 'paid: the page opens again and shows the next payment');
+  // the family adds people to call and important people with a photo; the crew on that shoot see them
+  await fam.click('#add-c'); await fam.fill('#sec-contacts [data-f="name"]', 'Rohit'); await fam.fill('#sec-contacts [data-f="rel"]', 'Bride\'s brother'); await fam.fill('#sec-contacts [data-f="phone"]', '9876500011');
+  await fam.click('#add-v'); await fam.fill('#sec-vip [data-f="name"]', 'Dadi'); await fam.fill('#sec-vip [data-f="rel"]', 'Grandmother');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFTGMSgwhCQBTkj/Bmb6ilQAAAABJRU5ErkJggg==', 'base64');
+  await fam.setInputFiles('#sec-vip input[type=file]', { name: 'dadi.png', mimeType: 'image/png', buffer: png }); await fam.waitForSelector('#sec-vip .ph[style*="data:image/jpeg"]');
+  await fam.click('#save'); await fam.waitForFunction(() => /Saved/.test(document.getElementById('saved').textContent));
+  const it2 = T.client_itinerary.get(wed.key).data;
+  ok(it2.contacts.length === 1 && it2.contacts[0].name === 'Rohit' && it2.vip.length === 1 && /^data:image\/jpeg;base64,/.test(it2.vip[0].photo) && it2.vip[0].photo.length < 60000, 'family saves a person to call and Dadi with a small photo');
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 }); await owner.click('[data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
+  await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal img');
+  ok((await owner.textContent('.sb-modal')).includes('Rohit') && (await owner.textContent('.sb-modal')).includes('Dadi'), 'See answers shows the people to call and the important people with photos');
+  const evId = T.client_feed.get(wed.key).data.functions[0].id;
+  T.crew_feed.set('hamza', { person_key: 'hamza', name: 'Hamza', data: { name: 'Hamza', shoots: [{ id: evId, date: istDay(1), day: 'Tomorrow', slot: 'Evening', shoot: 'Akriti Haldi', wedding: '', venue: 'Taj', role: 'Photo', gear: [], shared: [], team: [], notes: '' }] } });
+  T.members.set(CREWE, { email: CREWE, role: 'crew', person_key: 'hamza', display_name: 'Hamza' }); // the owner's board removed this test login (Hamza has no Login Gmail on the test board)
+  await cr.goto(B + '/crew.html'); await cr.click('.bnav .tab[data-tab="shoots"]'); await cr.waitForSelector('.shoot [data-act="vip"]'); await cr.click('.shoot [data-act="vip"]'); await cr.waitForSelector('.vipbox img');
+  ok((await cr.textContent('.vipbox')).includes('Dadi') && (await cr.textContent('.vipbox')).includes('Rohit'), 'the crew on that shoot see Dadi\'s photo and who to call');
+  ok(rpc('crew_vip', { p_event: 'not-my-shoot' }, CREWE).data.error, 'but not for shoots they are not on');
+
   // the work desk adds every deliverable of the package
   await owner.goto(B + '/desk.html'); await owner.waitForSelector('#add'); await owner.click('#add'); await owner.selectOption('#aw', wed.key); await owner.waitForSelector('#apk-go');
   const before = T.work_jobs.size; await owner.click('#apk-go'); await owner.waitForFunction(() => /from the package/.test(document.getElementById('toast').textContent));
