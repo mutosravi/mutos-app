@@ -615,6 +615,29 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const perFn = pj.filter(j => j.kind === 'reel' && j.fn_label);  // the wedding now has 2 functions (Tilak was added from the family's answers)
   ok(perFn.length === 2 && T.work_jobs.size - before === perFn.length + 1 /* the trailer was already on the desk */ && pj.some(j => j.kind === 'trailer') && pj.some(j => j.kind === 'album' && j.title === '40 sheets'), 'Add everything in the package: a reel per function + trailer + album (40 sheets)');
 
+  // ── 12. shooter profile and bill (board → Crew → profile) ──
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-tiles .tile', { timeout: 20000 });
+  const who = await owner.evaluate(() => { const a = window.__boardApi, st = a.state(), today = a.todayStr(), n = new Map();
+    st.events.filter(e => e.status !== 'cancelled' && e.date >= today).forEach(e => e.assignments.forEach(x => { const p = st.shooters.find(s => s.id === x.memberId); if (p && !/team/i.test(p.role || '')) n.set(p.name, (n.get(p.name) || 0) + 1); }));
+    return [...n.entries()].sort((x, y) => y[1] - x[1])[0]; });
+  await owner.evaluate(n => { const st = window.__boardApi.state(); st.shooters.filter(s => s.name === n).forEach(s => { s.rateShort = 3000; s.rateFull = 6000; }); }, who[0]);
+  await owner.click('[data-tile="sb-manage-shooters"]'); await owner.waitForSelector('#sb-manage-list .sb-manage-row');
+  const rowIdx = await owner.$$eval('#sb-manage-list .sb-manage-row', (rs, n) => rs.findIndex(r => (r.querySelector('.sb-manage-name') || {}).textContent.trim().startsWith(n)), who[0]);
+  await owner.click('#sb-manage-list .sb-manage-row:nth-child(' + (rowIdx + 1) + ') .act-prof'); await owner.waitForSelector('#pf-bill');
+  const prof = await owner.textContent('.sb-modal');
+  ok(prof.includes(who[0]) && prof.includes('Coming up') && /upcoming/.test(prof) && /season earnings/.test(prof), 'Crew → profile: one screen with roles, upcoming shoots, days off, season earnings (' + who[0] + ')');
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'profile.png') });
+  await owner.click('#pf-bill'); await owner.waitForSelector('#pb-print');
+  if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'bill.png') });
+  const billRows = await owner.$$eval('.sb-modal .sb-table tbody tr', r => r.length);
+  ok(billRows >= 2 && /₹/.test(await owner.textContent('.sb-modal .sb-table')), 'Bill lists each shoot with date, type and rate, and the total');
+  const [pop] = await Promise.all([owner.context().waitForEvent('page'), owner.click('#pb-print')]);
+  await pop.waitForLoadState(); const pt = await pop.textContent('body');
+  ok(pt.includes('Shoot bill') && pt.includes(who[0]) && /Total|shoots ·/.test(pt), 'Print / PDF opens a clean bill page');
+  await pop.close();
+  await owner.click('#pb-back'); await owner.waitForSelector('#pf-sched'); await owner.click('#pf-back'); await owner.waitForSelector('#sb-manage-list');
+  ok(true, 'Back returns to the crew list');
+
   const errs = pages.flatMap(p => p.errs || []);
   ok(!errs.length, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await browser.close(); server.close();

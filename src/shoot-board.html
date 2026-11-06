@@ -1570,7 +1570,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
         if (isGear && p.vendor) { const need = rentalsToBook().filter(r => r.gid === p.id).length, upc = (p.booked || []).filter(d => d >= todayStr()).length;
           head += '<button class="sb-mini-btn act-rent" type="button" title="Dates booked with the vendor"' + (need ? ' style="color:#9a5b00;font-weight:600"' : '') + '>dates' + (upc ? ' (' + upc + ')' : '') + (need ? ' · ' + need + ' to book' : '') + '</button>'; }
         if (isGear) { const upOff = (p.off || []).filter(x => x.d >= todayStr()).length; head += '<button class="sb-mini-btn act-na" type="button" title="Dates this item can\'t be used: vendor doesn\'t have it, repair, service"' + (upOff ? ' style="color:var(--danger);font-weight:600"' : '') + '>not available' + (upOff ? ' (' + upOff + ')' : '') + '</button>'; }
-        if (!isGear) head += '<button class="sb-mini-btn act-sched" type="button">schedule</button><button class="sb-mini-btn act-away" type="button">away</button>';
+        if (!isGear) head += '<button class="sb-mini-btn act-prof" type="button">profile</button><button class="sb-mini-btn act-sched" type="button">schedule</button><button class="sb-mini-btn act-away" type="button">away</button>';
         if (!isGear) head += (p.left ? '<span class="sb-nogear" style="background:#eee;color:#666">left ' + escapeHtml(formatDate(p.left)) + '</span><button class="sb-mini-btn act-back" type="button">bring back</button>' : '') + '<button class="sb-mini-btn act-replace" type="button">replace</button>';
         if (personType === 'shooter' && !isTeam(p)) head += '<button class="sb-mini-btn act-kit" type="button" title="Default gear for this shooter">kit' + (p.defaultGear && p.defaultGear.length ? ' (' + p.defaultGear.length + ')' : '') + '</button>';
         head += '<button class="sb-mini-btn act-edit" type="button">edit</button><button class="sb-mini-btn x act-del" type="button">' + (armedDelete === p.id ? (used ? 'remove from ' + used + ' shoot' + (used > 1 ? 's' : '') + '?' : 'delete?') : '×') + '</button></div>';
@@ -1713,6 +1713,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
           row.appendChild(f);
         }
         if (!isGear) {
+          row.querySelector('.act-prof').addEventListener('click', () => openShooterProfile(key, () => openManageListModal(cfg)));
           row.querySelector('.act-sched').addEventListener('click', () => { const top = modal.querySelector('#sb-manage-list').scrollTop, find = (modal.querySelector('.sb-modal-find input') || {}).value || '';
             openPersonSchedule(key, () => { openManageListModal(cfg); const m = document.querySelector('#sb-active-modal .sb-modal'); if (!m) return; const put = () => { const l = m.querySelector('#sb-manage-list'); if (l) l.scrollTop = top; }; put(); [0, 40, 120].forEach(t => setTimeout(put, t));
               if (find) setTimeout(() => { const fb = m.querySelector('.sb-modal-find input'); if (fb) { fb.value = find; fb.dispatchEvent(new Event('input')); } m.querySelector('#sb-manage-list').scrollTop = top; }, 30); }); });
@@ -3262,6 +3263,76 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const sp = modal.querySelector('#ps-savephone');
     if (sp) sp.addEventListener('click', () => { const v = modal.querySelector('#ps-phone').value.trim(); if (!v) return; recordsForKey(key).forEach(p => { p.phone = v; }); saveData({ quiet: true }); openPersonSchedule(key, back); });
   }
+  // ---------- one person: profile and bill ----------
+  // every shoot of this person (all their roles) in a date range, with the rate of the role they were booked in
+  function personShoots(key, from, to) {
+    const out = [];
+    state.events.forEach(ev => {
+      if (!isActive(ev) || !ev.date || (from && ev.date < from) || (to && ev.date > to)) return;
+      ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && normalizeName(p.name) === key && !isTeam(p)) out.push({ ev, p, role: p.role || 'Shooter' }); });
+      ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p && normalizeName(p.name) === key) out.push({ ev, p, role: 'Assistant' + (p.role ? ' (' + p.role + ')' : '') }); });
+    });
+    out.forEach(x => { const full = x.ev.eventType === 'full'; x.full = full; x.rate = full ? (x.p.rateFull ?? (x.p.rateShort != null ? x.p.rateShort * 2 : null)) : x.p.rateShort; x.amt = x.rate || 0; });
+    return out.sort((a, b) => a.ev.date.localeCompare(b.ev.date) || (SLOT_ORDER[a.ev.slot] || 0) - (SLOT_ORDER[b.ev.slot] || 0));
+  }
+  function openShooterProfile(key, back) {
+    const recs = recordsForKey(key); if (!recs.length) return;
+    const name = displayName(key), phone = phoneForKey(key), t = todayStr(), sid = defaultBillingSeason(), [from, to] = seasonRange(sid);
+    const season = personShoots(key, from, to), upcoming = personShoots(key, t).slice(0, 12), past = season.filter(x => x.ev.date < t);
+    const earned = season.reduce((n, x) => n + x.amt, 0), noRate = season.some(x => x.rate == null);
+    const away = state.unavailability.filter(u => u.date >= t && recs.some(r => r.id === u.personId)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
+    const email = (recs.find(r => r.email) || {}).email || '';
+    const roles = [...new Set(recs.map(r => (state.assistants.includes(r) ? 'Assistant' : r.role || 'Shooter') + (r.left ? ' (left)' : '')))];
+    const chip = (n, l) => '<div style="background:var(--surface-2,#f6efe9);border-radius:10px;padding:8px 10px;flex:1 1 90px"><b style="font-size:18px">' + n + '</b><div class="sb-manage-sub">' + l + '</div></div>';
+    const line = x => '<div class="sb-manage-sub" style="display:flex;justify-content:space-between;gap:8px;border-top:1px dashed var(--line,#e8dccf);padding:6px 0"><span><b style="color:var(--ink)">' + escapeHtml(formatDate(x.ev.date)) + '</b> · ' + escapeHtml(x.ev.name) + ' · ' + escapeHtml(x.ev.slot) + '</span><span>' + escapeHtml(x.role) + '</span></div>';
+    const html = '<div class="sb-modal-list" style="padding:8px 16px">' +
+      '<div class="sb-manage-sub">' + escapeHtml(roles.join(' · ')) + (phone ? ' · ' + escapeHtml(phone) : '') + (email ? ' · login ' + escapeHtml(email) : '') + '</div>' +
+      (phone ? '<div class="sb-btn-row" style="margin:8px 0"><a class="sb-btn-sm secondary" href="tel:' + escapeHtml(phone.replace(/[^\d+]/g, '')) + '">Call</a><a class="sb-btn-sm wa" ' + waAttrs(phone, '') + '>WhatsApp</a></div>' : '') +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">' + chip(upcoming.length, 'upcoming') + chip(past.length, 'done this season') + chip(season.filter(x => x.full).length + ' / ' + season.filter(x => !x.full).length, 'full / short') + chip(noRate ? '—' : money(earned), 'season earnings') + '</div>' +
+      (noRate ? '<p class="sb-modal-sub" style="color:var(--warn-ink)">Some roles have no rate yet: set them in Billing.</p>' : '') +
+      '<span class="sb-edit-label" style="margin-top:10px">Coming up</span>' + (upcoming.length ? upcoming.map(line).join('') : '<p class="sb-modal-empty">No upcoming shoots.</p>') +
+      '<span class="sb-edit-label" style="margin-top:10px">Days off</span>' + (away.length ? away.map(u => '<div class="sb-manage-sub" style="padding:3px 0">' + escapeHtml(formatDate(u.date)) + ' · ' + escapeHtml(u.slot) + (u.reason ? ' · ' + escapeHtml(u.reason) : '') + '</div>').join('') : '<p class="sb-modal-empty">None coming up.</p>') +
+      '<span class="sb-edit-label" style="margin-top:10px">Done this season</span>' + (past.length ? past.slice(-10).reverse().map(line).join('') + (past.length > 10 ? '<p class="sb-modal-sub">… and ' + (past.length - 10) + ' more (see the bill)</p>' : '') : '<p class="sb-modal-empty">None yet.</p>') +
+      '</div>';
+    const modal = makeModal(modalHead(name, seasonOf(t).label) + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="pf-back">' + (back ? '← Back' : 'Close') + '</button><button type="button" class="secondary" id="pf-sched">Schedule message</button><button type="button" id="pf-bill">Bill</button></div>', true);
+    const again = () => openShooterProfile(key, back);
+    modal.querySelector('#pf-back').addEventListener('click', () => { closeModal(); if (back) back(); });
+    modal.querySelector('#pf-sched').addEventListener('click', () => openPersonSchedule(key, again));
+    modal.querySelector('#pf-bill').addEventListener('click', () => openShooterBill(key, sid, again));
+  }
+  function billHtml(key, sid) {
+    const [from, to] = seasonRange(sid), rows = personShoots(key, from, to), name = displayName(key), season = state.seasons.find(s => s.id === sid);
+    const total = rows.reduce((n, x) => n + x.amt, 0), missing = rows.some(x => x.rate == null);
+    let pay = '';
+    if (season && season.closedOn) {
+      const d1 = season.closedOn, paid = (season.paid || {})[key] || {}, parts = [['i1', 0.5, d1], ['i2', 0.25, addDays(d1, 30)], ['i3', 0.25, addDays(d1, 60)]];
+      pay = '<h3>Payout</h3><table><tr><th>Part</th><th>Due</th><th class="n">Amount</th><th>Status</th></tr>' + parts.map(([k, sh, d], i) => '<tr><td>' + ['50%', '25%', '25%'][i] + '</td><td>' + escapeHtml(formatDate(d)) + '</td><td class="n">' + money(total * sh) + '</td><td>' + (paid[k] ? 'Paid' : 'Due') + '</td></tr>').join('') + '</table>';
+    }
+    return { rows, total, missing, text: name + ' · ' + seasonOf(from).label + '\n' + rows.map(x => formatDate(x.ev.date) + ' · ' + x.ev.name + ' · ' + (x.full ? 'Full' : 'Short') + ' · ' + (x.rate == null ? 'no rate' : money(x.rate))).join('\n') + '\nTotal: ' + money(total),
+      html: '<!doctype html><' + 'html><head><meta charset="utf-8"><title>Bill · ' + escapeHtml(name) + '</title><style>body{font:14px/1.5 "Open Sans",Arial,sans-serif;color:#2a1e22;margin:32px;}h1{font-size:28px;margin:0}h2{font-size:16px;font-weight:600;margin:4px 0 18px;color:#6f5f63}h3{font-size:14px;margin:22px 0 6px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #eadfd5}th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6f5f63}.n{text-align:right}.tot td{font-weight:700;border-top:2px solid #2a1e22}.note{color:#6f5f63;font-size:12px;margin-top:18px}@media print{body{margin:12mm}}</style></head><body>' +
+        '<h1>Muto\'s</h1><h2>Shoot bill · ' + escapeHtml(name) + ' · ' + escapeHtml(seasonOf(from).label) + '</h2>' +
+        '<table><tr><th>Date</th><th>Shoot</th><th>Role</th><th>Type</th><th class="n">Rate</th></tr>' + rows.map(x => '<tr><td>' + escapeHtml(formatDay(x.ev.date)) + '</td><td>' + escapeHtml(x.ev.name) + ' · ' + escapeHtml(x.ev.slot) + '</td><td>' + escapeHtml(x.role) + '</td><td>' + (x.full ? 'Full event' : 'Short event') + '</td><td class="n">' + (x.rate == null ? '—' : money(x.rate)) + '</td></tr>').join('') +
+        '<tr class="tot"><td colspan="4">' + rows.length + ' shoot' + (rows.length === 1 ? '' : 's') + ' · ' + rows.filter(x => x.full).length + ' full, ' + rows.filter(x => !x.full).length + ' short</td><td class="n">' + money(total) + '</td></tr></table>' + pay +
+        (missing ? '<p class="note">Some shoots have no rate yet, so the total is not final.</p>' : '') + '<p class="note">Made on ' + escapeHtml(formatDay(todayStr())) + ' from the Muto\'s shoot board. Cancelled shoots are not counted.</p></body></' + 'html>' };
+  }
+  function openShooterBill(key, sid, back) {
+    const b = billHtml(key, sid), name = displayName(key);
+    const opts = seasonList().filter(s => state.events.some(e => isActive(e) && seasonOf(e.date).id === s[0]) || s[0] === sid).map(s => '<option value="' + s[0] + '"' + (s[0] === sid ? ' selected' : '') + '>' + escapeHtml(s[1]) + '</option>').join('');
+    const html = '<div class="sb-edit-form"><label class="sb-edit-label" for="pb-season">Season</label><select id="pb-season" class="sb-field">' + opts + '</select>' +
+      '<div class="sb-table-wrap" style="margin-top:8px"><table class="sb-table"><thead><tr><th>Date</th><th>Shoot</th><th>Type</th><th class="num">Rate</th></tr></thead><tbody>' +
+      (b.rows.length ? b.rows.map(x => '<tr><td>' + escapeHtml(formatDate(x.ev.date)) + '</td><td>' + escapeHtml(x.ev.name) + '<div class="sb-manage-sub">' + escapeHtml(x.role) + '</div></td><td>' + (x.full ? 'Full' : 'Short') + '</td><td class="num">' + (x.rate == null ? '—' : money(x.rate)) + '</td></tr>').join('') : '<tr><td colspan="4" class="sb-modal-empty">No shoots in this season.</td></tr>') +
+      '<tr class="sum"><td colspan="3">Total</td><td class="num">' + money(b.total) + '</td></tr></tbody></table></div>' + (b.missing ? '<p class="sb-modal-sub" style="color:var(--warn-ink)">Some shoots have no rate yet: set them in Billing.</p>' : '') + '</div>';
+    const modal = makeModal(modalHead('Bill · ' + name, b.rows.length + ' shoots · ' + money(b.total)) + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="pb-back">' + (back ? '← Back' : 'Close') + '</button><button type="button" class="secondary" id="pb-copy">Copy text</button><button type="button" id="pb-print">Print / PDF</button></div>', true);
+    modal.querySelector('#pb-season').addEventListener('change', e => openShooterBill(key, e.target.value, back));
+    modal.querySelector('#pb-back').addEventListener('click', () => { closeModal(); if (back) back(); });
+    modal.querySelector('#pb-copy').addEventListener('click', async () => { await copyText(b.text); toast('Bill copied. Paste it in WhatsApp.'); });
+    modal.querySelector('#pb-print').addEventListener('click', () => {
+      // a printable page (choose "Save as PDF" to keep a file); if pop-ups are blocked, download it instead
+      const w = window.open('', '_blank');
+      if (w && w.document) { w.document.write(b.html); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 300); return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([b.html], { type: 'text/html' })); a.download = 'bill-' + name.replace(/[^\w]+/g, '-') + '-' + sid + '.html'; a.click();
+    });
+  }
   // ---------- vendor rentals overview ----------
   // ---- what each vendor should charge: booked days × units × rent per day ----
   function seasonRange(id) { const [t, y] = String(id).split('-'), n = Number(y);
@@ -3509,7 +3580,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     if (!rows.length) html += '<tr><td colspan="7" class="sb-modal-empty">No bookings in this season yet.</td></tr>';
     byKey.forEach((list, key) => {
       list.forEach((r, i) => {
-        html += '<tr><td>' + (i === 0 ? escapeHtml(r.p.name) : '') + '</td><td>' + escapeHtml(r.p.role || (r.list === 'assistants' ? 'Assistant' : '')) + '</td><td class="num">' + r.short + '</td><td class="num">' + r.full + '</td>' +
+        html += '<tr><td>' + (i === 0 ? '<button type="button" class="sb-mini-btn bl-prof" data-key="' + escapeHtml(key) + '" title="Profile and bill">' + escapeHtml(r.p.name) + '</button>' : '') + '</td><td>' + escapeHtml(r.p.role || (r.list === 'assistants' ? 'Assistant' : '')) + '</td><td class="num">' + r.short + '</td><td class="num">' + r.full + '</td>' +
           '<td class="num"><input class="rate" data-id="' + r.p.id + '" data-list="' + r.list + '" data-f="rateShort" type="number" min="0" inputmode="numeric" aria-label="Short event rate for ' + escapeHtml(r.p.name) + '" value="' + (r.p.rateShort ?? '') + '"></td>' +
           '<td class="num"><input class="rate" data-id="' + r.p.id + '" data-list="' + r.list + '" data-f="rateFull" type="number" min="0" inputmode="numeric" aria-label="Full event rate for ' + escapeHtml(r.p.name) + '" value="' + (r.p.rateFull ?? '') + '" placeholder="' + (r.p.rateShort != null ? r.p.rateShort * 2 : '') + '"></td>' +
           '<td class="num">' + (r.missing ? '—' : money(r.total)) + '</td></tr>';
@@ -3537,6 +3608,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     html += '</div>';
     const modal = makeModal(modalHead('Billing & payouts', 'Counts come from confirmed shoots in the season; cancelled shoots are left out. People listed under two roles keep separate rates. Teams are left out; you bill them by hand.') + html + '<div class="sb-modal-foot"><button type="button" id="bl-done">Done</button></div>', true);
     modal.querySelector('#bl-season').addEventListener('change', e => openBilling(e.target.value));
+    modal.querySelectorAll('.bl-prof').forEach(b => b.addEventListener('click', () => openShooterBill(b.dataset.key, seasonId, () => openBilling(seasonId))));
     modal.querySelector('#bl-done').addEventListener('click', () => { closeModal(); renderBoard(); });
     modal.querySelectorAll('input.rate').forEach(inp => inp.addEventListener('change', () => {
       const p = state[inp.dataset.list].find(x => x.id === inp.dataset.id); if (!p) return;
