@@ -67,7 +67,10 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
   const $ = id => document.getElementById(id), msg = $('msg'), app = window.mutosApp;
   // the word's letters come in one by one; the page moves on once it has finished (sooner with reduced motion)
   const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.querySelectorAll('.w-word h1 span').forEach((s, i) => { s.style.animationDelay = (i * 0.12).toFixed(2) + 's'; });
+  // when a letter has appeared, drop its animation and leave it plain and sharp: iPhone Safari can otherwise keep a
+  // letter blurred (seen on the O, 10 Nov) once the name starts sliding
+  const settle = s => { s.style.animation = 'none'; s.style.opacity = '1'; s.style.filter = 'none'; s.style.transform = 'none'; };
+  document.querySelectorAll('.w-word h1 span').forEach((s, i) => { s.style.animationDelay = (i * 0.12).toFixed(2) + 's'; s.addEventListener('animationend', () => settle(s)); });
   // the button is 1.618 times as wide as the name (the name's width depends on the phone's font)
   const nameW = document.querySelector('.w-word h1').getBoundingClientRect().width;
   if (nameW > 0) document.documentElement.style.setProperty('--gw', Math.round(nameW * 1.618) + 'px');
@@ -78,7 +81,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
   let risen = false;
   const centre = () => { if (risen || still) return; word.style.transition = 'none'; word.style.transform = 'none'; const r = word.getBoundingClientRect(); word.style.transform = 'translateY(' + Math.round(window.innerHeight / 2 - (r.top + r.height / 2)) + 'px)'; void word.offsetHeight; word.style.transition = ''; };
   centre(); window.addEventListener('resize', centre);
-  const rise = then => { risen = true; word.style.transform = 'none'; setTimeout(then, still ? 0 : 180); };
+  const rise = then => { risen = true; document.querySelectorAll('.w-word h1 span').forEach(settle); word.style.transform = 'none'; setTimeout(then, still ? 0 : 180); };
   const cfg = window.MUTOS_CONFIG || {};
   if (!window.__mutosTestClient && (!cfg.supabaseUrl || cfg.supabaseUrl.includes('YOUR-PROJECT'))) { msg.textContent = 'The app is not set up yet: fill in config.js (see README).'; return; }
   $('go-google').addEventListener('click', () => { $('go-google').disabled = true; window.mutosApp.signIn(); });
