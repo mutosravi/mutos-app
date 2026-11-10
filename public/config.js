@@ -5,5 +5,5 @@ window.MUTOS_CONFIG = {
   supabaseUrl: 'https://plbixpdyxpayyzpzrvna.supabase.co',
   supabaseAnonKey: 'sb_publishable_BBsRicVGu4a7qv0Xv__3cA_5b8DLUQm',
   // public half of the studio's notification key (the private half is a Cloudflare secret)
-  vapidPublicKey: '' // phone reminders: set up later with a new key pair
+  vapidPublicKey: 'BJCKtk7u3gQAIOhyRnGEL8---r-dNvatX1ygGSAzDyLPRtSsAZ67eZKQyVoh3OkCIsekKk74a1BDL010AqCjlhI' // phone reminders (public half; the private half is the Cloudflare secret VAPID_PRIVATE_KEY)
 };
