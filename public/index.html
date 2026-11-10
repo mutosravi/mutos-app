@@ -70,7 +70,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
   // the button is 1.618 times as wide as the name (the name's width depends on the phone's font)
   const nameW = document.querySelector('.w-word h1').getBoundingClientRect().width;
   if (nameW > 0) document.documentElement.style.setProperty('--gw', Math.round(nameW * 1.618) + 'px');
-  const shown = new Promise(r => setTimeout(r, still ? 300 : 1300));
+  const shown = new Promise(r => setTimeout(r, still ? 300 : 1500));
   const after = async fn => { await shown; fn(); };
   const cfg = window.MUTOS_CONFIG || {};
   if (!window.__mutosTestClient && (!cfg.supabaseUrl || cfg.supabaseUrl.includes('YOUR-PROJECT'))) { msg.textContent = 'The app is not set up yet: fill in config.js (see README).'; return; }
