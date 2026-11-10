@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#fbf6f2">
+<meta name="theme-color" content="#ffffff">
 <title>Muto's</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.png" type="image/png">
@@ -13,76 +13,70 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Muto's">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
-<link rel="stylesheet" href="/app.css">
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
 <style>
-/* sign-in: centred, Blush & gold */
-body { background: var(--bg); }
-.si-bg { position: fixed; inset: 0; overflow: hidden; z-index: 0; pointer-events: none; }
-.si-bg i { position: absolute; border-radius: 50%; filter: blur(60px); opacity: .75; }
-.si-bg i:nth-child(1) { width: 380px; height: 380px; background: #f4d9d0; top: -120px; left: -110px; }
-.si-bg i:nth-child(2) { width: 300px; height: 300px; background: #f2dfa7; bottom: -90px; right: -80px; opacity: .6; }
-.si-bg i:nth-child(3) { width: 220px; height: 220px; background: #e6d8ec; top: 38%; right: -120px; opacity: .55; }
-main.signin { position: relative; z-index: 1; align-items: center; text-align: center; justify-content: center; gap: 0; }
-.si-mark { position: relative; width: 168px; height: 168px; margin: 0 auto 18px; display: grid; place-items: center; }
-.si-mark svg { position: absolute; inset: 0; animation: si-turn 28s linear infinite; }
-@keyframes si-turn { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .si-mark svg { animation: none; } }
-.si-mark .logo { position: relative; z-index: 1; } .si-mark .logo b { font-size: 36px; }
-.signin h1 { margin: 6px 0 4px; font-size: 24px; font-weight: 600; }
-.si-tag { color: var(--muted); font-size: 14px; margin: 0 0 22px; }
-.signin .card { width: 100%; text-align: center; padding: 22px 20px; border-radius: 28px; box-shadow: 0 18px 50px rgba(158,79,98,.14); }
-.signin .btn.primary { min-height: 52px; font-size: 15.5px; border-radius: 999px; }
-.si-who { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 18px; }
-.si-who span { font-size: 12px; background: rgba(255,255,255,.75); border-radius: 999px; padding: 5px 11px; color: var(--ink); }
-.signin #msg { min-height: 20px; }
+/* Welcome (chosen 10 Nov 2026, sample 6B): white, MUTO'S in dark maroon caps, Apple's system font, letters appear one by one.
+   Nothing else on screen; signed out, one "Continue with Google" button comes in at the bottom. */
+:root { --ink: #5C1A2B; --sys: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+html, body { margin: 0; height: 100%; background: #FFFFFF; color: var(--ink); font-family: var(--sys); -webkit-font-smoothing: antialiased; }
+.w-page { min-height: 100vh; min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; padding: env(safe-area-inset-top) 24px calc(56px + env(safe-area-inset-bottom)); }
+.w-word { flex: 1; display: flex; align-items: center; justify-content: center; }
+.w-word h1 { margin: 0; display: flex; font-size: 28px; font-weight: 400; letter-spacing: 0.12em; padding-left: 0.12em; line-height: 1; color: var(--ink); }
+.w-word h1 span { display: inline-block; opacity: 0; animation: w-in .75s ease-out forwards; }
+@keyframes w-in { from { opacity: 0; filter: blur(8px); transform: translateY(8px); } to { opacity: 1; filter: none; transform: none; } }
+.w-foot { width: 100%; max-width: 420px; min-height: 54px; margin: 0 auto; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; } /* the button's room is kept, so the word never jumps */
+.w-foot > [hidden] { display: none !important; }
+.w-fade { animation: w-up .5s ease-out both; }
+@keyframes w-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.w-btn { width: 100%; min-height: 54px; border: 0; border-radius: 14px; background: var(--ink); color: #FFFFFF; font: 600 17px/1.2 var(--sys); cursor: pointer; }
+.w-btn.light { background: #FFFFFF; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.w-btn:focus-visible { outline: 3px solid #C9973F; outline-offset: 3px; }
+.w-note { margin: 0; font-size: 15px; line-height: 1.45; text-align: center; color: #3A2A2E; }
+#msg:empty { display: none; }
+.err { color: #9A2B1E; }
+@media (prefers-reduced-motion: reduce) { .w-word h1 span, .w-fade { animation: none; opacity: 1; } }
 </style>
 </head>
 <body>
-<div class="si-bg" aria-hidden="true"><i></i><i></i><i></i></div>
-<main class="signin">
-  <div class="si-mark">
-    <svg viewBox="0 0 168 168" aria-hidden="true"><circle cx="84" cy="84" r="80" fill="none" stroke="#c9973f" stroke-width="1.3" stroke-dasharray="2 8" stroke-linecap="round"/><circle cx="84" cy="84" r="70" fill="#fff" fill-opacity=".8"/><circle cx="84" cy="84" r="70" fill="none" stroke="#f4d9d0" stroke-width="6"/></svg>
-    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+<main class="w-page">
+  <div class="w-word">
+    <h1 aria-label="Muto’s"><span aria-hidden="true">M</span><span aria-hidden="true">U</span><span aria-hidden="true">T</span><span aria-hidden="true">O</span><span aria-hidden="true">’</span><span aria-hidden="true">S</span></h1>
   </div>
-  <h1 id="hello">Welcome</h1>
-  <p class="si-tag">Shoots, editing, drives, attendance and your wedding page, all in one place.</p>
-  <p class="sub" id="msg">Checking your sign-in…</p>
-  <div id="signin" class="card" hidden>
-    <button type="button" class="btn primary" id="go-google">
-      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true" style="background:#fff;border-radius:50%;padding:2px;box-sizing:content-box"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.2l7.9 6.2C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 7l7.4 5.7c4.3-4 6.9-9.9 6.9-17.2z"/><path fill="#FBBC05" d="M10.6 28.6A14.6 14.6 0 0 1 9.5 24c0-1.6.3-3.2.8-4.6l-7.9-6.2A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l8-6.2z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.8l-8 6.2C6.6 42.6 14.6 48 24 48z"/></svg>
-      Sign in with Google
-    </button>
-    <p class="sub" style="margin:14px 0 0">Use the Gmail address you gave the studio. <a href="/privacy.html">Privacy</a></p>
-  </div>
-  <div class="si-who" aria-label="Who signs in here"><span>Crew</span><span>Editors</span><span>Office</span><span>Families</span></div>
-  <div id="unknown" class="card" hidden>
-    <p class="sub" style="margin:0 0 14px">You are signed in as <b id="unk-email"></b>, but this account is not on the team list yet. Send this address to Ravi on WhatsApp, then come back and tap Try again.</p>
-    <div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn primary" id="retry">Try again</button><button type="button" class="btn" id="other">Use another Google account</button></div>
+  <div class="w-foot">
+    <p class="w-note" id="msg" role="status" aria-live="polite"></p>
+    <div id="signin" class="w-fade" hidden>
+      <button type="button" class="w-btn" id="go-google">Continue with Google</button>
+    </div>
+    <div id="unknown" class="w-fade" hidden>
+      <p class="w-note" style="margin-bottom:14px">You are signed in as <b id="unk-email"></b>, but this account is not on the team list yet. Send this address to Ravi on WhatsApp, then tap Try again.</p>
+      <div style="display:flex;flex-direction:column;gap:10px"><button type="button" class="w-btn" id="retry">Try again</button><button type="button" class="w-btn light" id="other">Use another Google account</button></div>
+    </div>
   </div>
 </main>
 <script>
 (async function () {
   const $ = id => document.getElementById(id), msg = $('msg'), app = window.mutosApp;
-  const hr = new Date(Date.now() + 330 * 60000).getUTCHours(); $('hello').textContent = hr < 5 ? 'Welcome' : hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+  // the word's letters come in one by one; the page moves on once it has finished (sooner with reduced motion)
+  const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.w-word h1 span').forEach((s, i) => { s.style.animationDelay = (i * 0.12).toFixed(2) + 's'; });
+  const shown = new Promise(r => setTimeout(r, still ? 300 : 1300));
+  const after = async fn => { await shown; fn(); };
   const cfg = window.MUTOS_CONFIG || {};
   if (!window.__mutosTestClient && (!cfg.supabaseUrl || cfg.supabaseUrl.includes('YOUR-PROJECT'))) { msg.textContent = 'The app is not set up yet: fill in config.js (see README).'; return; }
-  $('go-google').addEventListener('click', () => { msg.textContent = 'Opening Google…'; window.mutosApp.signIn(); });
+  $('go-google').addEventListener('click', () => { $('go-google').disabled = true; window.mutosApp.signIn(); });
   $('retry').addEventListener('click', () => location.reload());
   $('other').addEventListener('click', () => window.mutosApp.signOut());
   try {
     const me = await window.mutosApp.me();
-    if (!me) { msg.textContent = 'Sign in to continue.'; $('signin').hidden = false; return; }
-    if (me.role && app.homeFor(me.role) !== '/') { msg.textContent = 'Opening…'; location.replace(app.homeFor(me.role)); return; }
+    if (!me) { after(() => { $('signin').hidden = false; }); return; }
+    if (me.role && app.homeFor(me.role) !== '/') { after(() => location.replace(app.homeFor(me.role))); return; }
     // a client: their Gmail is on a wedding's list
     const cl = await (await app.client()).rpc('client_list');
-    if (cl && cl.data && cl.data.length) { msg.textContent = 'Opening your wedding…'; location.replace('/client.html'); return; }
-    msg.textContent = 'Almost there.'; $('unk-email').textContent = me.email; $('unknown').hidden = false;
+    if (cl && cl.data && cl.data.length) { after(() => location.replace('/client.html')); return; }
+    after(() => { $('unk-email').textContent = me.email; $('unknown').hidden = false; });
   } catch (e) {
-    msg.innerHTML = ''; const s = document.createElement('span'); s.className = 'err'; s.textContent = 'Could not reach the app (' + (e && e.message || e) + '). Check your internet and reload.'; msg.appendChild(s);
+    after(() => { const s = document.createElement('span'); s.className = 'err'; s.textContent = 'Could not reach the app (' + (e && e.message || e) + '). Check your internet and reload.'; msg.appendChild(s); });
   }
 })();
 </script>
