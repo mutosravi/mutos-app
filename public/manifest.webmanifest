@@ -1,7 +1,9 @@
 {
+  "id": "/",
   "name": "Muto's",
   "short_name": "Muto's",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#fbf6f2",
   "theme_color": "#fbf6f2",
