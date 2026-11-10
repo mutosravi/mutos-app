@@ -20,18 +20,21 @@
    Letters appear one by one; nothing else on screen. Signed out: Google's own white button comes in just under the name. */
 :root { --bg: #9E4F62; --ink: #FFFFFF; --sys: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--sys); -webkit-font-smoothing: antialiased; }
-.w-page { min-height: 100vh; min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom); }
+/* golden ratio (1.618): space above : below the name and button = 1 : 1.618; name 39px = 15px button text x 1.618^2;
+   gap 63px = 39 x 1.618; button width = name width x 1.618 (measured on the phone, below) */
+.w-page { min-height: 100vh; min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom); }
+.w-page::before { content: ''; flex-grow: 1; } .w-page::after { content: ''; flex-grow: 1.618; }
 .w-word { display: flex; align-items: center; justify-content: center; }
-.w-word h1 { margin: 0; display: flex; font-size: 34px; font-weight: 300; letter-spacing: 0.08em; padding-left: 0.08em; line-height: 1; color: var(--ink); }
+.w-word h1 { margin: 0; display: flex; font-size: 39px; font-weight: 300; letter-spacing: 0.08em; padding-left: 0.08em; line-height: 1; color: var(--ink); }
 .w-word h1 .k { letter-spacing: 0; } /* the apostrophe sits close: MUTO'S, not MUTO ' S */
 .w-word h1 span { display: inline-block; opacity: 0; animation: w-in .75s ease-out forwards; }
 @keyframes w-in { from { opacity: 0; filter: blur(8px); transform: translateY(8px); } to { opacity: 1; filter: none; transform: none; } }
-.w-foot { width: 100%; max-width: 420px; min-height: 44px; margin: 36px auto 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 12px; } /* just under the name; the button's room is kept, so the name never jumps */
+.w-foot { width: 100%; max-width: 420px; min-height: 44px; margin: 63px auto 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 12px; } /* just under the name; the button's room is kept, so the name never jumps */
 .w-foot > [hidden] { display: none !important; }
 .w-fade { animation: w-up .5s ease-out both; }
 @keyframes w-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 /* Google's own sign-in button: white, grey border, coloured G */
-.w-g { min-height: 44px; padding: 0 20px 0 14px; border: 1px solid #747775; border-radius: 8px; background: #FFFFFF; color: #1F1F1F; font: 600 15px/1.2 var(--sys); display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.w-g { width: var(--gw, 272px); max-width: 100%; justify-content: center; min-height: 44px; padding: 0 14px; border: 1px solid #747775; border-radius: 8px; background: #FFFFFF; color: #1F1F1F; font: 600 15px/1.2 var(--sys); display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
 .w-g:disabled { opacity: .7; }
 .w-btn { width: 100%; min-height: 50px; border: 0; border-radius: 999px; background: #FFFFFF; color: #5C1A2B; font: 600 16px/1.2 var(--sys); cursor: pointer; }
 .w-btn.light { background: transparent; color: #FFFFFF; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.8); }
@@ -64,6 +67,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
   // the word's letters come in one by one; the page moves on once it has finished (sooner with reduced motion)
   const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.querySelectorAll('.w-word h1 span').forEach((s, i) => { s.style.animationDelay = (i * 0.12).toFixed(2) + 's'; });
+  // the button is 1.618 times as wide as the name (the name's width depends on the phone's font)
+  const nameW = document.querySelector('.w-word h1').getBoundingClientRect().width;
+  if (nameW > 0) document.documentElement.style.setProperty('--gw', Math.round(nameW * 1.618) + 'px');
   const shown = new Promise(r => setTimeout(r, still ? 300 : 1300));
   const after = async fn => { await shown; fn(); };
   const cfg = window.MUTOS_CONFIG || {};
