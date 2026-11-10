@@ -28,6 +28,7 @@ head = '''<!doctype html>
 <script src="/app-core.js"></script>
 <script src="/shim.js"></script>
 <script src="/crew-sync.js"></script>
+<script src="/supervisor.js"></script>
 <script src="/team-updates.js"></script>
 <script src="/clients.js"></script>
 <script src="/icons.js"></script>

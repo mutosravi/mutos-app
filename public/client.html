@@ -104,7 +104,8 @@
     return;
   }
   try { sessionStorage.removeItem('mutos-client-k'); } catch (e) {}
-  const preview = !!got.preview, bk = got.booking || null, late = !!(bk && bk.overdue > 0);
+  // studio_edit (012): owner, manager or supervisor opened it; they may edit it for the family, but only the family "sends" it
+  const studio = !!got.studio_edit, preview = !!got.preview && !studio, bk = got.booking || null, late = !!(bk && bk.overdue > 0);
   const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const KL = { reel: 'Reel', teaser: 'Teaser', trailer: 'Trailer', highlight: 'Highlight film', full: 'Full film', top: 'Top selected photos', lr: 'Edited photos', album_sel: 'Album photo selection', album: 'Album', other: 'Other' };
 
@@ -147,6 +148,7 @@
       '<h2>' + esc(got.title) + '</h2><p>Please fill in the details of each function, so our team reaches the right place on time. It takes about 5 minutes, and you can change anything later.</p>' +
       '<div class="progress" aria-label="' + done + ' of ' + total + ' filled"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' filled</p>' +
       (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
+      (studio ? '<div class="ans wait" style="margin:0" id="studio-note">Editing for the family, from Muto\'s. Your changes save here and the family sees them. Only the family can press Send.' + (got.updated_by ? ' Last changed by ' + esc(got.updated_by) + '.' : '') + '</div>' : '') +
       (late ? '<div class="ans wait" style="margin:0"><b>Payment reminder:</b> ' + inr(bk.overdue) + ' is overdue. Please clear it or call Muto\'s if anything is unclear. Thank you!</div>' : '') +
       (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. You can still change anything and send again.</div>' : '') + '</section>';
     let h = '';
@@ -179,6 +181,7 @@
       (ans.vip.length < 15 ? '<button type="button" class="addrow" id="add-v">＋ Add an important person</button>' : '') + '</article>';
     $('list').innerHTML = h || '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
     $('more').hidden = preview; $('bar').hidden = preview;
+    if (studio) $('send').hidden = true;
     if (preview) $('list').querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; });
     $('list').querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' || inp.tagName === 'SELECT' ? 'change' : 'input', () => {
       const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcv]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});

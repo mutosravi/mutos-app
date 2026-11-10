@@ -3,6 +3,7 @@
 (function () {
   const app = window.mutosApp;
   let api = null, links = [], itin = [], lastSig = new Map(), bookings = [], payments = [], packages = [];
+  const sup = () => window.__mutosRole === 'supervisor'; // supervisor: Gmails, WhatsApp, answers, editing the form; no money
   const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const KIND_LABELS = [['reel', 'Reel'], ['teaser', 'Teaser'], ['trailer', 'Trailer'], ['highlight', 'Highlight film'], ['full', 'Full film'], ['top', 'Top selection'], ['lr', 'LR edit'], ['album_sel', 'Album selection'], ['album', 'Album design'], ['other', 'Other']];
   const kindLabel = k => (KIND_LABELS.find(x => x[0] === k) || [k, k])[1];
@@ -89,7 +90,7 @@
       const s = stateOf(w);
       return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span></div>' +
         '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
-        (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Preview</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
+        (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Open &amp; edit</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
           : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
         (s.l && !(s.l.emails || []).length ? '<div class="sb-manage-sub" style="color:#7a2d1e;margin-top:4px">No Gmail yet: the family cannot sign in. Tap Gmails.</div>' : s.l ? '<div class="sb-manage-sub" style="margin-top:4px">Signs in with: ' + esc(s.l.emails.join(', ')) + '</div>' : '') + '</div>';
     }).join('') : '<p class="sb-modal-empty">No upcoming weddings on the board.</p>') + '</div>';
@@ -105,8 +106,10 @@
     modal.querySelectorAll('[data-see]').forEach(b => b.addEventListener('click', () => answers(byKey(b.dataset.see))));
     modal.querySelectorAll('[data-book]').forEach(b => b.addEventListener('click', () => booking(byKey(b.dataset.book))));
     const pk = modal.querySelector('#cl-packages'); if (pk) pk.addEventListener('click', () => packagesWin());
+    if (sup()) modal.querySelectorAll('[data-book], #cl-packages').forEach(x => x.remove());
   }
   function moneyPill(key) {
+    if (sup()) return '';
     const m = money(key); if (!m) return '';
     if (m.overdue > 0) return '<span class="pill no" style="font-size:11px;white-space:nowrap">' + inr(m.overdue) + ' overdue' + '</span>';
     if (m.pending <= 0) return '<span class="pill ok" style="font-size:11px">Paid in full</span>';
@@ -115,6 +118,7 @@
 
   // ---------- package & payments of one wedding ----------
   function booking(w) {
+    if (sup()) return;
     const old = bookings.find(b => b.wedding_key === w.key), m = money(w.key);
     const x = old ? JSON.parse(JSON.stringify(old)) : { items: [], plan: [], total: 0, lock_on: false, grace_days: 3, package_id: null, package_name: '' };
     const pays = payments.filter(p => p.wedding_key === w.key);
@@ -181,6 +185,7 @@
 
   // ---------- packages ----------
   function packagesWin() {
+    if (sup()) return;
     const list = '<div class="sb-modal-list">' + (packages.length ? packages.map(p2 => '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px"><b>' + esc(p2.name) + (p2.active ? '' : ' (not offered)') + '</b><span>' + inr(p2.price) + '</span></div><div class="sb-manage-sub">' + esc((p2.items || []).map(itemText).join(' · ') || 'No deliverables yet') + '</div><div class="sb-btn-row" style="margin-top:6px"><button type="button" class="sb-btn-sm secondary" data-pk="' + p2.id + '">Edit</button></div></div>').join('') : '<p class="sb-modal-empty">No packages yet.</p>') + '</div>';
     const modal = api.makeModal(api.modalHead('Packages', 'Price and what is delivered. Picking a package on a wedding copies these; you can still change them for that wedding.') + list + '<div class="sb-modal-foot"><button type="button" class="secondary" id="pk-back">← Clients</button><button type="button" id="pk-new">＋ New package</button></div>', true);
     modal.querySelector('#pk-back').addEventListener('click', open);
@@ -249,7 +254,8 @@
     if ((a.contacts || []).length) html += '<div class="sb-manage-row" style="display:block;padding:10px 8px"><b>People to call on the day</b>' + a.contacts.map(x => '<div style="font-size:12.5px;line-height:1.6">' + esc([x.name, x.rel ? '(' + x.rel + ')' : '', x.phone].filter(Boolean).join(' ')) + ' <span class="sb-manage-sub">· ' + esc(fnName(x.fn)) + '</span></div>').join('') + '</div>';
     if ((a.vip || []).length) html += '<div class="sb-manage-row" style="display:block;padding:10px 8px"><b>Important people to photograph</b><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">' + a.vip.map(x => '<div style="width:84px;text-align:center;font-size:11.5px;line-height:1.3">' + (x.photo ? '<img src="' + esc(x.photo) + '" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:14px;display:block;margin:0 auto 4px">' : '<div style="width:72px;height:72px;border-radius:14px;background:#f4d9d0;margin:0 auto 4px"></div>') + '<b>' + esc(x.name || '') + '</b><br><span class="sb-manage-sub">' + esc(x.rel || '') + '</span></div>').join('') + '</div><div class="sb-manage-sub" style="margin-top:6px">The crew on these shoots see them on their page.</div></div>';
     html += '</div>';
-    const modal = api.makeModal(api.modalHead(w.title, s.it.submitted_at ? 'Sent ' + new Date(s.it.submitted_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) + (s.fresh ? ' · new since you last checked' : '') : 'Still filling (not sent yet).') + html +
+    const by = s.it.updated_by && !((s.l && s.l.emails) || []).includes(s.it.updated_by) ? ' · last changed by ' + s.it.updated_by + ' (studio)' : '';
+    const modal = api.makeModal(api.modalHead(w.title, (s.it.submitted_at ? 'Sent ' + new Date(s.it.submitted_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) + (s.fresh ? ' · new since you last checked' : '') : 'Still filling (not sent yet).') + by) + html +
       '<div class="sb-modal-foot"><button type="button" class="secondary" id="ca-back">← Clients</button><button type="button" id="ca-ok">Mark as checked</button></div>', true);
     modal.querySelector('#ca-back').addEventListener('click', open);
     modal.querySelector('#ca-ok').addEventListener('click', async () => {

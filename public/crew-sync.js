@@ -55,7 +55,7 @@
         known.set(p.key, sig); wrote++;
       }
       const stale = [...known.keys()].filter(k => !want.has(k));
-      if (stale.length) { const { error } = await c.from('crew_feed').delete().in('person_key', stale); if (error) throw error; stale.forEach(k => known.delete(k)); }
+      if (stale.length && window.__mutosRole !== 'supervisor') { const { error } = await c.from('crew_feed').delete().in('person_key', stale); if (error) throw error; stale.forEach(k => known.delete(k)); }
       // 2. who may sign in as crew (only the owner can change logins)
       if (who && who.role === 'owner') {
         const { data: rows, error } = await c.from('members').select('email, role, person_key, display_name');
@@ -126,6 +126,8 @@
       sect('Owner', rows.filter(r => r.role === 'owner'), false) +
       sect('Managers · full board', rows.filter(r => r.role === 'manager'), true) +
       '<div class="sb-inline-form" style="padding:0 8px"><input class="sb-field" id="lg-name" placeholder="Manager name" style="flex:1 1 120px"><input class="sb-field" id="lg-email" type="email" placeholder="their Gmail" style="flex:1 1 180px"><button type="button" class="sb-zone-add" id="lg-add">Add manager</button></div>' +
+      sect('Supervisors · add shoots, change itinerary & client contact, no crew/gear/money/deleting', rows.filter(r => r.role === 'supervisor'), true) +
+      '<div class="sb-inline-form" style="padding:0 8px"><input class="sb-field" id="lg-sname" placeholder="Supervisor name" style="flex:1 1 120px"><input class="sb-field" id="lg-semail" type="email" placeholder="their Gmail" style="flex:1 1 180px"><button type="button" class="sb-btn-sm" id="lg-sadd">Add supervisor</button></div>' +
       sect('Gear desk · only the Gear desk, no board', rows.filter(r => r.role === 'gear'), true) +
       '<div class="sb-inline-form" style="padding:0 8px"><input class="sb-field" id="lg-gname" placeholder="Gear manager name" style="flex:1 1 120px"><input class="sb-field" id="lg-gemail" type="email" placeholder="their Gmail" style="flex:1 1 180px"><button type="button" class="sb-zone-add" id="lg-gadd">Add gear manager</button></div>' +
       sect('Crew · see only their own shoots', rows.filter(r => r.role === 'crew'), false) +
@@ -152,6 +154,15 @@
       const { error: e } = await c.from('members').upsert({ email, role: 'gear', display_name: name || (ex && ex.display_name) || email, person_key: null });
       if (e) { api.toast('Could not add: ' + (/check constraint/.test(e.message) ? 'run supabase/003_gear_desk.sql in Supabase first.' : e.message)); return; }
       api.toast((name || email) + ' can now sign in to the Gear desk.'); openLogins();
+    });
+    modal.querySelector('#lg-sadd').addEventListener('click', async () => {
+      const email = modal.querySelector('#lg-semail').value.trim().toLowerCase(), name = modal.querySelector('#lg-sname').value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { api.toast('Type their Gmail address.'); return; }
+      const ex = rows.find(r => r.email === email);
+      if (ex && ex.role === 'owner') { api.toast('That is the owner login.'); return; }
+      const { error: e } = await c.from('members').upsert({ email, role: 'supervisor', display_name: name || (ex && ex.display_name) || email, person_key: null });
+      if (e) { api.toast('Could not add: ' + (/check constraint/.test(e.message) ? 'run supabase/012_supervisor.sql in Supabase first.' : e.message)); return; }
+      api.toast((name || email) + ' can now sign in as supervisor.'); openLogins();
     });
     modal.querySelectorAll('.lg-rm').forEach(b => b.addEventListener('click', async () => {
       const { error: e } = await c.from('members').delete().eq('email', b.dataset.e);
@@ -195,8 +206,8 @@
   }
 
   window.MUTOS_APP = {
-    attach(a) { const first = !api; api = a; window.__boardApi = a; if (first) { push(); setInterval(push, 10 * 60 * 1000); } if (window.MUTOS_UPDATES) window.MUTOS_UPDATES.attach(a); if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.attach(a); },
-    changed() { clearTimeout(timer); timer = setTimeout(push, 3000); if (window.MUTOS_UPDATES) window.MUTOS_UPDATES.changed(); if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.changed(); },
+    attach(a) { const first = !api; api = a; window.__boardApi = a; if (first) { push(); setInterval(push, 10 * 60 * 1000); } if (window.MUTOS_UPDATES && window.__mutosRole !== 'supervisor') window.MUTOS_UPDATES.attach(a); /* day-off approvals are not his */ if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.attach(a); },
+    changed() { clearTimeout(timer); timer = setTimeout(push, 3000); if (window.MUTOS_UPDATES && window.__mutosRole !== 'supervisor') window.MUTOS_UPDATES.changed(); if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.changed(); },
     openLogins, openBackups, keysFor, groupCrew, crewGroups: () => (api ? wanted() : new Map()),
     _push: push, _last: () => last
   };

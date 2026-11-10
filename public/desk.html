@@ -93,10 +93,11 @@
   const app = window.mutosApp; let me, c;
   try { me = await app.me(); } catch (e) { $('who').innerHTML = '<span class="err">Could not reach the app.</span>'; return; }
   if (!me || !me.role) { location.replace('/'); return; }
-  if (me.role !== 'owner' && me.role !== 'manager') { location.replace(app.homeFor(me.role)); return; }
+  if (!['owner', 'manager', 'supervisor'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; }
   c = await app.client();
-  const owner = me.role === 'owner';
-  $('who').textContent = me.email + ' · ' + (owner ? 'owner' : 'partner / manager');
+  const owner = me.role === 'owner', sup = me.role === 'supervisor'; // supervisor: jobs, reports, month, drives (view); no People, no deleting jobs
+  $('who').textContent = me.email + ' · ' + (owner ? 'owner' : sup ? 'supervisor' : 'partner / manager');
+  if (sup) document.querySelector('.bnav .tab[data-tab="people"]').remove();
 
   let people = [], jobs = [], weddings = [], shooters = [], members = [], books = [];
   const today = W.todayIST();
@@ -242,6 +243,7 @@
       if (error) { toast('Could not delete: ' + error.message, true); return; }
       bg.remove(); await load(); renderJobs(); toast('Deleted.');
     });
+    if (sup) g('#del').hidden = true; // jobs are deleted by Ravi or the manager
     const { data } = await c.from('work_reports').select('*').eq('job', j.id).order('at', { ascending: false });
     const h = g('#hist'); if (!h) return;
     h.innerHTML = (data || []).length ? data.map(r => '<div class="rep"><b>' + esc(W.dayLong(r.day)) + '</b> · ' + esc(pname(r.person)) + ' · ' + esc([r.progress != null ? r.progress + '%' : '', r.count ? r.count + ' photos' : '', r.hours ? r.hours + ' h' : '', r.note].filter(Boolean).join(' · ')) + '</div>').join('') : 'No reports yet.';
@@ -377,7 +379,7 @@
   async function renderDrives() {
     if (!drv) {
       const mine = people.find(p => p.email && p.email === me.email);
-      drv = window.MutosDrives.mount($('tab-drives'), { c, me: mine ? mine.id : null, email: me.email, staff: true, owner, keeper: true, toast, weddings: weddings.map(w => ({ key: w.key, title: w.title })),
+      drv = window.MutosDrives.mount($('tab-drives'), { c, me: mine ? mine.id : null, email: me.email, staff: !sup, owner, keeper: !sup || !!(mine && (mine.skills || []).includes('data')), toast, weddings: weddings.map(w => ({ key: w.key, title: w.title })),
         onChange: n => { $('nav-drv').hidden = !n; $('nav-drv').textContent = n || ''; } });
     }
     try { await drv.refresh(); } catch (e) { $('tab-drives').innerHTML = '<div class="empty">Could not load drives (' + esc(e.message || e) + '). Run supabase/008_drives.sql first.</div>'; drv = null; }
@@ -394,7 +396,7 @@
   try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load the work desk (' + esc(e.message || e) + '). Run supabase/007_work_desk.sql first.</div>'; return; }
   await loadBoard();
   const first = new URLSearchParams(location.search).get('tab');
-  showTab(['jobs', 'today', 'month', 'drives', 'people'].includes(first) ? first : 'jobs');
+  showTab(['jobs', 'today', 'month', 'drives'].concat(sup ? [] : ['people']).includes(first) ? first : 'jobs');
   // live: an editor's progress shows up without reloading
   try {
     c.channel('work-desk').on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs' }, () => { clearTimeout(window.__wd); window.__wd = setTimeout(async () => { if (document.querySelector('.sheet-bg')) return; await load(); if (!$('tab-jobs').hidden) renderJobs(); }, 800); })

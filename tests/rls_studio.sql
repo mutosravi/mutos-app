@@ -36,7 +36,9 @@ select pg_temp.check(client_get(current_setting('t.tok')::uuid) #>> '{answers,e1
 select pg_temp.check((client_save(current_setting('t.tok')::uuid, jsonb_build_object('x', repeat('a', 1600000)), false)) ? 'error', 'oversized answers refused');
 set request.jwt.claims = '{"email":"m@x.com"}';
 select pg_temp.check((client_get(current_setting('t.tok')::uuid) ->> 'preview')::boolean, 'manager can preview the page');
-select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{}', false)) ? 'error', 'but cannot fill it in for the family');
+-- since 012 (supervisor, 10 Nov): the studio can edit the form for the family; it does not count as sent by them
+select pg_temp.check((client_save(current_setting('t.tok')::uuid, '{"e1":{"venue":"Taj Gomti Nagar"}}', true)) ? (case when exists (select 1 from pg_proc where proname = 'is_desk') then 'ok' else 'error' end),
+  'the manager can edit it for the family (after 012; before, refused)');
 reset role;
 update client_links set active = false;
 set role authenticated; set request.jwt.claims = '{"email":"akriti@gmail.com"}';

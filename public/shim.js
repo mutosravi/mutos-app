@@ -7,7 +7,8 @@
     if (!ready) ready = (async () => {
       const who = await app.me();
       if (!who) { location.href = '/'; throw new Error('signed out'); }
-      if (who.role !== 'owner' && who.role !== 'manager') { location.href = app.homeFor(who.role); throw new Error('not staff'); }
+      if (who.role !== 'owner' && who.role !== 'manager' && who.role !== 'supervisor') { location.href = app.homeFor(who.role); throw new Error('not staff'); }
+      window.__mutosRole = who.role; // supervisor.js limits what a supervisor can change
       return { who, c: await app.client() };
     })();
     return ready;
@@ -62,7 +63,14 @@
       return {
         id,
         async get() { const { data, error } = await c.from('docs').select('data').eq('collection', name).eq('id', id).maybeSingle(); if (error) throw error; return { id, exists: !!data, data: () => (data ? data.data : undefined) }; },
-        async set(data) { const { error } = await tracked(() => c.from('docs').upsert({ collection: name, id, data })); if (error) throw Object.assign(new Error(error.message), { code: error.code === '42501' ? 'not_granted' : 'unavailable' }); col(name).map.set(id, data); if (col(name).loaded) emit(name); },
+        async set(data) {
+          // supervisor: a shoot goes through sup_save_event (012), which keeps everything but his itinerary/contact fields as stored
+          if (window.__mutosRole === 'supervisor' && name === 'events') {
+            const { data: r, error: e1 } = await tracked(() => c.rpc('sup_save_event', { p_id: id, p_data: data }));
+            if (e1 || (r && r.error)) throw Object.assign(new Error(e1 ? e1.message : r.error), { code: 'not_granted' });
+            col(name).map.set(id, data); if (col(name).loaded) emit(name); return;
+          }
+          const { error } = await tracked(() => c.from('docs').upsert({ collection: name, id, data })); if (error) throw Object.assign(new Error(error.message), { code: error.code === '42501' ? 'not_granted' : 'unavailable' }); col(name).map.set(id, data); if (col(name).loaded) emit(name); },
         async update(patch) { const cur = await this.get(); return this.set(Object.assign({}, cur.exists ? cur.data() : {}, patch)); },
         async delete() { const { error } = await tracked(() => c.from('docs').delete().eq('collection', name).eq('id', id)); if (error) throw Object.assign(new Error(error.message), { code: 'unavailable' }); col(name).map.delete(id); if (col(name).loaded) emit(name); }
       };
@@ -94,7 +102,7 @@
     const id = who.user.id;
     return {
       id: async () => id, me: async () => ({ id, name: who.name }),
-      isOwner: async () => who.role === 'owner', canEdit: async () => who.role === 'owner' || who.role === 'manager', can: async () => true,
+      isOwner: async () => who.role === 'owner', canEdit: async () => who.role === 'owner' || who.role === 'manager' || who.role === 'supervisor', can: async () => true,
       profiles: async ids => { const o = {}; (ids || []).forEach(x => { o[x] = { name: x === id ? who.name : 'Someone', isMe: x === id }; }); return o; },
       role: who.role, email: who.email
     };

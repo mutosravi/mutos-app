@@ -27,7 +27,7 @@
     location.replace('/');
   }
   // each login type's first page
-  const HOME = { owner: '/board.html', manager: '/board.html', crew: '/crew.html', gear: '/gear.html', staff: '/work.html', accountant: '/attendance.html', kiosk: '/office.html' };
+  const HOME = { owner: '/board.html', manager: '/board.html', supervisor: '/board.html', crew: '/crew.html', gear: '/gear.html', staff: '/work.html', accountant: '/attendance.html', kiosk: '/office.html' };
   const homeFor = role => HOME[role] || '/';
   window.mutosApp = { client, session, me, signIn, signOut, homeFor, config: cfg };
 })();

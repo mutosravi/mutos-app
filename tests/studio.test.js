@@ -136,10 +136,11 @@ function rpc(fn, a, e) {
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active);
     if (!l) return { data: { error: 'This page is not active.' }, error: null };
     const listed = l.emails.includes(e);
-    if (fn === 'client_get') { if (!listed && !staff(e)) return { data: { error: 'This Gmail (' + e + ') is not on Muto\'s list for this wedding.', not_listed: true }, error: null }; const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null, preview: !listed, booking: bookingSummary(l.wedding_key) }, error: null }; }
-    if (!listed) return { data: { error: 'Only the family\'s registered Gmail can fill this in.' }, error: null };
+    if (fn === 'client_get') { if (!listed && !staff(e)) return { data: { error: 'This Gmail (' + e + ') is not on Muto\'s list for this wedding.', not_listed: true }, error: null }; const f = T.client_feed.get(l.wedding_key), i = T.client_itinerary.get(l.wedding_key) || {}; return { data: { title: l.title, functions: (f && f.data.functions) || [], answers: i.data || {}, submitted_at: i.submitted_at || null, preview: !listed, studio_edit: !listed, updated_by: i.updated_by || null, booking: bookingSummary(l.wedding_key) }, error: null }; }
+    // 012: the studio (owner, manager, supervisor) may edit it for the family; only the family "sends" it
+    if (!listed && !staff(e) && role(e) !== 'supervisor') return { data: { error: 'Only the family\'s registered Gmail can fill this in.' }, error: null };
     const cur = T.client_itinerary.get(l.wedding_key) || { wedding_key: l.wedding_key };
-    T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), submitted_at: a.p_submit ? new Date().toISOString() : cur.submitted_at || null }));
+    T.client_itinerary.set(l.wedding_key, Object.assign(cur, { data: a.p_data, updated_at: new Date().toISOString(), updated_by: e, submitted_at: a.p_submit && listed ? new Date().toISOString() : cur.submitted_at || null }));
     return { data: { ok: true }, error: null };
   }
   // drive register RPCs (008_drives.sql)
@@ -296,7 +297,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(it && it.submitted_at && it.data[f0].venue === 'Taj Mahal Hotel' && it.data.extra[0].name === 'Tilak', 'answers and the extra function reach the studio');
   const prev = await as(OWNER);
   await prev.goto(B + '/client.html?k=' + link.token); await prev.waitForSelector('.fn');
-  ok((await prev.textContent('#top')).includes('Preview') && await prev.isHidden('#bar') && await prev.$eval('.fn input', x => x.disabled), 'owner can preview the family\'s page but not fill it');
+  ok(await prev.isVisible('#studio-note') && await prev.isVisible('#save') && await prev.isHidden('#send') && !(await prev.$eval('.fn input', x => x.disabled)), 'owner opens the family\'s page and can edit it for them (only the family sends it)');
   ok(handle(null, { table: 'client_links', op: 'select', filters: [], order: [] }).error, 'visitors cannot list links');
 
   // ── 3. owner checks the answers and applies them ──

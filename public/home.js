@@ -7,6 +7,7 @@
   const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
   let who = null;
+  const sup = () => who && who.role === 'supervisor'; // supervisor: Shoots (add, itinerary), Work desk, Clients without money
   const api = () => window.__boardApi || null;
   const click = id => { const el = document.getElementById(id); if (el) el.click(); };
 
@@ -50,6 +51,7 @@
     bar.querySelector('#mutos-updates').addEventListener('click', openUpdates);
     bar.querySelector('#mutos-settings').addEventListener('click', openMore);
     bar.querySelector('[data-mh-home]').addEventListener('click', e => { e.preventDefault(); show('home'); });
+    if (sup()) { bar.querySelector('#mutos-updates').remove(); bar.querySelector('a[href="/gear.html"]').remove(); } // day-off approvals and gear are not his
     document.body.insertBefore(bar, document.body.firstChild);
 
     const home = document.createElement('main');
@@ -61,15 +63,17 @@
     nav.className = 'bnav mh-bnav'; nav.setAttribute('aria-label', 'Main');
     nav.innerHTML = '<button type="button" class="tab" data-mh-view="home">' + ICON('home') + 'Home</button>' +
       '<button type="button" class="tab" data-mh-view="board">' + ICON('board') + 'Board</button>' +
-      '<button type="button" class="tab" id="mh-nav-upd">' + ICON('bell') + 'Updates<b class="dot" id="mh-nav-n" hidden></b></button>' +
-      '<button type="button" class="tab" id="mh-nav-more">' + ICON('settings') + 'Settings</button>';
+      (sup() ? '<a class="tab" href="/desk.html">' + ICON('film') + 'Work</a>' : '<button type="button" class="tab" id="mh-nav-upd">' + ICON('bell') + 'Updates<b class="dot" id="mh-nav-n" hidden></b></button>') +
+      '<button type="button" class="tab" id="mh-nav-more">' + ICON('settings') + (sup() ? 'Me' : 'Settings') + '</button>';
     document.body.appendChild(nav);
     document.querySelectorAll('[data-mh-view]').forEach(b => b.addEventListener('click', () => show(b.dataset.mhView)));
-    nav.querySelector('#mh-nav-upd').addEventListener('click', openUpdates);
     nav.querySelector('#mh-nav-more').addEventListener('click', openMore);
-    // keep the phone badge in step with the header badge
-    const n = bar.querySelector('#mutos-upd-n'), m = nav.querySelector('#mh-nav-n');
-    new MutationObserver(() => { m.textContent = n.textContent; m.hidden = n.hidden; }).observe(n, { attributes: true, childList: true, characterData: true, subtree: true });
+    if (!sup()) {
+      nav.querySelector('#mh-nav-upd').addEventListener('click', openUpdates);
+      // keep the phone badge in step with the header badge
+      const n = bar.querySelector('#mutos-upd-n'), m = nav.querySelector('#mh-nav-n');
+      new MutationObserver(() => { m.textContent = n.textContent; m.hidden = n.hidden; }).observe(n, { attributes: true, childList: true, characterData: true, subtree: true });
+    }
   }
   function openUpdates() { if (window.MUTOS_UPDATES && api()) window.MUTOS_UPDATES.open(); else toast('Team updates open once the board has loaded.'); }
   function toast(m) { const a = api(); if (a) a.toast(m); }
@@ -78,7 +82,7 @@
   function openMore() {
     closeMore();
     const owner = who.role === 'owner';
-    const rows = [
+    const rows = sup() ? [['#out', 'logout', 'Sign out', who.email]] : [
       owner && ['#logins', 'key', 'Team logins', 'Managers, gear desk, who can sign in'],
       owner && ['#backups', 'cloud', 'Backups', 'Nightly copies, download or back up now'],
       ['#save', 'download', 'Save backup file', 'Download everything to this device'],
@@ -119,15 +123,20 @@
       ['/desk.html?tab=people', 'idcard', 'People', 'main'], ['/attendance.html', 'clock', 'Attendance', '', 'owner'], ['/attendance.html?tab=hist', 'list', 'Salary history', '', 'owner']] },
     { k: 'settings', ic: 'settings', title: 'Settings' }
   ];
+  // what a supervisor gets from each desk (the rest he cannot change, see supervisor.js and 012_supervisor.sql)
+  const SUP = { shoots: ['board', 'sb-new-wedding', 'sb-callsheet', 'sb-history'], work: ['/desk.html', '/desk.html?tab=today', '/desk.html?tab=month', '/desk.html?tab=drives'], clients: ['clients'] };
+  const desks = () => sup() ? DESKS.filter(d => SUP[d.k]) : DESKS;
   function deskTools(d) {
     const a = api();
-    return (d.tools || []).filter(([k, , , , only]) => (k !== 'sync' || (a && a.canSyncTeam())) && (only !== 'owner' || who.role === 'owner'));
+    return (d.tools || []).filter(([k, , , , only]) => (k !== 'sync' || (a && a.canSyncTeam())) && (only !== 'owner' || who.role === 'owner') && (!sup() || (SUP[d.k] || []).includes(k)));
   }
   // one line under each desk card: what needs attention there
   function deskLine(d, ctx) {
     if (d.k === 'shoots') return ctx.today + ' today' + (ctx.short ? ' · ' + ctx.short + ' short on crew' : '') + (ctx.inbox ? ' · ' + ctx.inbox + ' to confirm' : '');
     if (d.k === 'work') return 'Jobs, reports, drives';
     if (d.k === 'gear') return ctx.rent ? ctx.rent + ' rentals to book' : 'Hand out, gear list, rentals';
+    if (d.k === 'clients' && sup()) return ctx.cs && ctx.cs.toCheck ? ctx.cs.toCheck + ' to check' : 'Family Gmails and itineraries';
+    if (d.k === 'shoots' && sup()) return ctx.today + ' today · add shoots, itinerary, client contact';
     if (d.k === 'clients') return ctx.cs ? [ctx.cs.toCheck ? ctx.cs.toCheck + ' to check' : '', ctx.cs.overdue ? ctx.cs.overdue + ' payment' + (ctx.cs.overdue > 1 ? 's' : '') + ' overdue' : ''].filter(Boolean).join(' · ') || 'Itineraries, packages, payments' : 'Itineraries, packages, payments';
     if (d.k === 'people') return who.role === 'owner' ? 'People, attendance, salaries' : 'Everyone at Muto\'s';
     return 'Logins, backups, export';
@@ -135,7 +144,7 @@
   function deskCount(d, ctx) { return d.k === 'shoots' ? ctx.short + ctx.inbox : d.k === 'gear' ? ctx.rent : d.k === 'clients' && ctx.cs ? ctx.cs.toCheck + ctx.cs.overdue : 0; }
   function openDesk(k) {
     closeDesk();
-    const d = DESKS.find(x => x.k === k); if (!d) return;
+    const d = desks().find(x => x.k === k); if (!d) return;
     if (k === 'settings') { openMore(); return; }
     const a = api(), rent = a ? a.rentalsToBook().length : 0, inbox = a ? a.inboxCount() : 0, cs = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
     const ov = document.createElement('div'); ov.className = 'sb-modal-overlay mh-sheet-bg'; ov.id = 'mh-desk';
@@ -193,18 +202,19 @@
     const wShort = week.filter(a.isShort).length; if (wShort) needs.push(['short', 'blush', wShort, 'Short on crew', 'in the next 7 days']);
     const wClash = week.filter(a.hasConflict).length; if (wClash) needs.push(['clash', 'peach', wClash, 'Double-booked', 'in the next 7 days']);
     const csum = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
+    if (sup()) needs.length = 0; // crew, gear and day-off decisions are not his; family itineraries are (below)
     if (csum && csum.toCheck) needs.splice(Math.min(1, needs.length), 0, ['clients', 'lilac', csum.toCheck, 'Client itineraries', 'sent by families, to check']);
-    if (csum && csum.overdue) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
-    if (csum && csum.dueSoon) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
-    if (u && u.unconf.length) needs.push(['updates', 'sand', u.unconf.length, 'Not confirmed', 'by crew, next 7 days']);
-    if (u && u.data.length) needs.push(['updates', 'sand', u.data.length, 'Data handover', 'still with the crew']);
+    if (csum && csum.overdue && !sup()) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
+    if (csum && csum.dueSoon && !sup()) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
+    if (u && u.unconf.length && !sup()) needs.push(['updates', 'sand', u.unconf.length, 'Not confirmed', 'by crew, next 7 days']);
+    if (u && u.data.length && !sup()) needs.push(['updates', 'sand', u.data.length, 'Data handover', 'still with the crew']);
     h += '<div class="sechead"><h2>Needs you</h2>' + (needs.length > 4 ? '<button type="button" class="allbtn" id="mh-needs-all">All ' + needs.length + ICON('chev').replace('<svg', '<svg width="14" height="14"') + '</button>' : '') + '</div>';
     h += needs.length ? '<div class="needs" id="mh-needs">' + needs.map(([k, cls, n, title, sub], i) => '<button type="button" class="need ' + cls + '" data-need="' + k + '"' + (i > 3 ? ' hidden' : '') + '><span class="n">' + n + (k === 'inbox' || (k === 'updates' && i === 0) ? ' new' : '') + '</span><strong>' + esc(title) + '</strong><span>' + esc(sub) + '</span></button>').join('') + '</div>'
       : '<div class="allclear">Nothing needs you right now. 🎉</div>';
     // quick menu
     const cs = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
-    const ctx = { today: todayEv.length, short: wShort, inbox, rent, cs };
-    h += '</div><div class="mh-col"><div class="sechead"><h2>Desks</h2></div><div class="desks" id="mh-desks">' + DESKS.map(d => {
+    const ctx = { today: todayEv.length, short: sup() ? 0 : wShort, inbox: sup() ? 0 : inbox, rent, cs: cs && sup() ? Object.assign({}, cs, { overdue: 0, dueSoon: 0 }) : cs };
+    h += '</div><div class="mh-col"><div class="sechead"><h2>Desks</h2></div><div class="desks" id="mh-desks">' + desks().map(d => {
       const n = deskCount(d, ctx);
       return '<button type="button" class="desk' + (d.cls ? ' ' + d.cls : '') + '" data-desk="' + d.k + '">' + ICON(d.ic) + '<b>' + esc(d.title) + '</b><small>' + esc(deskLine(d, ctx)) + '</small>' + (n ? '<span class="count">' + n + '</span>' : '') + '</button>';
     }).join('') + '</div>';
@@ -237,7 +247,7 @@
   // ---------- start ----------
   document.addEventListener('DOMContentLoaded', async () => {
     try { who = await app.me(); } catch (e) { return; }
-    if (!who || (who.role !== 'owner' && who.role !== 'manager')) return; // shim.js sends everyone else away
+    if (!who || !['owner', 'manager', 'supervisor'].includes(who.role)) return; // shim.js sends everyone else away
     buildChrome();
     apply();
     // redraw Home when the board changes (its summary line is redrawn on every change) and when Team updates change

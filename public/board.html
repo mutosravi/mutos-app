@@ -19,6 +19,7 @@
 <script src="/app-core.js"></script>
 <script src="/shim.js"></script>
 <script src="/crew-sync.js"></script>
+<script src="/supervisor.js"></script>
 <script src="/team-updates.js"></script>
 <script src="/clients.js"></script>
 <script src="/icons.js"></script>
@@ -1506,7 +1507,22 @@ body.mh-view-board #mutos-home { display: none; }
     syncing = true;
     let failed = 0, lastErr = null, touchedCrew = false;
     try {
-      const ops = pendingOps();
+      let ops = pendingOps();
+      // a login with limits in the team app (supervisor): a change it may not make is put back here, before anything is sent
+      const A = window.MUTOS_APP;
+      if (A && A.allowWrite) {
+        const no = [];
+        ops = ops.filter(op => { const was = synced[op.key][op.id]; const ok = A.allowWrite(op.key, op.id, was ? JSON.parse(was) : null, op.del ? null : op.body); if (ok === true) return true; no.push(ok); return false; });
+        if (no.length) {
+          const back = pendingOps().filter(op => !ops.some(o => o.key === op.key && o.id === op.id));
+          back.forEach(op => { const list = state[op.key], i = list.findIndex(x => x.id === op.id), was = synced[op.key][op.id];
+            if (was) { const obj = cleanFor(op.key, JSON.parse(was)); if (i >= 0) list[i] = obj; else list.push(obj); } else if (i >= 0) list.splice(i, 1); });
+          if (!ops.length) pendingHistory.length = 0;
+          ROSTER_KEYS.forEach(k => sortRoster(state[k]));
+          saveLocalMirror(); renderBoard(); updateSummary();
+          toast(typeof no[0] === 'string' ? no[0] : 'Your login cannot make that change, so it was put back.');
+        }
+      }
       for (let i = 0; i < ops.length; i += 8) {
         await Promise.all(ops.slice(i, i + 8).map(async op => {
           const ref = db.collection(COLL[op.key]).doc(op.id);
@@ -2914,6 +2930,15 @@ body.mh-view-board #mutos-home { display: none; }
     const paintSeg = () => segs.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === type)));
     segs.forEach(b => b.addEventListener('click', () => { type = b.dataset.v; paintSeg(); }));
     paintSeg();
+    // a login with limits (supervisor): only the itinerary and the client's contact can be changed here
+    const L = window.MUTOS_APP && window.MUTOS_APP.limits ? window.MUTOS_APP.limits() : null;
+    if (L) {
+      [['#ef-wedding', 'wedding'], ['#ef-coverage', 'coverage'], ['#ef-tier', 'tier']].forEach(([sel, f]) => { if (!L.fields.includes(f)) { q(sel).disabled = true; q(sel).title = L.note; } });
+      if (!L.fields.includes('eventType')) segs.forEach(b => { b.disabled = true; b.title = L.note; });
+      if (!L.fields.includes('status')) q('#ef-cancel').hidden = true;
+      if (!L.canDelete(ev.id)) q('#ef-delete').hidden = true;
+      q('.sb-edit-form').insertAdjacentHTML('afterbegin', '<p class="sb-modal-sub" id="ef-limits" style="margin:0 0 6px">' + escapeHtml(L.note) + '</p>');
+    }
     const collect = () => {
       const name = q('#ef-name').value.trim(), date = q('#ef-date').value;
       if (!name || !date) { toast('A shoot needs a name and a date.'); return false; }
