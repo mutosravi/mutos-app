@@ -169,9 +169,15 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
 
   // ── team leader ──
   const sh = await phone(SHREY);
+  // his team home shows the handover on top until he answers (Ravi, 11 Nov 2026), and he can accept right there
+  await sh.goto(B + '/me.html'); await sh.waitForSelector('#inbox .ibx-i', { timeout: 10000 });
+  ok(/3 cards for you: C01, C02, C03/.test(await sh.textContent('#inbox')) && /From Vikas/.test(await sh.textContent('#inbox')), 'team home: "📥 3 cards for you: C01, C02, C03 · From Vikas" on top');
+  await shot(sh, 'inbox-me.png');
+  await sh.click('#inbox [data-yes]'); await sh.waitForFunction(() => !document.querySelector('#inbox .ibx-i'));
+  ok([K('C01'), K('C02'), K('C03')].every(k => k.holder === P.Shrey), '"I have all 3 ✓" on the banner accepts them; the banner goes');
   await open(sh);
   ok(await sh.isVisible('.bnav .tab[data-tab="mine"]') && !(await sh.isVisible('.bnav .tab[data-tab="copy"]')) && !(await sh.$('#add-cards')), 'team leader: My cards; no copying, no adding');
-  await sh.click('[data-acc]'); await sh.waitForSelector('.crow');
+  await sh.waitForSelector('.crow');
   ok((await sh.$$('#tab-mine .crow.blue')).length === 3, 'three cards with Shrey (blue: out)');
   await shot(sh, 'cards-leader.png');
   // notes: C01 and C02 together, then C03 not used
@@ -194,6 +200,9 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   ok(K('C02').holder === P.Saif && K('C02').data === 'hold', '… and pass a card straight to another team leader (it stays red)');
 
   // ── the office copies ──
+  await o.goto(B + '/board.html'); await o.waitForSelector('#mh-inbox .ibx-i', { timeout: 20000 });
+  ok(/2 cards returned to the office: C01, C03/.test(await o.textContent('#mh-inbox')) && /From Shrey/.test(await o.textContent('#mh-inbox')), 'owner Home: "📥 2 cards returned to the office: C01, C03 · From Shrey" on top');
+  await shot(o, 'inbox-home.png');
   await open(o);
   ok(/2 cards for the office: C01, C03/.test(await o.textContent('#inbox')), 'the office sees the returned cards');
   await o.click('[data-acc]'); await sleep(300);

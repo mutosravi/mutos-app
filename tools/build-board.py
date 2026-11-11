@@ -32,6 +32,7 @@ head = '''<!doctype html>
 <script src="/team-updates.js"></script>
 <script src="/clients.js"></script>
 <script src="/icons.js"></script>
+<script src="/inbox.js"></script>
 <script src="/home.js"></script>
 </head>
 <body>

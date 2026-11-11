@@ -49,6 +49,8 @@
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
 <script src="/icons.js"></script>
+<script src="/inbox.js"></script>
+<script src="/push-client.js"></script>
 <script src="/payroll.js"></script>
 <script src="/att-data.js"></script>
 </head>
@@ -56,9 +58,10 @@
 <main class="wrap">
   <header class="hdr topbar">
     <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
-    <div class="hdr-acts"><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+    <div class="hdr-acts"><button type="button" class="btn small" id="bell" hidden>🔕 Notify me</button><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
   </header>
   <section class="hello"><span class="avatar soft" id="av" aria-hidden="true"></span><div><h1 id="hello">Hello</h1><p class="sub" id="sub">Loading…</p></div></section>
+  <div id="inbox"></div>
   <div id="att"></div>
   <div class="sechead" id="menu-h" hidden><h2>My menu</h2></div>
   <div class="doors" id="doors"></div>
@@ -87,7 +90,7 @@
     const today = A.todayIST();
     const [e, p, f] = await Promise.all([
       safe(c.from('employees').select('*').eq('email', me.email).maybeSingle()),
-      safe(c.from('people').select('id, name, code, title').eq('email', me.email).maybeSingle()),
+      safe(c.from('people').select('id, name, code, title, skills').eq('email', me.email).maybeSingle()),
       me.personKey ? safe(c.from('crew_feed').select('data').eq('person_key', me.personKey).maybeSingle()) : null
     ]);
     emp = e && e.active ? e : null; person = p || null;
@@ -210,7 +213,13 @@
     $('sub').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
     renderAtt(); renderDoors();
   }
-  try { await load(); render(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not load (' + esc(e.message || e) + '). Pull down to try again.</span>'; }
+  let inbox = null;
+  try { await load(); render();
+    // cards and drives given to me: stays on top until I accept or say "not received" (Ravi, 11 Nov 2026)
+    // phone notices for shoots (crew) and for cards / drives given to me
+    if (window.mutosPush) window.mutosPush.button($('bell'), me, c, toast, me.personKey ? null : { on: '🔔 Notices on', off: '🔕 Notify me', stop: 'Turn notices off', stopped: 'Notices turned off on this phone.', done: 'Notices on. This phone gets a message when cards or drives are given to you.' });
+    if (person && window.MutosInbox) inbox = window.MutosInbox.mount($('inbox'), { c, staff: false, personId: person.id, keeper: (person.skills || []).includes('data'), drivesHref: '/mywork.html?tab=drives', toast, onChange: () => { load().then(renderDoors).catch(() => {}); } });
+  } catch (e) { $('sub').innerHTML = '<span class="err">Could not load (' + esc(e.message || e) + '). Pull down to try again.</span>'; }
   // coming back to the app: fresh numbers (a phone stops the page in the background)
   setInterval(() => { if (!document.hidden && !document.querySelector('.sheet-bg')) renderAtt(); }, 60000); // the Undo offer ends after 10 minutes
   document.addEventListener('visibilitychange', async () => { if (!document.hidden && !document.querySelector('.sheet-bg')) { try { await load(); render(); } catch (e) {} } });

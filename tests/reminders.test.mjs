@@ -65,15 +65,18 @@ ok(b.title === '2 shoots tomorrow' && b.body.includes('Please confirm'), 'two sh
 {
   const MID = '22222222-2222-4222-8222-222222222222', SHREY = 'p-shrey', KUL = 'p-kul';
   const mv = { id: MID, drive: 'd1', from_person: KUL, to_person: SHREY, status: 'pending', given_by: 'kul@x.com', note: 'for Jyoti reel' };
-  const phones = [Object.assign({ endpoint: 'https://push.test/s1', person_key: 'shrey-cine', fails: 0 }, await phone()), Object.assign({ endpoint: 'https://push.test/s2', person_key: 'other', fails: 0 }, await phone())];
+  const phones = [Object.assign({ endpoint: 'https://push.test/s1', person_key: 'shrey-cine', fails: 0 }, await phone()), Object.assign({ endpoint: 'https://push.test/s2', person_key: 'other', fails: 0 }, await phone()), Object.assign({ endpoint: 'https://push.test/s3', person_key: 'email:boss@x.com', fails: 0 }, await phone())];
   const pushed = [], asked = [];
   const f3 = async (url, opt = {}) => {
     const u = String(url); asked.push(u);
     if (u.endsWith('/auth/v1/user')) { const t = (opt.headers.Authorization || '').slice(7); return t === 'x' ? { ok: false } : { ok: true, json: async () => ({ email: t === 'k' ? 'kul@x.com' : 'shrey@x.com' }) }; }
     if (u.includes('/drive_moves?')) return { ok: true, json: async () => [mv] };
     if (u.includes('/drives?')) return { ok: true, json: async () => [{ name: 'M 1' }] };
-    if (u.includes('/people?select=id,crew_keys&id=eq.' + SHREY)) return { ok: true, json: async () => [{ id: SHREY, crew_keys: ['shrey-cine', 'shrey-drone'] }] };
-    if (u.includes('/people?select=id,crew_keys&skills=cs.')) return { ok: true, json: async () => [{ id: KUL, crew_keys: ['other'] }] };
+    if (u.includes('/people?select=id&skills=cs.')) return { ok: true, json: async () => [{ id: KUL }] };
+    if (u.includes('/people?select=id,email,crew_keys&active=eq.true&id=')) { const ids = decodeURIComponent(u); return { ok: true, json: async () => [{ id: SHREY, email: 'shrey@x.com', crew_keys: ['shrey-cine', 'shrey-drone'] }, { id: KUL, email: 'kul@x.com', crew_keys: ['other'] }].filter(p => ids.includes('"' + p.id + '"')) }; }
+    if (u.includes('/people?select=id,email,crew_keys')) return { ok: true, json: async () => [] };
+    if (u.includes('/members?select=email&role=')) return { ok: true, json: async () => [{ email: 'boss@x.com' }] };
+    if (u.includes('/members?select=email,person_key')) return { ok: true, json: async () => [] };
     if (u.includes('/people?select=name')) return { ok: true, json: async () => [{ name: 'Kuldeep' }] };
     if (u.includes('/push_subs?')) { const keys = decodeURIComponent(u.split('person_key=')[1]); return { ok: true, json: async () => phones.filter(x => keys.includes('"' + x.person_key + '"')) }; }
     if (u.startsWith('https://push.test/')) { pushed.push(u); return { status: 201 }; }
@@ -85,7 +88,7 @@ ok(b.title === '2 shoots tomorrow' && b.body.includes('Please confirm'), 'two sh
   ok((await call('s', { id: MID })).status === 403, 'only the giver can send the drive notice');
   ok((await call('x', { id: MID })).status === 401 && (await call('k', { id: 'bad' })).status === 400, 'fake sign-in or id refused');
   mv.to_person = null; pushed.length = 0; r = await call('k', { id: MID }); j = await r.json();
-  ok(j.sent === 1 && pushed[0] === 'https://push.test/s2', 'a return to the office notifies the drive keepers');
+  ok(j.sent === 2 && pushed.sort().join() === 'https://push.test/s2,https://push.test/s3', 'a return to the office notifies the drive keepers and the owner/managers (signed up by Gmail)');
   mv.status = 'accepted'; r = await call('k', { id: MID }); j = await r.json(); ok(j.sent === 0, 'nothing sent once it is answered');
 }
 // memory card notices (014 + 015): given → receiver; accepted / not received → giver; office returns → owner and managers

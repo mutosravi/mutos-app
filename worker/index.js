@@ -142,12 +142,14 @@ export async function notifyDriveApi(request, env, fetchFn = fetch) {
   if (!m || m.status !== 'pending') return Response.json({ sent: 0 });
   if (m.given_by !== email) return Response.json({ error: 'Only the giver can send this notice.' }, { status: 403 });
   const [d] = await store.get('drives?select=name&id=eq.' + m.drive);
-  const who = m.to_person ? await store.get('people?select=id,crew_keys&id=eq.' + m.to_person + '&active=eq.true') : await store.get('people?select=id,crew_keys&skills=cs.%7Bdata%7D&active=eq.true');
+  // the receiver; for a return to the office: the drive keepers, the owner and the managers (any phone they signed up, 015)
+  const who = m.to_person ? [{ id: m.to_person }] : await store.get('people?select=id&skills=cs.%7Bdata%7D&active=eq.true');
+  const office = m.to_person ? [] : (await store.get('members?select=email&role=' + inListQ(['owner', 'manager']))).map(x => x.email);
   const [from] = m.from_person ? await store.get('people?select=name&id=eq.' + m.from_person) : [{ name: 'the office' }];
-  const keys = [...new Set(who.flatMap(p => p.crew_keys || []))];
+  const keys = await phoneKeys(store, office, who.map(p => p.id));
   if (!keys.length) return Response.json({ sent: 0, note: 'They have not turned on phone notices.' });
-  const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inList(keys));
-  const msg = { title: 'Drive for you: ' + ((d && d.name) || 'a drive'), body: (m.to_person ? 'From ' + ((from && from.name) || 'someone') : 'Returned to the office by ' + ((from && from.name) || 'someone')) + (m.note ? ' · ' + m.note : '') + '. Open the app and tap "I have it" once you have it.', tag: 'drive-' + m.id, url: '/mywork.html?tab=drives' };
+  const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inListQ(keys));
+  const msg = { title: (m.to_person ? 'Drive for you: ' : 'Drive returned to the office: ') + ((d && d.name) || 'a drive'), body: (m.to_person ? 'From ' + ((from && from.name) || 'someone') : 'Returned to the office by ' + ((from && from.name) || 'someone')) + (m.note ? ' · ' + m.note : '') + '. Open the app and tap "I have it" once you have it.', tag: 'drive-' + m.id, url: '/mywork.html?tab=drives' };
   const sent = subs.length ? await deliver(env, store, subs, msg, fetchFn) : 0;
   return Response.json({ sent });
 }

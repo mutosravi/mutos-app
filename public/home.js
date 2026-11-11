@@ -56,7 +56,7 @@
 
     const home = document.createElement('main');
     home.id = 'mutos-home'; home.className = 'mh-home';
-    home.innerHTML = '<div class="mh-wrap"><section class="hello"><span class="avatar" id="mh-av"></span><div><h1 id="mh-hello"></h1><p class="sub" id="mh-date"></p></div></section><div id="mh-body"><div class="hero"><div class="hero-top"><span class="t">Today</span></div><p>Loading the board…</p></div></div></div>';
+    home.innerHTML = '<div class="mh-wrap"><section class="hello"><span class="avatar" id="mh-av"></span><div><h1 id="mh-hello"></h1><p class="sub" id="mh-date"></p></div></section><div id="mh-inbox"></div><div id="mh-body"><div class="hero"><div class="hero-top"><span class="t">Today</span></div><p>Loading the board…</p></div></div></div>';
     bar.after(home);
 
     const nav = document.createElement('nav');
@@ -214,7 +214,6 @@
     if (cardSum && !sup()) {
       if (cardSum.lost) needs.splice(0, 0, ['cards', 'peach', cardSum.lost, 'Card lost', 'check it now']);
       if (cardSum.holdOld) needs.splice(Math.min(1, needs.length), 0, ['cards', 'peach', cardSum.holdOld, 'Cards not copied', 'on hold for over a day']);
-      if (cardSum.toOffice) needs.push(['cards', 'honey', cardSum.toOffice, 'Cards returned', 'waiting for you to accept']);
     }
     h += '<div class="sechead"><h2>Needs you</h2>' + (needs.length > 4 ? '<button type="button" class="allbtn" id="mh-needs-all">All ' + needs.length + ICON('chev').replace('<svg', '<svg width="14" height="14"') + '</button>' : '') + '</div>';
     h += needs.length ? '<div class="needs" id="mh-needs">' + needs.map(([k, cls, n, title, sub], i) => '<button type="button" class="need ' + cls + '" data-need="' + k + '"' + (i > 3 ? ' hidden' : '') + '><span class="n">' + n + (k === 'inbox' || (k === 'updates' && i === 0) ? ' new' : '') + '</span><strong>' + esc(title) + '</strong><span>' + esc(sub) + '</span></button>').join('') + '</div>'
@@ -296,6 +295,13 @@
     document.addEventListener('mutos:updates', render);
     loadCards(); setInterval(loadCards, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { loadCards(); loadMyDay(); } });
     loadMyDay(); setInterval(loadMyDay, 2 * 60 * 1000);
+    // cards and drives given to me (or returned to the office): a banner above everything until accepted or "not received"
+    if (window.MutosInbox) (async () => {
+      try {
+        const c = await app.client(), pr = await c.from('people').select('id, skills').eq('email', who.email).maybeSingle(), p = (pr && pr.data) || null;
+        window.MutosInbox.mount(document.getElementById('mh-inbox'), { c, staff: ['owner', 'manager'].includes(who.role), personId: p ? p.id : null, keeper: !!(p && (p.skills || []).includes('data')), drivesHref: '/desk.html?tab=drives', toast, onChange: () => loadCards() });
+      } catch (e) {}
+    })();
     const wait = setInterval(() => { if (api()) { clearInterval(wait); render(); } }, 300);
     // the board's own windows close back to whatever was showing; refresh Home when one closes
     new MutationObserver(() => { if (!document.getElementById('sb-active-modal')) render(); }).observe(document.body, { childList: true });
