@@ -79,7 +79,7 @@
   if (!['crew', 'staff'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; } // owner, manager, gear desk… have their own home
   c = await app.client();
 
-  let emp = null, person = null, shoots = [], att = null, jobsOpen = 0, awayPending = 0;
+  let emp = null, person = null, shoots = [], att = null, jobsOpen = 0, awayPending = 0, myCards = 0, cardsIn = 0;
   const safe = async q => { try { const r = await q; return r && !r.error ? r.data : null; } catch (e) { return null; } };
   async function load() {
     const today = A.todayIST();
@@ -92,6 +92,7 @@
     shoots = ((f && f.data && f.data.shoots) || []).filter(s => s.date >= today).sort((a, b) => a.date.localeCompare(b.date));
     att = emp ? await A.loadMonth(c, A.monthOf(today), [emp.email]).catch(() => null) : null;
     if (person) { const j = await safe(c.from('work_jobs').select('id, status').eq('assignee', person.id)); jobsOpen = (j || []).filter(x => x.status !== 'final').length; }
+    if (person) { const [k, m] = await Promise.all([safe(c.from('cards').select('id').eq('holder', person.id)), safe(c.from('card_moves').select('id').eq('to_person', person.id).eq('status', 'pending'))]); myCards = (k || []).length; cardsIn = (m || []).length; }
     if (me.personKey) { const a = await safe(c.from('crew_away').select('id, status').eq('person_key', me.personKey).eq('status', 'pending')); awayPending = (a || []).length; }
   }
 
@@ -175,6 +176,8 @@
     if (hasShoots) { const n = shoots[0]; doors.push(['shoots', '/crew.html', 'calendar', 'My Shoots', n ? 'Next: ' + day(n.date) + ' · ' + n.shoot : 'No shoots coming up', shoots.filter(s => s.date === A.todayIST()).length]); }
     if (emp) doors.push(['att', '/work.html?tab=month', 'clock', 'My Attendance', 'Month, history and pay', 0]);
     if (person) doors.push(['work', '/mywork.html', 'film', 'My Work', jobsOpen ? jobsOpen + ' job' + (jobsOpen > 1 ? 's' : '') + ' open' : 'Jobs, daily report, drives', 0]);
+    // memory cards (014): shooters, or anyone holding cards or being given some
+    if (person && (hasShoots || myCards || cardsIn)) doors.push(['cards', '/cards.html', 'card', 'My Cards', cardsIn ? cardsIn + ' to accept' : myCards ? myCards + ' with you' : 'Cards you have, notes, where copied', cardsIn]);
     if (emp || hasShoots) doors.push(['req', '#', 'log', 'My Requests', emp ? 'Leave, advance, correction' + (hasShoots ? ', day off' : '') : 'Days off from shoots', pendReq + awayPending]);
     doors.push(['profile', '#', 'idcard', 'My Profile', person ? [person.code, person.title].filter(Boolean).join(' · ') || 'Your details' : 'Your details', 0]);
     $('menu-h').hidden = false;

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Cards · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Muto's">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+/* Memory cards (11 Nov 2026, Ravi): give → accept like the drives, team leader's notes per card, copied only by owner/manager.
+   Colours: red = hold (do not format), amber = single copy (safe to format, backup pending), green = free or copied with backup, blue = out, grey = problem. */
+:root { --c-red: #b23a26; --c-amber: #c9973f; --c-green: #3d7a6e; --c-blue: #3c6694; --c-grey: #9a8f88; }
+.card { background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); }
+.bnav .tab[hidden] { display: none !important; }
+.crow { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; align-items: center; width: 100%; text-align: left; border: 0; font: inherit; color: var(--ink); background: var(--surface); border-radius: 18px; padding: 11px 14px; margin: 8px 0; box-shadow: var(--shadow), inset 5px 0 0 var(--bar, var(--c-green)); cursor: pointer; }
+.crow.red { --bar: var(--c-red); } .crow.amber { --bar: var(--c-amber); } .crow.green { --bar: var(--c-green); } .crow.blue { --bar: var(--c-blue); } .crow.grey { --bar: var(--c-grey); opacity: .8; }
+.crow .sel { grid-row: 1 / span 2; display: flex; align-items: center; }
+.crow .sel input { width: 22px; height: 22px; accent-color: var(--rose); }
+.crow .nm { font-weight: 700; font-size: 15px; }
+.crow .nm small { font-weight: 400; color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+.crow .meta { grid-column: 2 / -1; margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.crow.nosel .meta { grid-column: 1 / -1; }
+.st { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
+.st.red { background: #fbe2dc; color: #7a2d1e; } .st.amber { background: var(--honey); color: var(--warn-ink); } .st.green { background: var(--ok-bg); color: var(--ok-ink); }
+.st.blue { background: #dde7f2; color: #1f3f63; } .st.grey { background: var(--sand); color: var(--ink); }
+.old { color: var(--c-red); font-weight: 700; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); margin: 6px 2px 0; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 4px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.chip-b { border: 0; background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 12.5px var(--font-body); color: var(--ink); cursor: pointer; box-shadow: var(--shadow); }
+.chip-b.on { background: var(--ink); color: #fff; }
+.selbar { position: sticky; bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 20; display: flex; gap: 8px; background: var(--ink); color: #fff; border-radius: 18px; padding: 10px 12px; align-items: center; margin-top: 10px; box-shadow: var(--shadow); }
+.selbar span { flex: 1; font-size: 13.5px; }
+.selbar .pillbtn { min-height: 40px; padding: 0 14px; }
+.selbar .pillbtn.light { background: transparent; color: #fff; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.7); }
+@media (min-width: 900px) { .selbar { bottom: 12px; } }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 620px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 6px; font-size: 19px; }
+.sheet h4 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.sheet .sub { margin: 0 0 10px; }
+.rep { border-top: 1px dashed var(--sand); padding: 7px 0; font-size: 13.5px; line-height: 1.45; }
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 4px; }
+.acts .pillbtn { min-height: 42px; }
+.acts .wide { grid-column: 1 / -1; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg label { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border-radius: 999px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); font-weight: 600; cursor: pointer; }
+.seg input { accent-color: var(--rose); width: 16px; height: 16px; margin: 0; }
+.seg label:has(input:checked) { background: var(--ink); color: #fff; }
+.x { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; }
+.ibox { background: var(--honey); border-radius: 18px; padding: 12px 14px; margin: 10px 0; }
+.ibox b { font-size: 14.5px; }
+.ibox .pillrow { margin-top: 8px; }
+.form-grid label { color: var(--muted); }
+textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/icons.js"></script>
+<script src="/work-core.js"></script>
+</head>
+<body>
+<main class="wrap" style="padding-bottom:120px">
+  <header class="hdr"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span><div class="hdr-acts"><a class="btn small" id="nav-home" href="/">Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div></header>
+  <nav class="bnav" role="tablist" aria-label="Cards">
+    <button type="button" role="tab" class="tab" data-tab="mine" hidden><span data-ic="card"></span>My cards<b class="dot" id="nav-mine" hidden></b></button>
+    <button type="button" role="tab" class="tab" data-tab="all"><span data-ic="grid"></span>All cards<b class="dot" id="nav-all" hidden></b></button>
+    <button type="button" role="tab" class="tab" data-tab="copy" hidden><span data-ic="drive"></span>To copy<b class="dot" id="nav-copy" hidden></b></button>
+  </nav>
+  <section class="hello" style="display:block"><h1 id="hi">Memory cards</h1><p class="sub" id="sub">Loading…</p></section>
+  <div id="inbox"></div>
+  <section id="tab-mine" hidden></section>
+  <section id="tab-all" hidden></section>
+  <section id="tab-copy" hidden></section>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), W = window.MutosWork, esc = W.esc, app = window.mutosApp;
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 5000); };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20);
+  $('out').addEventListener('click', () => app.signOut());
+  let me, c;
+  try { me = await app.me(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not reach the app. Check your internet.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  c = await app.client();
+  $('nav-home').href = app.homeFor(me.role) === '/cards.html' ? '/' : app.homeFor(me.role);
+  const staff = ['owner', 'manager'].includes(me.role), owner = me.role === 'owner', desk = staff || me.role === 'supervisor';
+  const pr = await c.from('people').select('id, name, code').eq('email', me.email).maybeSingle();
+  const person = pr.data || null, myId = person ? person.id : null;
+  if (!desk && !person) { $('sub').innerHTML = 'Your Gmail (<b>' + esc(me.email) + '</b>) is not on Muto\'s People list yet, so cards cannot be given to you. Send it to Ravi on WhatsApp.'; return; }
+
+  const KINDS = ['CFexpress A', 'CFexpress B', 'SD', 'microSD', 'XQD', 'CFast', 'Other'];
+  const MEDIA = [['photo', 'Photo'], ['video', 'Video'], ['both', 'Both']];
+  const STYLE = [['candid', 'Candid'], ['cine', 'Cine'], ['traditional', 'Traditional'], ['drone', 'Drone'], ['other', 'Other']];
+  const lbl = (list, k) => (list.find(x => x[0] === k) || [k, k || ''])[1];
+  const when = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+  const today = W.todayIST();
+  let cards = [], moves = [], uses = [], copies = [], dir = [], drives = [], shoots = [], evWed = new Map(), tab = null, filt = 'all', q = '';
+  const sel = new Set();
+  const nameOf = id => id ? (id === myId ? 'you' : ((dir.find(p => p.id === id) || {}).name || 'someone')) : 'the office';
+  const NameOf = id => { const n = nameOf(id); return n === 'you' ? 'You' : n === 'the office' ? 'The office' : n; };
+  const pendingOf = k => moves.find(m => m.card === k.id && m.status === 'pending');
+  const forMe = m => m.status === 'pending' && ((m.to_person && m.to_person === myId) || (!m.to_person && staff));
+  const usesNow = k => uses.filter(u => u.card === k.id && u.cycle === k.cycle);
+  const copiesOf = k => copies.filter(x => x.card === k.id);
+  const hoursOn = k => k.data === 'hold' && k.data_since ? (Date.now() - new Date(k.data_since)) / 36e5 : 0;
+  function stOf(k) {
+    if (k.condition !== 'ok') return { cls: 'grey', label: { damaged: 'Damaged', lost: 'Lost', retired: 'Retired' }[k.condition] };
+    if (k.data === 'hold') return { cls: 'red', label: 'Hold · do not format' };
+    if (k.data === 'single') return { cls: 'amber', label: 'Single copy' };
+    if (k.holder) return { cls: 'blue', label: 'With ' + nameOf(k.holder) };
+    return k.data === 'copied' ? { cls: 'green', label: 'Copied ✓' } : { cls: 'green', label: 'Free' };
+  }
+  const canGive = k => k.condition === 'ok' && !pendingOf(k) && !(k.holder == null && k.data === 'hold') && ((k.holder == null && desk) || (k.holder && k.holder === myId) || (k.holder && staff));
+  const canNote = k => (k.holder && k.holder === myId) || desk;
+  const spec = k => [k.size_label, k.kind, k.brand].filter(Boolean).join(' ');
+  const useText = u => u.used ? [u.shoot, [lbl(MEDIA, u.media), u.style ? lbl(STYLE, u.style).toLowerCase() : ''].filter(Boolean).join(' '), u.camera, u.note].filter(Boolean).join(' · ') : 'Not used' + (u.note ? ' · ' + u.note : '');
+
+  async function load() {
+    const [k, m, u, cp, p, d] = await Promise.all([
+      c.from('cards').select('*').order('code'),
+      c.from('card_moves').select('*').eq('status', 'pending'),
+      c.from('card_uses').select('*').order('at', { ascending: false }).limit(1500),
+      c.from('card_copies').select('*').order('at', { ascending: false }).limit(1500),
+      c.rpc('people_directory'),
+      c.from('drives').select('id, name, status').eq('status', 'in_use').order('name')
+    ]);
+    if (k.error) throw k.error;
+    cards = k.data || []; moves = m.data || []; uses = u.data || []; copies = cp.data || []; dir = p.data || []; drives = d.data || [];
+    cards.sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
+  }
+  // the shoots a note can be for: the board (studio) or my own shoots (team), last 30 days to tomorrow
+  async function loadShoots() {
+    const from = W.addDays(today, -30), to = W.addDays(today, 1);
+    try {
+      if (desk) {
+        const ev = await W.loadDocs(c, 'events');
+        W.weddingsFrom(ev).forEach(w => w.events.forEach(e => evWed.set(e.id, w)));
+        shoots = ev.filter(e => e.status !== 'cancelled' && e.date >= from && e.date <= to).map(e => ({ id: e.id, name: e.name, wedding: e.wedding || '', date: e.date }));
+      } else if (me.personKey) {
+        const f = await c.from('crew_feed').select('data').eq('person_key', me.personKey).maybeSingle();
+        shoots = ((f.data && f.data.data && f.data.data.shoots) || []).filter(s => s.date >= from && s.date <= to).map(s => ({ id: s.id, name: s.shoot, wedding: s.wedding || '', date: s.date }));
+      }
+    } catch (e) { shoots = []; }
+    shoots.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+  }
+
+  // ---------- list ----------
+  function row(k, selectable) {
+    const s = stOf(k), pm = pendingOf(k), last = usesNow(k)[0], h = hoursOn(k);
+    const bits = [k.holder ? 'With ' + nameOf(k.holder) : 'In the office'];
+    if (pm) bits.push('→ ' + nameOf(pm.to_person) + ', waiting to accept');
+    if (last) bits.push(useText(last));
+    if (k.data === 'single') bits.push('backup pending');
+    const meta = esc(bits.join(' · ')) + (h >= 24 ? ' · <span class="old">on hold ' + Math.floor(h / 24) + ' day' + (h >= 48 ? 's' : '') + '</span>' : '');
+    return '<div class="crow ' + s.cls + (selectable ? '' : ' nosel') + '" data-c="' + k.id + '" role="button" tabindex="0">' +
+      (selectable ? '<label class="sel" aria-label="Pick ' + esc(k.code) + '"><input type="checkbox" data-sel="' + k.id + '"' + (sel.has(k.id) ? ' checked' : '') + '></label>' : '') +
+      '<span class="nm">' + esc(k.code) + '<small>' + esc(spec(k)) + '</small></span><span class="st ' + s.cls + '">' + esc(s.label) + '</span>' +
+      '<span class="meta">' + meta + '</span></div>';
+  }
+  const legend = '<div class="legend"><span><i style="background:var(--c-red)"></i>Hold: footage not copied</span><span><i style="background:var(--c-amber)"></i>Single copy: safe to format</span><span><i style="background:var(--c-green)"></i>Free / copied twice</span><span><i style="background:var(--c-blue)"></i>Out</span></div>';
+  function selBar(where) {
+    const picked = [...sel].map(id => cards.find(k => k.id === id)).filter(Boolean);
+    if (!picked.length) return '';
+    const noteOk = picked.every(canNote) && where === 'mine';
+    return '<div class="selbar" id="selbar"><span>' + picked.length + ' picked: ' + esc(picked.map(k => k.code).join(', ')) + '</span>' + (noteOk ? '<button type="button" class="pillbtn light" id="sel-note">Notes</button>' : '') + '<button type="button" class="pillbtn" id="sel-give">Give</button></div>';
+  }
+  function wire(root) {
+    root.querySelectorAll('[data-sel]').forEach(i => { i.addEventListener('click', e => e.stopPropagation()); i.addEventListener('change', () => { if (i.checked) sel.add(i.dataset.sel); else sel.delete(i.dataset.sel); render(); }); });
+    root.querySelectorAll('.sel').forEach(l => l.addEventListener('click', e => e.stopPropagation()));
+    root.querySelectorAll('[data-c]').forEach(b => { const go = () => openCard(cards.find(k => k.id === b.dataset.c)); b.addEventListener('click', go); b.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }); });
+    const g = root.querySelector('#sel-give'); if (g) g.addEventListener('click', () => give([...sel].map(id => cards.find(k => k.id === id)).filter(Boolean)));
+    const n = root.querySelector('#sel-note'); if (n) n.addEventListener('click', () => noteForm([...sel].map(id => cards.find(k => k.id === id)).filter(Boolean)));
+  }
+
+  function renderInbox() {
+    const mineIn = moves.filter(forMe), byBatch = new Map();
+    mineIn.forEach(m => { if (!byBatch.has(m.batch)) byBatch.set(m.batch, []); byBatch.get(m.batch).push(m); });
+    const out = moves.filter(m => !forMe(m) && (m.given_by === me.email)), outB = new Map();
+    out.forEach(m => { if (!outB.has(m.batch)) outB.set(m.batch, []); outB.get(m.batch).push(m); });
+    const codes = list => list.map(m => (cards.find(k => k.id === m.card) || { code: '?' }).code).join(', ');
+    $('inbox').innerHTML = [...byBatch.values()].map(list => { const m = list[0];
+      return '<div class="ibox" data-batch="' + m.batch + '"><b>' + list.length + ' card' + (list.length > 1 ? 's' : '') + ' for ' + (m.to_person ? 'you' : 'the office') + ': ' + esc(codes(list)) + '</b><div class="meta">From ' + esc(nameOf(m.from_person)) + (m.given_by_person && m.given_by_person !== m.from_person ? ', given by ' + esc(nameOf(m.given_by_person)) : '') + ' · ' + esc(when(m.given_at)) + (m.note ? ' · ' + esc(m.note) : '') + '</div>' +
+        '<div class="pillrow"><button type="button" class="pillbtn light" data-dec="' + m.batch + '">Not received</button><button type="button" class="pillbtn" data-acc="' + m.batch + '">I have ' + (list.length > 1 ? 'all ' + list.length : 'it') + ' ✓</button></div></div>'; }).join('') +
+      [...outB.values()].map(list => { const m = list[0];
+        return '<div class="card"><div class="meta">You gave <b>' + esc(codes(list)) + '</b> to ' + esc(nameOf(m.to_person)) + ' · waiting for them to accept. <button type="button" class="x" data-tb="' + m.batch + '">Take back</button></div></div>'; }).join('');
+    const ids = b => moves.filter(m => m.batch === b && m.status === 'pending').map(m => m.id);
+    $('inbox').querySelectorAll('[data-acc]').forEach(b => b.addEventListener('click', () => answer(ids(b.dataset.acc), true)));
+    $('inbox').querySelectorAll('[data-dec]').forEach(b => b.addEventListener('click', () => answer(ids(b.dataset.dec), false)));
+    $('inbox').querySelectorAll('[data-tb]').forEach(b => b.addEventListener('click', async () => { if (await rpc('card_cancel', { p_moves: ids(b.dataset.tb) }, 'Handover taken back.')) await refresh(); }));
+    return mineIn.length;
+  }
+
+  function renderMine() {
+    const mine = cards.filter(k => k.holder && k.holder === myId);
+    const recent = uses.filter(u => u.by_email === me.email && u.used && new Date(u.at) > new Date(Date.now() - 30 * 864e5));
+    let h = mine.length ? '<p class="sub" style="margin:10px 2px 0">Tap a card to write what is on it. Pick cards to give them to someone.</p>' + mine.map(k => row(k, canGive(k))).join('') + legend
+      : '<div class="empty" style="margin-top:12px">No cards with you right now.</div>';
+    if (recent.length) {
+      h += '<div class="sechead"><h2>Where my cards were copied</h2></div><div id="used-list">' + recent.slice(0, 30).map(u => {
+        const k = cards.find(x => x.id === u.card) || { code: '?' }, cp = copies.filter(x => x.card === u.card && x.cycle === u.cycle);
+        const first = cp.find(x => !x.backup), bk = cp.find(x => x.backup);
+        return '<div class="card"><b>' + esc(k.code) + '</b> · ' + esc(u.shoot || '') + ' <span class="meta" style="display:inline">(' + esc(useText(u).replace((u.shoot || '') + ' · ', '')) + ')</span><div class="meta" style="margin-top:4px">' +
+          (first ? '✓ Copied to <b>' + esc(first.drive_name) + '</b> / ' + esc(first.folder || '') + ' · ' + first.files + ' files · ' + esc(when(first.at)) + (bk ? '<br>✓ Backup on <b>' + esc(bk.drive_name) + '</b>' : '<br>Backup not done yet') : '<span class="old">Not copied yet</span>') + '</div></div>';
+      }).join('') + '</div>';
+    }
+    $('tab-mine').innerHTML = h + selBar('mine');
+    wire($('tab-mine'));
+  }
+
+  function renderAll() {
+    const F = [['all', 'All'], ['office', 'In the office'], ['out', 'Out'], ['hold', 'Hold'], ['single', 'Single copy'], ['problem', 'Problems']];
+    const s = q.trim().toLowerCase();
+    const inF = k => ({ all: k.condition !== 'retired', office: !k.holder && k.condition === 'ok', out: !!k.holder, hold: k.data === 'hold', single: k.data === 'single', problem: k.condition !== 'ok' || k.errors > 0 })[filt];
+    const list = cards.filter(k => s ? (k.code + ' ' + (k.serial || '') + ' ' + (k.brand || '') + ' ' + nameOf(k.holder)).toLowerCase().includes(s) : inF(k));
+    const n = f => cards.filter(k => ({ all: k.condition !== 'retired', office: !k.holder && k.condition === 'ok', out: !!k.holder, hold: k.data === 'hold', single: k.data === 'single', problem: k.condition !== 'ok' || k.errors > 0 })[f]).length;
+    $('tab-all').innerHTML = '<div class="tools"><input class="in" type="search" id="cq" placeholder="Find a card (code, serial, person)" value="' + esc(q) + '" style="flex:1 1 200px">' + (staff ? '<button type="button" class="pillbtn" id="add-cards" style="min-height:40px">＋ Add cards</button>' : '') + '</div>' +
+      (s ? '' : '<div class="chips">' + F.map(([k, l]) => '<button type="button" class="chip-b' + (filt === k ? ' on' : '') + '" data-f="' + k + '">' + esc(l) + ' ' + n(k) + '</button>').join('') + '</div>') +
+      (list.length ? list.map(k => row(k, canGive(k))).join('') + legend : '<div class="empty">' + (cards.length ? 'No cards here.' : 'No cards yet.' + (staff ? ' Tap ＋ Add cards and paste your list.' : '')) + '</div>') + selBar('all');
+    $('tab-all').querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => { filt = b.dataset.f; render(); }));
+    const cq = $('cq'); cq.addEventListener('input', () => { q = cq.value; clearTimeout(renderAll.t); renderAll.t = setTimeout(() => { render(); const x = $('cq'); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 300); });
+    const add = $('add-cards'); if (add) add.addEventListener('click', addCards);
+    wire($('tab-all'));
+  }
+
+  function renderCopy() {
+    const hold = cards.filter(k => k.data === 'hold'), single = cards.filter(k => k.data === 'single');
+    $('tab-copy').innerHTML = '<p class="sub" style="margin:10px 2px 0">Only the owner and the manager mark cards copied. The drive\'s contents update by themselves.</p>' +
+      '<div class="sechead"><h2>Not copied yet (' + hold.length + ')</h2></div>' + (hold.length ? hold.sort((a, b) => hoursOn(b) - hoursOn(a)).map(k => row(k, false)).join('') : '<div class="empty">Nothing waiting. 🎉</div>') +
+      '<div class="sechead"><h2>Backup pending (' + single.length + ')</h2></div>' + (single.length ? single.map(k => row(k, false)).join('') : '<div class="empty">Every copied card has a backup.</div>');
+    wire($('tab-copy'));
+  }
+
+  function render() {
+    for (const id of [...sel]) { const k = cards.find(x => x.id === id); if (!k || !canGive(k)) sel.delete(id); }
+    const waiting = renderInbox();
+    const mineN = cards.filter(k => k.holder && k.holder === myId).length, holdN = cards.filter(k => k.data === 'hold').length, singleN = cards.filter(k => k.data === 'single').length;
+    $('sub').textContent = desk ? cards.length + ' cards · ' + cards.filter(k => !k.holder && k.condition === 'ok').length + ' in the office · ' + cards.filter(k => k.holder).length + ' out' + (holdN ? ' · ' + holdN + ' not copied' : '') + (waiting ? ' · ' + waiting + ' to accept' : '')
+      : mineN + ' card' + (mineN === 1 ? '' : 's') + ' with you' + (waiting ? ' · ' + waiting + ' to accept' : '');
+    const dot = (id, n) => { $(id).hidden = !n; $(id).textContent = n || ''; };
+    dot('nav-mine', cards.filter(k => k.holder === myId && k.data === 'empty' && k.with_team && !usesNow(k).length).length);
+    dot('nav-copy', holdN); dot('nav-all', 0);
+    document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    ['mine', 'all', 'copy'].forEach(t => { $('tab-' + t).hidden = t !== tab; });
+    ({ mine: renderMine, all: renderAll, copy: renderCopy })[tab]();
+  }
+  async function refresh() { await load(); render(); }
+  async function rpc(fn, args, ok) {
+    const { data, error } = await c.rpc(fn, args);
+    if (error || !data || data.error) { toast((data && data.error) || (error && error.message) || 'Could not save.', true); return null; }
+    if (ok) toast(ok); return data;
+  }
+  async function answer(ids, yes) {
+    if (!ids.length) return;
+    if (await rpc('card_answer', { p_moves: ids, p_accept: yes }, yes ? (ids.length > 1 ? ids.length + ' cards accepted. They are now your responsibility.' : 'Accepted. The card is now your responsibility.') : 'Marked as not received. The giver still has them.')) { closeSheets(); await refresh(); }
+  }
+  const closeSheets = () => document.querySelectorAll('.sheet-bg').forEach(x => x.remove());
+
+  // ---------- one card ----------
+  async function openCard(k) {
+    if (!k) return;
+    const s = stOf(k), pm = pendingOf(k), now = usesNow(k), cps = copiesOf(k), h = hoursOn(k);
+    const stTxt = { red: 'Has footage that is not copied yet. Do not format it.', amber: 'Copied once (safe to format). Backup not done yet.', green: k.data === 'copied' ? 'Copied with a backup. Safe to format.' : 'Empty and ready.', blue: '', grey: 'Do not use this card.' }[s.cls];
+    const bg = W.sheet('<h3>' + esc(k.code) + ' <span class="st ' + s.cls + '" style="vertical-align:3px">' + esc(s.label) + '</span></h3><p class="sub">' + esc([spec(k), k.serial ? 'Serial ' + k.serial : '', k.errors ? k.errors + ' error' + (k.errors > 1 ? 's' : '') + ' reported' : ''].filter(Boolean).join(' · ')) + '</p>' +
+      '<div class="ans ' + (s.cls === 'red' || s.cls === 'grey' ? 'no' : s.cls === 'amber' ? 'wait' : 'ok') + '" style="margin:0 0 8px"><b>' + esc(NameOf(k.holder) + (k.holder ? ' ' + (k.holder === myId ? 'have' : 'has') + ' it' : ' has it')) + '</b>' + (pm ? ' · given to ' + esc(nameOf(pm.to_person)) + ', waiting for them to accept' : '') + (stTxt ? '<br>' + esc(stTxt) : '') + (h >= 24 ? '<br><b>On hold for ' + Math.floor(h / 24) + ' day' + (h >= 48 ? 's' : '') + '.</b>' : '') + (k.notes ? '<br>' + esc(k.notes) : '') + '</div>' +
+      '<div class="acts">' +
+        (canNote(k) && k.condition === 'ok' ? '<button type="button" class="pillbtn" id="k-note">Write what is on it</button>' : '') +
+        (canGive(k) ? '<button type="button" class="pillbtn light" id="k-give">Give to someone</button>' : '') +
+        (staff && (k.data === 'hold' || k.data === 'single') ? '<button type="button" class="pillbtn wide" id="k-copy">' + (k.data === 'hold' ? 'Mark copied' : 'Mark backup copied') + '</button>' : '') +
+        (staff && k.data === 'hold' && !now.some(u => u.used) ? '<button type="button" class="pillbtn light wide" id="k-clear">Checked: nothing on it</button>' : '') +
+      '</div>' +
+      '<h4>This round' + (k.cycle > 1 ? ' (round ' + k.cycle + ')' : '') + '</h4>' + (now.length ? now.map(u => '<div class="rep"><b>' + esc(useText(u)) + '</b><br><span class="meta" style="display:inline">by ' + esc(u.by_person ? nameOf(u.by_person) : u.by_email) + ' · ' + esc(when(u.at)) + '</span>' + ((u.by_email === me.email || staff) && !copies.some(x => x.card === k.id && x.cycle === k.cycle) ? ' <button type="button" class="x" data-rmu="' + u.id + '">remove</button>' : '') + '</div>').join('') : '<p class="sub">No notes yet.</p>') +
+      '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + x.files + ' files' + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span></div>').join('') : '<p class="sub">Not copied yet.</p>') +
+      '<h4>History</h4><div id="k-hist" class="sub">Loading…</div>' +
+      '<div class="acts" style="margin-top:14px">' +
+        ((k.holder && k.holder === myId) || desk ? (k.condition === 'ok' ? '<button type="button" class="pillbtn light" id="k-prob">Report a problem</button>' : '') : '') +
+        (staff && k.condition !== 'ok' ? '<button type="button" class="pillbtn light" id="k-ok">' + (k.condition === 'lost' ? 'Found it' : 'Back in use') + '</button>' : '') +
+        (staff ? '<button type="button" class="pillbtn light" id="k-edit">Edit details</button>' : '') +
+        '<button type="button" class="pillbtn light wide" id="k-close">Close</button></div>' +
+      (owner ? '<p style="margin-top:8px"><button type="button" class="x" id="k-fix">Correct where it is</button></p>' : ''));
+    const g = s2 => bg.querySelector(s2), on = (s2, f) => { const x = g(s2); if (x) x.addEventListener('click', f); };
+    on('#k-close', () => bg.remove());
+    on('#k-note', () => { bg.remove(); noteForm([k]); });
+    on('#k-give', () => { bg.remove(); give([k]); });
+    on('#k-copy', () => { bg.remove(); copyForm(k); });
+    on('#k-clear', async () => { const why = prompt('What did you check? (e.g. "card is empty")', 'Checked: card is empty'); if (!why) return; if (await rpc('card_mark_empty', { p_card: k.id, p_why: why }, 'Hold cleared.')) { bg.remove(); await refresh(); } });
+    on('#k-prob', () => { bg.remove(); problem(k); });
+    on('#k-ok', async () => { if (await rpc('card_problem', { p_card: k.id, p_kind: k.condition === 'lost' ? 'found' : 'ok', p_note: null }, 'Back in use.')) { bg.remove(); await refresh(); } });
+    on('#k-edit', () => { bg.remove(); editCard(k); });
+    on('#k-fix', () => { bg.remove(); fix(k); });
+    bg.querySelectorAll('[data-rmu]').forEach(b => b.addEventListener('click', async () => { if (await rpc('card_use_remove', { p_use: b.dataset.rmu }, 'Note removed.')) { bg.remove(); await refresh(); openCard(cards.find(x => x.id === k.id)); } }));
+    const { data: log } = await c.from('card_log').select('*').eq('card', k.id).order('at', { ascending: false }).limit(40);
+    const hh = g('#k-hist'); if (hh) hh.innerHTML = (log || []).length ? log.map(l => '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + '</div>').join('') : 'Nothing yet.';
+  }
+
+  // ---------- give (one or many) ----------
+  function give(list) {
+    if (!list.length) return;
+    const anyOut = list.some(k => k.holder), holders = new Set(list.map(k => k.holder || ''));
+    const amber = list.filter(k => k.data === 'single' && !k.holder);
+    const people = dir.filter(p => !(holders.size === 1 && p.id === list[0].holder));
+    const bg = W.sheet('<h3>Give ' + list.length + ' card' + (list.length > 1 ? 's' : '') + '</h3><p class="sub"><b>' + esc(list.map(k => k.code).join(', ')) + '</b>. They tap <b>I have it</b> in the app; until then the cards stay with ' + esc(holders.size === 1 ? nameOf(list[0].holder) : 'their holders') + '.</p>' +
+      (amber.length ? '<div class="ans wait" style="margin:0 0 10px">' + esc(amber.map(k => k.code).join(', ')) + ': only one copy, backup not done yet. Giving it out means it will be formatted.</div>' : '') +
+      '<div class="form-grid"><label class="wide">To<select class="in" id="g-to"><option value="">Pick a person</option>' + (anyOut ? '<option value="office">The office (owner or manager accepts)</option>' : '') + people.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select></label>' +
+      '<label class="wide">Note (optional)<input class="in" id="g-note" maxlength="300" placeholder="e.g. Sharma wedding, 14–16 Nov"></label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="g-cx">Cancel</button><button type="button" class="pillbtn" id="g-go">Give</button></div>');
+    bg.querySelector('#g-cx').addEventListener('click', () => bg.remove());
+    bg.querySelector('#g-go').addEventListener('click', async () => {
+      const v = bg.querySelector('#g-to').value; if (!v) { toast('Pick who gets them.', true); return; }
+      const r = await rpc('card_give', { p_cards: list.map(k => k.id), p_to: v === 'office' ? null : v, p_note: bg.querySelector('#g-note').value.trim() || null });
+      if (!r) return;
+      sel.clear(); bg.remove(); await refresh();
+      toast('Given. Waiting for ' + (v === 'office' ? 'the owner or manager' : nameOf(v)) + ' to accept.');
+    });
+  }
+
+  // ---------- the team leader's notes ----------
+  function noteForm(list) {
+    if (!list.length) return;
+    const opts = shoots.map((s, i) => '<option value="' + i + '">' + esc(W.dayShort(s.date) + ' · ' + s.name) + '</option>').join('');
+    const radios = (name, items, v) => '<div class="seg">' + items.map(([k, l]) => '<label><input type="radio" name="' + name + '" value="' + k + '"' + (k === v ? ' checked' : '') + '>' + esc(l) + '</label>').join('') + '</div>';
+    const bg = W.sheet('<h3>What is on ' + esc(list.map(k => k.code).join(', ')) + '</h3><p class="sub">' + (list.length > 1 ? 'The same note goes on each card. Write separately if they hold different things.' : 'One note per use. Write another if the card was used at two shoots.') + '</p>' +
+      '<div class="form-grid"><label class="wide">Shoot<select class="in" id="n-shoot">' + opts + '<option value="other">Another shoot (type it)</option></select></label>' +
+      '<label class="wide" id="n-other-l"' + (shoots.length ? ' hidden' : '') + '>Shoot name<input class="in" id="n-other" maxlength="160" placeholder="e.g. Sharma Haldi"></label></div>' +
+      '<h4>Photo or video</h4>' + radios('n-media', MEDIA, null) + '<h4>Style</h4>' + radios('n-style', STYLE, null) +
+      '<div class="form-grid" style="margin-top:12px"><label>Camera / shooter<input class="in" id="n-cam" maxlength="60" placeholder="e.g. Z9, Saif"></label><label>Notes<input class="in" id="n-note" maxlength="300" placeholder="e.g. vidaai, card nearly full"></label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="n-unused">Not used</button><button type="button" class="pillbtn" id="n-save">Save</button></div><p style="margin-top:10px"><button type="button" class="x" id="n-cx">Cancel</button></p>');
+    const g = s2 => bg.querySelector(s2);
+    if (!shoots.length) g('#n-shoot').value = 'other';
+    g('#n-shoot').addEventListener('change', () => { g('#n-other-l').hidden = g('#n-shoot').value !== 'other'; });
+    g('#n-cx').addEventListener('click', () => bg.remove());
+    const save = async used => {
+      const v = g('#n-shoot').value, sh = v === 'other' ? { id: '', name: g('#n-other').value.trim(), wedding: '' } : shoots[Number(v)];
+      const media = (bg.querySelector('input[name="n-media"]:checked') || {}).value || null, style = (bg.querySelector('input[name="n-style"]:checked') || {}).value || null;
+      if (used && !sh.name) { toast('Pick or type the shoot.', true); return; }
+      if (used && !media) { toast('Photo or video?', true); return; }
+      for (const k of list) {
+        const r = await rpc('card_use', { p_card: k.id, p_used: used, p_event: used ? sh.id : null, p_shoot: used ? sh.name : null, p_wedding: used ? sh.wedding : null, p_media: media, p_style: style, p_camera: g('#n-cam').value.trim() || null, p_note: g('#n-note').value.trim() || null });
+        if (!r) return;
+      }
+      sel.clear(); bg.remove(); await refresh(); toast(used ? 'Saved. ' + (list.length > 1 ? 'These cards are' : 'The card is') + ' on hold until the office copies ' + (list.length > 1 ? 'them' : 'it') + '.' : 'Marked not used.');
+    };
+    g('#n-save').addEventListener('click', () => save(true));
+    g('#n-unused').addEventListener('click', () => save(false));
+  }
+
+  // ---------- copying (owner, manager) ----------
+  function copyForm(k) {
+    const backup = k.data === 'single', first = copies.find(x => x.card === k.id && x.cycle === k.cycle && !x.backup);
+    const used = usesNow(k).filter(u => u.used), seen = new Set(), lines = [];
+    used.forEach(u => {
+      const w = u.event_id ? evWed.get(u.event_id) : null, t = (w ? w.title + ' · ' + W.fnName(w.events.find(e => e.id === u.event_id) || { name: u.shoot }, w) : (u.wedding && u.shoot && !u.shoot.toLowerCase().startsWith(u.wedding.toLowerCase()) ? u.wedding + ' · ' + u.shoot : u.shoot)) + ' (' + [lbl(MEDIA, u.media), u.style ? lbl(STYLE, u.style).toLowerCase() : ''].filter(Boolean).join(' ') + ')';
+      if (seen.has(t)) return; seen.add(t); lines.push({ title: t.slice(0, 160), wedding_key: w ? w.key : '' });
+    });
+    const others = drives.filter(d => !first || d.id !== first.drive);
+    const bg = W.sheet('<h3>' + (backup ? 'Backup of ' : 'Copied ') + esc(k.code) + '</h3><p class="sub">' + (backup ? 'First copy: ' + esc(first ? first.drive_name + ' / ' + (first.folder || '') + ' (' + first.files + ' files)' : '?') + '. The backup must go on a different drive.' : 'Count the files on the drive after copying and write the number: it is the proof that everything came across.') + '</p>' +
+      '<div class="form-grid"><label class="wide">Drive<input class="in" id="cp-drive" list="dl-drv" placeholder="Type the drive name (e.g. M 5)" autocomplete="off"></label>' +
+      '<label class="wide">Folder on the drive<input class="in" id="cp-folder" maxlength="200" value="' + esc(backup && first ? first.folder || '' : '') + '" placeholder="e.g. Sharma/Haldi/Candid"></label>' +
+      '<label>Number of files<input class="in" id="cp-files" type="number" inputmode="numeric" min="1" value="' + (backup && first ? first.files : '') + '"></label><label>Size<input class="in" id="cp-size" maxlength="20" placeholder="e.g. 120 GB"></label></div>' +
+      '<datalist id="dl-drv">' + others.map(d => '<option value="' + esc(d.name) + '">').join('') + '</datalist>' +
+      '<h4>Goes on the drive\'s list as</h4>' + (lines.length ? lines.map(l => '<div class="rep">' + esc(l.title) + ' · ' + (backup ? 'Backup copy' : 'Raw') + '</div>').join('') : '<div class="rep">Card ' + esc(k.code) + ' (no notes from the team)</div>') +
+      '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="cp-cx">Cancel</button><button type="button" class="pillbtn" id="cp-go">' + (backup ? 'Backup done' : 'Copied') + '</button></div>');
+    const g = s2 => bg.querySelector(s2);
+    g('#cp-cx').addEventListener('click', () => bg.remove());
+    g('#cp-go').addEventListener('click', async () => {
+      const t = g('#cp-drive').value.trim().toLowerCase(), d = others.find(x => x.name.toLowerCase() === t);
+      if (!d) { toast(first && first.drive_name.toLowerCase() === t ? 'The backup must go on a different drive from the first copy.' : 'Pick a drive from the list (add it in Drives first if it is new).', true); return; }
+      const files = parseInt(g('#cp-files').value, 10);
+      const r = await rpc('card_copy', { p_card: k.id, p_drive: d.id, p_folder: g('#cp-folder').value.trim(), p_files: isNaN(files) ? 0 : files, p_size: g('#cp-size').value.trim() || null, p_items: lines });
+      if (!r) return;
+      bg.remove(); await refresh(); toast(r.backup ? k.code + ' is green: copied with a backup.' : k.code + ' copied to ' + d.name + '. Amber until the backup is done.');
+    });
+  }
+
+  function problem(k) {
+    const bg = W.sheet('<h3>Problem with ' + esc(k.code) + '</h3><div class="seg" style="margin-bottom:10px"><label><input type="radio" name="pk" value="error" checked>Gave an error</label><label><input type="radio" name="pk" value="damaged">Damaged</label><label><input type="radio" name="pk" value="lost">Lost</label></div>' +
+      '<p class="sub">Two errors and the card is retired automatically, so a weak card does not go to a wedding again.' + (k.data === 'hold' ? ' <b>It still has footage that is not copied: tell the office now.</b>' : '') + '</p>' +
+      '<div class="form-grid"><label class="wide">What happened<input class="in" id="pb-n" maxlength="200" placeholder="e.g. read error at the Haldi, some files corrupt"></label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="pb-cx">Cancel</button><button type="button" class="pillbtn" id="pb-go">Report</button></div>');
+    bg.querySelector('#pb-cx').addEventListener('click', () => bg.remove());
+    bg.querySelector('#pb-go').addEventListener('click', async () => {
+      const kind = bg.querySelector('input[name="pk"]:checked').value;
+      if (await rpc('card_problem', { p_card: k.id, p_kind: kind, p_note: bg.querySelector('#pb-n').value.trim() || null }, 'Reported.')) { bg.remove(); await refresh(); }
+    });
+  }
+  function fix(k) {
+    const bg = W.sheet('<h3>Where is ' + esc(k.code) + ' really?</h3><p class="sub">Only for corrections. Normal handovers use Give.</p><div class="form-grid"><label class="wide">Now with<select class="in" id="f-to"><option value="office">In the office</option>' + dir.map(p => '<option value="' + p.id + '"' + (p.id === k.holder ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></label><label class="wide">Why<input class="in" id="f-why" maxlength="200"></label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="f-cx">Cancel</button><button type="button" class="pillbtn" id="f-go">Save</button></div>');
+    bg.querySelector('#f-cx').addEventListener('click', () => bg.remove());
+    bg.querySelector('#f-go').addEventListener('click', async () => { const v = bg.querySelector('#f-to').value; if (await rpc('card_set_holder', { p_card: k.id, p_person: v === 'office' ? null : v, p_why: bg.querySelector('#f-why').value.trim() || null }, 'Corrected.')) { bg.remove(); await refresh(); } });
+  }
+  function editCard(k) {
+    const bg = W.sheet('<h3>Edit ' + esc(k.code) + '</h3><div class="form-grid">' +
+      '<label>Code on the label<input class="in" id="e-code" maxlength="30" value="' + esc(k.code) + '"></label><label>Type<select class="in" id="e-kind">' + KINDS.map(x => '<option' + (x === k.kind ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></label>' +
+      '<label>Size<input class="in" id="e-size" maxlength="20" value="' + esc(k.size_label || '') + '"></label><label>Brand<input class="in" id="e-brand" maxlength="60" value="' + esc(k.brand || '') + '"></label>' +
+      '<label class="wide">Serial number<input class="in" id="e-serial" maxlength="80" value="' + esc(k.serial || '') + '"></label><label class="wide">Notes<input class="in" id="e-notes" maxlength="300" value="' + esc(k.notes || '') + '"></label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="e-cx">Cancel</button><button type="button" class="pillbtn" id="e-go">Save</button></div>' +
+      '<p style="margin-top:10px"><button type="button" class="x" id="e-ret">Retire this card</button>' + (owner ? ' · <button type="button" class="x" id="e-del" style="color:var(--no-ink)">Delete from the register</button>' : '') + '</p>');
+    const g = s2 => bg.querySelector(s2);
+    g('#e-cx').addEventListener('click', () => bg.remove());
+    g('#e-go').addEventListener('click', async () => {
+      const r = { code: g('#e-code').value.trim(), kind: g('#e-kind').value, size_label: g('#e-size').value.trim() || null, brand: g('#e-brand').value.trim() || null, serial: g('#e-serial').value.trim() || null, notes: g('#e-notes').value.trim() || null };
+      if (!r.code) { toast('The card needs its code.', true); return; }
+      const { error } = await c.from('cards').update(r).eq('id', k.id);
+      if (error) { toast(/duplicate|unique/i.test(error.message) ? 'Another card already has that code or serial number.' : 'Could not save: ' + error.message, true); return; }
+      bg.remove(); await refresh(); toast('Saved.');
+    });
+    g('#e-ret').addEventListener('click', async () => { if (!confirm('Retire ' + k.code + '? It stays in the register but cannot go out.')) return; if (await rpc('card_problem', { p_card: k.id, p_kind: 'retired', p_note: null }, 'Retired.')) { bg.remove(); await refresh(); } });
+    const del = g('#e-del'); if (del) del.addEventListener('click', async () => {
+      if (!confirm('Delete ' + k.code + ' and its whole history? Use Retire if it just stopped being used.')) return;
+      const { error } = await c.from('cards').delete().eq('id', k.id); if (error) { toast('Could not delete: ' + error.message, true); return; }
+      bg.remove(); await refresh(); toast('Deleted.');
+    });
+  }
+  // paste the card list: one card per line, "Code, Type, Size, Brand, Serial" (commas or tabs, e.g. straight from a sheet)
+  const kindOf = s => { const x = String(s || '').toLowerCase().replace(/[\s-]/g, ''); return /micro/.test(x) ? 'microSD' : /xqd/.test(x) ? 'XQD' : /cfast/.test(x) ? 'CFast' : /(cf|cfexpress|cfe)a$|typea/.test(x) ? 'CFexpress A' : /cf|express/.test(x) ? 'CFexpress B' : /sd/.test(x) ? 'SD' : x ? 'Other' : 'SD'; };
+  function parseCards(text) {
+    return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.split(/\t|,|;/).map(x => x.trim())).filter(p => p[0] && !/^code$/i.test(p[0]))
+      .map(p => ({ code: p[0].slice(0, 30), kind: kindOf(p[1]), size_label: (p[2] || '').slice(0, 20) || null, brand: (p[3] || '').slice(0, 60) || null, serial: (p[4] || '').slice(0, 80) || null }));
+  }
+  function addCards() {
+    const bg = W.sheet('<h3>Add cards</h3><p class="sub">One card per line: <b>Code, Type, Size, Brand, Serial</b>. You can paste straight from a Google Sheet. Example:</p><pre class="rep" style="margin:0 0 8px;white-space:pre-wrap">C01, CFexpress B, 256 GB, Sony, 4A21C9XQ\nC02, SD, 128 GB, SanDisk, 2205ABCD</pre>' +
+      '<textarea class="in" id="a-txt" placeholder="C01, CFexpress B, 256 GB, Sony, serial"></textarea><p class="sub" id="a-prev" style="margin-top:6px"></p>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="a-cx">Cancel</button><button type="button" class="pillbtn" id="a-go">Add</button></div>');
+    const g = s2 => bg.querySelector(s2);
+    g('#a-txt').addEventListener('input', () => { const r = parseCards(g('#a-txt').value); g('#a-prev').textContent = r.length ? r.length + ' card' + (r.length > 1 ? 's' : '') + ': ' + r.slice(0, 6).map(x => x.code + ' (' + [x.size_label, x.kind].filter(Boolean).join(' ') + ')').join(', ') + (r.length > 6 ? '…' : '') : ''; });
+    g('#a-cx').addEventListener('click', () => bg.remove());
+    g('#a-go').addEventListener('click', async () => {
+      const rows = parseCards(g('#a-txt').value); if (!rows.length) { toast('Paste at least one card.', true); return; }
+      const have = new Set(cards.map(k => k.code.toLowerCase())), dup = rows.filter(r => have.has(r.code.toLowerCase()));
+      const codes = rows.map(r => r.code.toLowerCase()), twice = codes.filter((x, i) => codes.indexOf(x) !== i);
+      if (dup.length || twice.length) { toast('Already in the list: ' + [...new Set(dup.map(r => r.code).concat(twice))].join(', ') + '. Remove those lines.', true); return; }
+      const { error } = await c.from('cards').insert(rows);
+      if (error) { toast(/duplicate|unique/i.test(error.message) ? 'Two cards share a serial number. Check the list.' : 'Could not add: ' + error.message, true); return; }
+      bg.remove(); await refresh(); toast(rows.length + ' card' + (rows.length > 1 ? 's' : '') + ' added (in the office).');
+    });
+  }
+
+  // ---------- start ----------
+  if (person) document.querySelector('.bnav .tab[data-tab="mine"]').hidden = false;
+  if (staff) document.querySelector('.bnav .tab[data-tab="copy"]').hidden = false;
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; sel.clear(); render(); window.scrollTo(0, 0); }));
+  try { await Promise.all([load(), loadShoots()]); }
+  catch (e) { $('sub').innerHTML = '<span class="err">Could not load the cards (' + esc(e.message || e) + '). Run supabase/014_cards.sql first.</span>'; return; }
+  const want = new URLSearchParams(location.search).get('tab');
+  tab = want && document.querySelector('.bnav .tab[data-tab="' + want + '"]:not([hidden])') ? want : person && !staff ? 'mine' : staff && cards.some(k => k.data === 'hold') ? 'copy' : person && cards.some(k => k.holder === myId) ? 'mine' : 'all';
+  $('hi').textContent = desk ? 'Memory cards' : 'My cards';
+  render();
+  // live: a handover or a copy from another phone shows up here
+  try {
+    c.channel('cards').on('postgres_changes', { event: '*', schema: 'public', table: 'card_moves' }, later).on('postgres_changes', { event: '*', schema: 'public', table: 'cards' }, later).subscribe();
+  } catch (e) {}
+  function later() { clearTimeout(later.t); later.t = setTimeout(() => { if (!document.querySelector('.sheet-bg')) refresh().catch(() => {}); }, 700); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') later(); });
+})();
+</script>
+</body>
+</html>

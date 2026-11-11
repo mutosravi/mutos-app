@@ -6,7 +6,7 @@
   const pad = n => String(n).padStart(2, '0');
   const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
-  let who = null;
+  let who = null, cardSum = null;
   const sup = () => who && who.role === 'supervisor'; // supervisor: Shoots (add, itinerary), Work desk, Clients without money
   const api = () => window.__boardApi || null;
   const click = id => { const el = document.getElementById(id); if (el) el.click(); };
@@ -114,7 +114,7 @@
       ['sb-rentals', 'truck', 'Rentals'], ['sb-callsheet', 'sheet', 'Call sheet'], ['sb-prewed', 'ring', 'Pre-wedding'], ['sb-planner', 'drone', 'Drones & freelancers'],
       ['sb-workload', 'bars', 'Workload'], ['sb-billing', 'rupee', 'Billing'], ['sync', 'sync', 'Sync Team Alignment'], ['/crew.html?preview=1', 'eye', 'Crew view'], ['sb-history', 'list', 'History']] },
     { k: 'work', ic: 'film', title: 'Work desk', tools: [
-      ['/desk.html', 'film', 'Jobs', 'main'], ['/desk.html?tab=today', 'log', 'Daily reports'], ['/desk.html?tab=month', 'bars', 'Month'], ['/desk.html?tab=drives', 'drive', 'Drives']] },
+      ['/desk.html', 'film', 'Jobs', 'main'], ['/desk.html?tab=today', 'log', 'Daily reports'], ['/desk.html?tab=month', 'bars', 'Month'], ['/desk.html?tab=drives', 'drive', 'Drives'], ['/cards.html', 'card', 'Cards']] },
     { k: 'gear', ic: 'box', title: 'Gear desk', tools: [
       ['/gear.html', 'box', 'Gear desk', 'main'], ['sb-manage-gear', 'camera', 'Gear list'], ['sb-rentals', 'truck', 'Rentals']] },
     { k: 'clients', ic: 'heart', title: 'Clients', tools: [
@@ -124,7 +124,7 @@
     { k: 'settings', ic: 'settings', title: 'Settings' }
   ];
   // what a supervisor gets from each desk (the rest he cannot change, see supervisor.js and 012_supervisor.sql)
-  const SUP = { shoots: ['board', 'sb-new-wedding', 'sb-callsheet', 'sb-history'], work: ['/desk.html', '/desk.html?tab=today', '/desk.html?tab=month', '/desk.html?tab=drives'], clients: ['clients'] };
+  const SUP = { shoots: ['board', 'sb-new-wedding', 'sb-callsheet', 'sb-history'], work: ['/desk.html', '/desk.html?tab=today', '/desk.html?tab=month', '/desk.html?tab=drives', '/cards.html'], clients: ['clients'] };
   const desks = () => sup() ? DESKS.filter(d => SUP[d.k]) : DESKS;
   function deskTools(d) {
     const a = api();
@@ -133,7 +133,7 @@
   // one line under each desk card: what needs attention there
   function deskLine(d, ctx) {
     if (d.k === 'shoots') return ctx.today + ' today' + (ctx.short ? ' · ' + ctx.short + ' short on crew' : '') + (ctx.inbox ? ' · ' + ctx.inbox + ' to confirm' : '');
-    if (d.k === 'work') return 'Jobs, reports, drives';
+    if (d.k === 'work') return cardSum && cardSum.hold && !sup() ? cardSum.hold + ' card' + (cardSum.hold > 1 ? 's' : '') + ' not copied' : 'Jobs, reports, drives, cards';
     if (d.k === 'gear') return ctx.rent ? ctx.rent + ' rentals to book' : 'Hand out, gear list, rentals';
     if (d.k === 'clients' && sup()) return ctx.cs && ctx.cs.toCheck ? ctx.cs.toCheck + ' to check' : 'Family Gmails and itineraries';
     if (d.k === 'shoots' && sup()) return ctx.today + ' today · add shoots, itinerary, client contact';
@@ -141,7 +141,7 @@
     if (d.k === 'people') return who.role === 'owner' ? 'People, attendance, salaries' : 'Everyone at Muto\'s';
     return 'Logins, backups, export';
   }
-  function deskCount(d, ctx) { return d.k === 'shoots' ? ctx.short + ctx.inbox : d.k === 'gear' ? ctx.rent : d.k === 'clients' && ctx.cs ? ctx.cs.toCheck + ctx.cs.overdue : 0; }
+  function deskCount(d, ctx) { return d.k === 'work' ? (cardSum && !sup() ? cardSum.hold + cardSum.toOffice : 0) : d.k === 'shoots' ? ctx.short + ctx.inbox : d.k === 'gear' ? ctx.rent : d.k === 'clients' && ctx.cs ? ctx.cs.toCheck + ctx.cs.overdue : 0; }
   function openDesk(k) {
     closeDesk();
     const d = desks().find(x => x.k === k); if (!d) return;
@@ -150,7 +150,7 @@
     const ov = document.createElement('div'); ov.className = 'sb-modal-overlay mh-sheet-bg'; ov.id = 'mh-desk';
     ov.innerHTML = '<div class="sb-modal mh-sheet mh-desksheet" role="dialog" aria-modal="true" aria-label="' + esc(d.title) + '"><div class="mh-sheet-head"><b>' + esc(d.title) + '</b><button type="button" class="mh-x" aria-label="Close">✕</button></div>' +
       '<div class="tiles three" id="mh-tiles">' + deskTools(d).map(([k, ic, label, cls]) => {
-        const n = k === 'sb-rentals' ? rent : k === 'sync' ? inbox : k === 'clients' && cs ? cs.toCheck + cs.overdue : 0;
+        const n = k === '/cards.html' ? (cardSum && !sup() ? cardSum.hold + cardSum.toOffice : 0) : k === 'sb-rentals' ? rent : k === 'sync' ? inbox : k === 'clients' && cs ? cs.toCheck + cs.overdue : 0;
         return (k.startsWith('/') ? '<a class="tile' + (cls ? ' ' + cls : '') + '" href="' + k + '">' : '<button type="button" class="tile' + (cls ? ' ' + cls : '') + '" data-tile="' + k + '">') + ICON(ic) + esc(label) + (n ? '<span class="count">' + n + '</span>' : '') + (k.startsWith('/') ? '</a>' : '</button>');
       }).join('') + '</div></div>';
     document.body.appendChild(ov);
@@ -208,6 +208,12 @@
     if (csum && csum.dueSoon && !sup()) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
     if (u && u.unconf.length && !sup()) needs.push(['updates', 'sand', u.unconf.length, 'Not confirmed', 'by crew, next 7 days']);
     if (u && u.data.length && !sup()) needs.push(['updates', 'sand', u.data.length, 'Data handover', 'still with the crew']);
+    // memory cards (014_cards.sql): returned to the office and waiting, footage not copied for over a day, lost
+    if (cardSum && !sup()) {
+      if (cardSum.lost) needs.splice(0, 0, ['cards', 'peach', cardSum.lost, 'Card lost', 'check it now']);
+      if (cardSum.holdOld) needs.splice(Math.min(1, needs.length), 0, ['cards', 'peach', cardSum.holdOld, 'Cards not copied', 'on hold for over a day']);
+      if (cardSum.toOffice) needs.push(['cards', 'honey', cardSum.toOffice, 'Cards returned', 'waiting for you to accept']);
+    }
     h += '<div class="sechead"><h2>Needs you</h2>' + (needs.length > 4 ? '<button type="button" class="allbtn" id="mh-needs-all">All ' + needs.length + ICON('chev').replace('<svg', '<svg width="14" height="14"') + '</button>' : '') + '</div>';
     h += needs.length ? '<div class="needs" id="mh-needs">' + needs.map(([k, cls, n, title, sub], i) => '<button type="button" class="need ' + cls + '" data-need="' + k + '"' + (i > 3 ? ' hidden' : '') + '><span class="n">' + n + (k === 'inbox' || (k === 'updates' && i === 0) ? ' new' : '') + '</span><strong>' + esc(title) + '</strong><span>' + esc(sub) + '</span></button>').join('') + '</div>'
       : '<div class="allclear">Nothing needs you right now. 🎉</div>';
@@ -236,12 +242,27 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open();
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'cards') location.assign(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });
     body.querySelectorAll('[data-desk]').forEach(b => b.addEventListener('click', () => openDesk(b.dataset.desk)));
     body.querySelectorAll('[data-tile]').forEach(b => b.addEventListener('click', () => runTile(b.dataset.tile)));
+  }
+
+  // memory cards for Needs you and the Work desk (quietly nothing before 014_cards.sql is run)
+  async function loadCards() {
+    try {
+      const c = await app.client();
+      const [k, m] = await Promise.all([c.from('cards').select('id, data, data_since, condition'), c.from('card_moves').select('id, to_person').eq('status', 'pending')]);
+      if (k.error) return;
+      const ks = k.data || [], day = Date.now() - 864e5;
+      const next = { hold: ks.filter(x => x.data === 'hold').length, holdOld: ks.filter(x => x.data === 'hold' && x.data_since && new Date(x.data_since).getTime() < day).length,
+        lost: ks.filter(x => x.condition === 'lost').length, toOffice: (m.data || []).filter(x => !x.to_person).length };
+      if (JSON.stringify(next) === JSON.stringify(cardSum)) return;
+      const was = cardSum; cardSum = next;
+      if (was || next.hold || next.toOffice || next.lost) render();   // nothing to show: no redraw
+    } catch (e) {}
   }
 
   // ---------- start ----------
@@ -254,6 +275,7 @@
     const watch = () => { const s = document.getElementById('sb-summary'); if (s) new MutationObserver(render).observe(s, { childList: true, subtree: true }); };
     watch();
     document.addEventListener('mutos:updates', render);
+    loadCards(); setInterval(loadCards, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadCards(); });
     const wait = setInterval(() => { if (api()) { clearInterval(wait); render(); } }, 300);
     // the board's own windows close back to whatever was showing; refresh Home when one closes
     new MutationObserver(() => { if (!document.getElementById('sb-active-modal')) render(); }).observe(document.body, { childList: true });
