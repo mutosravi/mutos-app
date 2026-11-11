@@ -213,6 +213,42 @@ export async function notifyCardApi(request, env, fetchFn = fetch) {
   return Response.json({ error: 'Unknown notice.' }, { status: 400 });
 }
 
+// new shoots (018_shoot_notices.sql): the database queues one row per shoot that appears in someone's list; this sends them,
+// one message per person, and marks them sent. Called by the board right after it updates the crew pages, and by the evening run.
+export async function flushShootNotices(env, fetchFn = fetch) {
+  const store = db(env, fetchFn);
+  const rows = await store.get('shoot_notices?select=id,person_key,event_id,shoot,date,slot,report,venue,role&sent_at=is.null&order=created_at.asc&limit=300');
+  if (!rows.length) return { people: 0, sent: 0 };
+  const day = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
+  const byPerson = new Map(); rows.forEach(r => { if (!byPerson.has(r.person_key)) byPerson.set(r.person_key, []); byPerson.get(r.person_key).push(r); });
+  let sent = 0;
+  for (const [key, list] of byPerson) {
+    list.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const s = list[0], one = list.length === 1;
+    const msg = one
+      ? { title: 'New shoot: ' + (s.shoot || 'a shoot'), body: [day(s.date) + (s.slot ? ' · ' + s.slot : ''), s.report ? 'Report ' + s.report : '', s.venue || 'Venue to be confirmed', s.role ? 'Role: ' + s.role : ''].filter(Boolean).join(' · ') + '. Open the app to confirm.' }
+      : { title: list.length + ' new shoots for you', body: list.slice(0, 5).map(x => x.shoot + ' (' + day(x.date) + (x.slot ? ', ' + x.slot : '') + ')').join(' · ') + (list.length > 5 ? ' …' : '') + '. Open the app to confirm.' };
+    const members = await store.get('members?select=email&person_key=eq.' + encodeURIComponent(key));
+    const keys = [...new Set([key].concat(await phoneKeys(store, members.map(m => m.email), [])))];
+    const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inListQ(keys));
+    const n = subs.length ? await deliver(env, store, subs, Object.assign(msg, { tag: 'newshoot-' + key + '-' + s.id, url: '/crew.html' }), fetchFn) : 0;
+    sent += n;
+    await store.patch('shoot_notices?id=' + inListQ(list.map(x => x.id)), { sent_at: new Date().toISOString(), result: subs.length ? 'sent to ' + n + ' phone(s)' : 'notices not turned on' });
+  }
+  return { people: byPerson.size, sent };
+}
+export async function notifyShootsApi(request, env, fetchFn = fetch) {
+  if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return Response.json({ sent: 0, note: 'Phone notifications are not set up.' });
+  const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!token) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+  const u = await fetchFn(String(env.SUPABASE_URL).replace(/\/+$/, '') + '/auth/v1/user', { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token } });
+  if (!u.ok) return Response.json({ error: 'Sign in again.' }, { status: 401 });
+  const email = String((await u.json()).email || '').toLowerCase();
+  const [m] = await db(env, fetchFn).get('members?select=role&email=eq.' + encodeURIComponent(email));
+  if (!m || !['owner', 'manager'].includes(m.role)) return Response.json({ error: 'Only the owner and managers assign shoots.' }, { status: 403 });
+  return Response.json(await flushShootNotices(env, fetchFn));
+}
+
 export async function backupApi(request, env, fetchFn = fetch) {
   const url = new URL(request.url);
   if (!env.SUPABASE_SECRET_KEY) return Response.json({ error: 'The server is missing SUPABASE_SECRET_KEY (Cloudflare → Settings → Variables and Secrets).' }, { status: 503 });
@@ -252,6 +288,9 @@ export default {
     if (url.pathname === '/api/notify-card' && request.method === 'POST') {
       try { return await notifyCardApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
+    if (url.pathname === '/api/notify-shoots' && request.method === 'POST') {
+      try { return await notifyShootsApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
+    }
     if (url.pathname.startsWith('/api/backups')) {
       try { return await backupApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
@@ -265,5 +304,6 @@ export default {
     }
     if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) { console.log('reminders skipped: secrets not set'); return; }
     ctx.waitUntil(runReminders(env).then(r => console.log('reminders', JSON.stringify(r))));
+    ctx.waitUntil(flushShootNotices(env).then(r => console.log('new-shoot notices', JSON.stringify(r))).catch(e => console.log('new-shoot notices failed', e)));
   }
 };

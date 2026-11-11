@@ -35,6 +35,9 @@
     return all.sort((a, b) => a.date.localeCompare(b.date) || String(a.slot).localeCompare(String(b.slot)));
   }
 
+  async function notifyShoots(c) {
+    try { const s = await c.auth.getSession(); const tok = s && s.data && s.data.session && s.data.session.access_token; if (tok) fetch('/api/notify-shoots', { method: 'POST', headers: { Authorization: 'Bearer ' + tok } }).catch(() => {}); } catch (e) {}
+  }
   async function push() {
     if (!api) return;
     if (busy) { again = true; return; }
@@ -70,6 +73,8 @@
       }
       // 3. the Gear desk's view: items and who carries what (no client details)
       await pushGear(c);
+      // shoots that just appeared in someone's list were queued by the database (018_shoot_notices.sql): send them now
+      if (wrote && who && ['owner', 'manager'].includes(who.role)) notifyShoots(c);
       last = { at: new Date().toISOString(), feeds: want.size, wrote, error: '' };
     } catch (e) {
       last = Object.assign({}, last, { error: String(e && e.message || e) });

@@ -1,6 +1,6 @@
 // Evening reminder job: picks tomorrow's shoots, sends one encrypted notification per phone, cleans up dead sign-ups.
 // Run: node tests/reminders.test.mjs   (the encryption itself is checked against an independent decoder separately)
-import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi, notifyCardApi } from '../worker/index.js';
+import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi, notifyCardApi, notifyShootsApi, flushShootNotices } from '../worker/index.js';
 import { b64u } from '../worker/push.js';
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const pad = n => String(n).padStart(2, '0');
@@ -135,5 +135,34 @@ ok(b.title === '2 shoots tomorrow' && b.body.includes('Please confirm'), 'two sh
   ok(j.sent === 2 && pushed.every(x => x === 'https://push.test/shrey'), 'Shrey gets one notice for the accepted card and one for the card marked not received');
   moves.forEach(m => { m.status = 'pending'; }); pushed.length = 0; r = await call('t', { kind: 'answer', moves: moves.map(m => m.id) }); j = await r.json();
   ok(j.sent === 0, 'nothing sent for handovers not answered yet');
+}
+// new shoot notices (018): one message per person, marked sent; only the owner/manager can ask for a send
+{
+  const q = [
+    { id: 1, person_key: 'hamza', event_id: 'e1', shoot: 'Sharma Haldi', date: ist(3), slot: 'Morning', report: '9:00 am', venue: 'Taj', role: 'Candid' },
+    { id: 2, person_key: 'basu', event_id: 'e2', shoot: 'Sharma Wedding', date: ist(4), slot: 'Evening' },
+    { id: 3, person_key: 'basu', event_id: 'e3', shoot: 'Sharma Reception', date: ist(5), slot: 'Evening' },
+    { id: 4, person_key: 'nophone', event_id: 'e4', shoot: 'X', date: ist(5), slot: 'Evening' }];
+  const subsN = [Object.assign({ endpoint: 'https://push.test/h1', person_key: 'hamza', fails: 0 }, await phone()), Object.assign({ endpoint: 'https://push.test/b1', person_key: 'basu', fails: 0 }, await phone())];
+  const bodies = [], marked = []; let who = 'o@x.com';
+  const f5 = async (url, opt = {}) => {
+    const u = decodeURIComponent(String(url));
+    if (u.endsWith('/auth/v1/user')) return { ok: true, json: async () => ({ email: who }) };
+    if (u.startsWith('https://push.test/')) { bodies.push(u); return { status: 201 }; }
+    if (opt.method === 'PATCH') { if (u.includes('shoot_notices?')) marked.push({ u, b: JSON.parse(opt.body) }); return { ok: true }; }
+    const j = d => ({ ok: true, json: async () => d });
+    if (u.includes('/shoot_notices?')) return j(q.filter(x => !marked.some(m => m.u.includes('"' + x.id + '"'))));
+    if (u.includes('/members?select=role')) return j(who === 'o@x.com' ? [{ role: 'owner' }] : [{ role: 'crew' }]);
+    if (u.includes('/members?select=email&person_key=')) return j([{ email: u.split('person_key=eq.')[1] + '@x.com' }]);
+    if (u.includes('/push_subs?')) return j(subsN.filter(x => u.includes('"' + x.person_key + '"')));
+    return j([]);
+  };
+  const call = tok => notifyShootsApi(new Request('https://app.test/api/notify-shoots', { method: 'POST', headers: { Authorization: 'Bearer ' + tok } }), Object.assign({ SUPABASE_PUBLISHABLE_KEY: 'pub' }, env), f5);
+  who = 'c@x.com'; ok((await call('t')).status === 403, 'crew cannot trigger the new-shoot notices');
+  who = 'o@x.com'; const j = await (await call('t')).json();
+  ok(j.people === 3 && j.sent === 2 && bodies.sort().join() === 'https://push.test/b1,https://push.test/h1', 'one notice per person (Basu gets one for his two new shoots); nobody without a phone sign-up');
+  ok(marked.length === 3 && marked.some(m => m.b.result === 'notices not turned on'), 'all queued rows are marked sent (with the result)');
+  const again = await flushShootNotices(Object.assign({ SUPABASE_PUBLISHABLE_KEY: 'pub' }, env), f5);
+  ok(again.people === 0, 'nothing is sent twice');
 }
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
