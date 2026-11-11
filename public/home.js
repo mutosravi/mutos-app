@@ -6,7 +6,7 @@
   const pad = n => String(n).padStart(2, '0');
   const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
-  let who = null, cardSum = null;
+  let who = null, cardSum = null, myDay = null;
   const sup = () => who && who.role === 'supervisor'; // supervisor: Shoots (add, itinerary), Work desk, Clients without money
   const api = () => window.__boardApi || null;
   const click = id => { const el = document.getElementById(id); if (el) el.click(); };
@@ -184,7 +184,9 @@
     const todayEv = act.filter(e => e.date === t), short = todayEv.filter(a.isShort), gear = todayEv.filter(e => !a.isShort(e) && a.isGearShort(e)), clash = todayEv.filter(a.hasConflict);
     const ready = todayEv.filter(e => !a.isShort(e) && !a.isGearShort(e) && !a.hasConflict(e));
     const next = act.filter(e => e.date > t).sort((x, y) => x.date.localeCompare(y.date))[0];
-    let h = '<div class="mh-col"><section class="hero"><div class="hero-top"><span class="t">Today</span><span class="badge-w">' + todayEv.length + ' shoot' + (todayEv.length === 1 ? '' : 's') + '</span></div>';
+    // his own attendance (11 Nov 2026: the supervisor, or a manager, who is also an employee): check in / out on the team home
+    const md = myDay ? '<a class="card myday" id="mh-myday" href="/me.html" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;margin:0 0 14px;background:var(--surface);border-radius:20px;padding:14px 16px;box-shadow:var(--shadow);color:var(--rose)">' + window.MUTOS_ICON('clock', 26) + '<span style="flex:1;color:var(--ink)"><b style="display:block">My attendance</b><small class="sub">' + esc(myDay.text) + '</small></span><span class="pillbtn" style="min-height:38px;padding:0 14px;display:inline-flex;align-items:center">' + esc(myDay.action) + '</span></a>' : '';
+    let h = '<div class="mh-col">' + md + '<section class="hero"><div class="hero-top"><span class="t">Today</span><span class="badge-w">' + todayEv.length + ' shoot' + (todayEv.length === 1 ? '' : 's') + '</span></div>';
     if (todayEv.length) {
       h += '<div class="statgrid"><button type="button" class="stat" data-filter-go="all"><b>' + ready.length + '</b><span>ready</span></button>' +
         '<button type="button" class="stat honey" data-filter-go="short"><b>' + short.length + '</b><span>short on crew</span></button>' +
@@ -250,6 +252,23 @@
     body.querySelectorAll('[data-tile]').forEach(b => b.addEventListener('click', () => runTile(b.dataset.tile)));
   }
 
+  // my attendance today (anyone with an active employees row except the owner)
+  async function loadMyDay() {
+    if (!who || who.role === 'owner') return;
+    try {
+      const c = await app.client(), today = dstr(new Date());
+      const e = await c.from('employees').select('email, active').eq('email', who.email).maybeSingle();
+      if (e.error || !e.data || !e.data.active) { if (myDay) { myDay = null; render(); } return; }
+      const p = await c.from('att_punch').select('kind, at').eq('email', who.email).eq('day', today);
+      const list = (p.data || []).sort((x, y) => String(x.at).localeCompare(String(y.at))), last = list[list.length - 1];
+      const tm = x => new Date(x.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      const inP = list.find(x => x.kind === 'in');
+      const next = !last ? { text: 'Not checked in yet today', action: 'Check in' } : last.kind === 'out' ? { text: 'Checked in ' + tm(inP || last) + ' · out ' + tm(last), action: 'Open' }
+        : last.kind === 'lunch_out' ? { text: 'On lunch break since ' + tm(last), action: 'Back' } : { text: 'Checked in at ' + tm(inP || last), action: 'Check out' };
+      if (myDay && myDay.text === next.text) return;
+      myDay = next; render();
+    } catch (e) {}
+  }
   // memory cards for Needs you and the Work desk (quietly nothing before 014_cards.sql is run)
   async function loadCards() {
     try {
@@ -275,7 +294,8 @@
     const watch = () => { const s = document.getElementById('sb-summary'); if (s) new MutationObserver(render).observe(s, { childList: true, subtree: true }); };
     watch();
     document.addEventListener('mutos:updates', render);
-    loadCards(); setInterval(loadCards, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadCards(); });
+    loadCards(); setInterval(loadCards, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { loadCards(); loadMyDay(); } });
+    loadMyDay(); setInterval(loadMyDay, 2 * 60 * 1000);
     const wait = setInterval(() => { if (api()) { clearInterval(wait); render(); } }, 300);
     // the board's own windows close back to whatever was showing; refresh Home when one closes
     new MutationObserver(() => { if (!document.getElementById('sb-active-modal')) render(); }).observe(document.body, { childList: true });

@@ -12,7 +12,7 @@ const pad = n => String(n).padStart(2, '0'), dstr = d => d.getFullYear() + '-' +
 const today = dstr(new Date()), inDays = n => dstr(new Date(Date.now() + n * 864e5));
 
 // ── tables ──
-const T = {}; ['docs', 'members', 'crew_feed', 'gear_feed', 'client_links', 'client_feed', 'client_itinerary', 'bookings', 'booking_payments', 'packages', 'people', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log'].forEach(t => { T[t] = new Map(); });
+const T = {}; ['docs', 'members', 'crew_feed', 'gear_feed', 'client_links', 'client_feed', 'client_itinerary', 'bookings', 'booking_payments', 'packages', 'people', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'employees', 'att_punch'].forEach(t => { T[t] = new Map(); });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, gear_feed: r => r.id, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, bookings: r => r.wedding_key };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 const bk = JSON.parse(fs.readFileSync(process.argv[2]));
@@ -26,6 +26,9 @@ add('events', evs); add('shooters', bk.shooters); add('assistants', bk.assistant
 [[OWNER, 'owner'], [SUP, 'supervisor']].forEach(([email, role]) => T.members.set(email, { email, role, person_key: null, display_name: role }));
 T.bookings.set('w:sharma', { wedding_key: 'w:sharma', title: 'Sharma', total: 200000, plan: [], items: [] });
 T.packages.set('p1', { id: 'p1', name: 'Premium', price: 200000, items: [] });
+// the supervisor is also an employee: checked in this morning (11 Nov 2026: "Supervisor does not have attendance option")
+T.employees.set(SUP, { email: SUP, name: 'Vikas', active: true, monthly_salary: 20000, start_time: '10:00', weekly_off: 0 });
+{ const n = new Date(); n.setHours(9, 58, 0, 0); const d = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); T.att_punch.set('pu1', { id: 'pu1', email: SUP, day: d, kind: 'in', at: n.toISOString() }); }
 T.people.set('pe1', { id: 'pe1', code: 'M001', name: 'Editor One', email: 'ed@x.com', active: true, skills: [], crew_keys: [] });
 
 const role = e => (T.members.get(e) || {}).role || null;
@@ -36,6 +39,7 @@ const hasCrew = d => (d.assignments || []).some(a => a.memberId || (a.gearIds ||
 function canSee(t, r, e) {
   if (!e) return false;
   if (t === 'members') return r.email === e || role(e) === 'owner';
+  if (t === 'employees' || t === 'att_punch') return r.email === e || role(e) === 'owner';
   if (['bookings', 'booking_payments', 'packages'].includes(t)) return staff(e);
   return desk(e);
 }
@@ -142,7 +146,14 @@ const srv = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p ===
   await p.click('#mutos-settings'); await p.waitForSelector('#mh-more');
   ok(JSON.stringify(await p.$$eval('#mh-more [data-act]', x => x.map(b => b.dataset.act))) === '["out"]', 'Settings holds only Sign out (no backups, logins or export)');
   await p.keyboard.press('Escape');
+  await p.waitForSelector('#mh-myday', { timeout: 8000 }).catch(() => {});
+  ok(/My attendance/.test(await p.textContent('#mh-myday').catch(() => '')) && /Checked in at/.test(await p.textContent('#mh-myday').catch(() => '')) && /Check out/.test(await p.textContent('#mh-myday').catch(() => '')), 'supervisor Home: "My attendance" card (checked in, Check out)');
   if (SHOTS) await p.screenshot({ path: path.join(SHOTS, 'supervisor-home.png') });
+  await p.click('#mh-myday'); await p.waitForURL('**/me.html'); await p.waitForSelector('#to-studio');
+  await p.waitForFunction(() => /Check out/.test(document.getElementById('att').textContent), null, { timeout: 8000 }).catch(() => {});
+  ok(/Check out/.test(await p.textContent('#att')) && await p.isVisible('#to-studio'), 'it opens the team home: check in/out there, and "Studio Home" goes back');
+  if (SHOTS) await p.screenshot({ path: path.join(SHOTS, 'supervisor-me.png') });
+  await p.click('#to-studio'); await p.waitForFunction(() => window.__boardApi && document.querySelector('#mh-desks'), null, { timeout: 20000 });
 
   // ── the board ──
   await p.evaluate(() => { location.hash = 'board'; }); await sleep(400);

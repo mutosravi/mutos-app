@@ -76,7 +76,9 @@
   const app = window.mutosApp; let me, c;
   try { me = await app.me(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not reach the app. Check your internet and reload.</span>'; return; }
   if (!me || !me.role) { location.replace('/'); return; }
-  if (!['crew', 'staff'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; } // owner, manager, gear desk… have their own home
+  if (!['crew', 'staff', 'supervisor', 'manager'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; } // owner, gear desk… have their own home
+  // the supervisor (and a manager) also work here as employees: attendance on this page, a way back to the studio Home
+  if (['supervisor', 'manager'].includes(me.role)) { const b = document.createElement('a'); b.className = 'btn small'; b.id = 'to-studio'; b.href = '/board.html'; b.textContent = 'Studio Home'; $('out').before(b); }
   c = await app.client();
 
   let emp = null, person = null, shoots = [], att = null, jobsOpen = 0, awayPending = 0, myCards = 0, cardsIn = 0;
