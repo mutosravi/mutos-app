@@ -71,10 +71,10 @@ async function testPush(request, env, fetchFn = fetch) {
   const email = String((await u.json()).email || '').toLowerCase();
   const store = db(env, fetchFn);
   const [m] = await store.get('members?select=person_key&email=eq.' + encodeURIComponent(email));
-  if (!m || !m.person_key) return Response.json({ error: 'No crew login for this account.' }, { status: 403 });
-  const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=eq.' + encodeURIComponent(m.person_key));
+  if (!m) return Response.json({ error: 'No login for this account.' }, { status: 403 });
+  const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=eq.' + encodeURIComponent(m.person_key || 'email:' + email));
   if (!subs.length) return Response.json({ error: 'Reminders are not on for this phone yet.' }, { status: 404 });
-  const sent = await deliver(env, store, subs, { title: 'Reminders are on ✓', body: 'You will get a message the evening before each shoot.', tag: 'test', url: '/crew' }, fetchFn);
+  const sent = await deliver(env, store, subs, m.person_key ? { title: 'Reminders are on ✓', body: 'You will get a message the evening before each shoot.', tag: 'test', url: '/crew' } : { title: 'Notifications are on ✓', body: 'You will get a message when cards are given to you or answered.', tag: 'test', url: '/cards.html' }, fetchFn);
   return Response.json({ sent });
 }
 
@@ -152,6 +152,65 @@ export async function notifyDriveApi(request, env, fetchFn = fetch) {
   return Response.json({ sent });
 }
 
+// memory cards (014_cards.sql): tell the receiver when cards are given (the owner and managers for a return to the office),
+// and tell the giver when they are accepted or not. Phones are found by the person's board keys and their "email:<gmail>" sign-up.
+const inListQ = keys => encodeURIComponent(inList(keys));   // emails can hold '+'
+async function phoneKeys(store, emails, personIds) {
+  const people = [];
+  if (personIds.length) people.push(...await store.get('people?select=id,email,crew_keys&active=eq.true&id=' + inListQ(personIds)));
+  const mails = [...new Set(emails.concat(people.map(p => p.email)).filter(Boolean).map(e => String(e).toLowerCase()))];
+  if (mails.length) people.push(...await store.get('people?select=id,email,crew_keys&active=eq.true&email=' + inListQ(mails)));
+  const members = mails.length ? await store.get('members?select=email,person_key&email=' + inListQ(mails)) : [];
+  return [...new Set(people.flatMap(p => p.crew_keys || []).concat(members.map(m => m.person_key)).concat(mails.map(e => 'email:' + e)).filter(Boolean))];
+}
+export async function notifyCardApi(request, env, fetchFn = fetch) {
+  if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return Response.json({ sent: 0, note: 'Phone notifications are not set up.' });
+  const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!token) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+  const u = await fetchFn(String(env.SUPABASE_URL).replace(/\/+$/, '') + '/auth/v1/user', { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token } });
+  if (!u.ok) return Response.json({ error: 'Sign in again.' }, { status: 401 });
+  const email = String((await u.json()).email || '').toLowerCase(), store = db(env, fetchFn);
+  const body = await request.json().catch(() => ({})), isId = x => /^[0-9a-f-]{36}$/i.test(String(x));
+  const nameOf = async id => { if (!id) return 'the office'; const [p] = await store.get('people?select=name&id=eq.' + id); return (p && p.name) || 'someone'; };
+  const codesOf = async ids => (await store.get('cards?select=id,code&id=' + inListQ(ids))).map(k => k.code).sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  const list = (codes, n) => codes.slice(0, 6).join(', ') + (codes.length > 6 ? ' +' + (codes.length - 6) : '');
+  let sent = 0;
+  if (body.kind === 'give') {
+    if (!isId(body.batch)) return Response.json({ error: 'Unknown handover.' }, { status: 400 });
+    const moves = (await store.get('card_moves?select=id,card,from_person,to_person,status,given_by,note&batch=eq.' + body.batch)).filter(m => m.status === 'pending');
+    if (!moves.length) return Response.json({ sent: 0 });
+    if (moves.some(m => m.given_by !== email)) return Response.json({ error: 'Only the giver can send this notice.' }, { status: 403 });
+    const m = moves[0], codes = await codesOf(moves.map(x => x.card)), from = await nameOf(m.from_person);
+    const office = m.to_person ? [] : (await store.get('members?select=email&role=' + inListQ(['owner', 'manager']))).map(x => x.email);
+    const keys = await phoneKeys(store, office, m.to_person ? [m.to_person] : []);
+    const n = codes.length, msg = { title: (m.to_person ? n + ' card' + (n > 1 ? 's' : '') + ' for you' : n + ' card' + (n > 1 ? 's' : '') + ' back to the office') + ': ' + list(codes),
+      body: 'From ' + from + (m.note ? ' · ' + m.note : '') + '. Open the app and tap "I have ' + (n > 1 ? 'them' : 'it') + '" once they are in your hand.', tag: 'cards-' + body.batch, url: '/cards.html' };
+    const subs = keys.length ? await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inListQ(keys)) : [];
+    sent = subs.length ? await deliver(env, store, subs, msg, fetchFn) : 0;
+    return Response.json({ sent });
+  }
+  if (body.kind === 'answer') {
+    const ids = (Array.isArray(body.moves) ? body.moves : []).filter(isId).slice(0, 200);
+    if (!ids.length) return Response.json({ error: 'Unknown handover.' }, { status: 400 });
+    const moves = (await store.get('card_moves?select=id,card,to_person,status,given_by,answered_by&id=' + inListQ(ids))).filter(m => ['accepted', 'declined'].includes(m.status));
+    if (!moves.length) return Response.json({ sent: 0 });
+    if (moves.some(m => m.answered_by !== email)) return Response.json({ error: 'Only the person who answered can send this notice.' }, { status: 403 });
+    const [who] = await store.get('people?select=name&email=eq.' + encodeURIComponent(email));
+    const by = (who && who.name) || (moves[0].to_person ? await nameOf(moves[0].to_person) : 'The office');
+    const groups = new Map(); moves.forEach(m => { const k = m.given_by + '|' + m.status; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); });
+    for (const [k, g] of groups) {
+      const [giver, status] = k.split('|'); if (giver === email) continue;
+      const codes = await codesOf(g.map(x => x.card)), yes = status === 'accepted';
+      const msg = { title: by + (yes ? ' accepted ' : ' did not accept ') + list(codes), body: yes ? (codes.length > 1 ? 'They are' : 'It is') + ' now ' + by + '\'s responsibility.' : 'Marked "not received": ' + (codes.length > 1 ? 'the cards are' : 'the card is') + ' still counted with you. Please check.', tag: 'cards-ans-' + g[0].id, url: '/cards.html' };
+      const keys = await phoneKeys(store, [giver], []);
+      const subs = keys.length ? await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inListQ(keys)) : [];
+      if (subs.length) sent += await deliver(env, store, subs, msg, fetchFn);
+    }
+    return Response.json({ sent });
+  }
+  return Response.json({ error: 'Unknown notice.' }, { status: 400 });
+}
+
 export async function backupApi(request, env, fetchFn = fetch) {
   const url = new URL(request.url);
   if (!env.SUPABASE_SECRET_KEY) return Response.json({ error: 'The server is missing SUPABASE_SECRET_KEY (Cloudflare → Settings → Variables and Secrets).' }, { status: 503 });
@@ -187,6 +246,9 @@ export default {
     }
     if (url.pathname === '/api/notify-drive' && request.method === 'POST') {
       try { return await notifyDriveApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
+    }
+    if (url.pathname === '/api/notify-card' && request.method === 'POST') {
+      try { return await notifyCardApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
     if (url.pathname.startsWith('/api/backups')) {
       try { return await backupApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }

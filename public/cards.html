@@ -70,10 +70,11 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
 <script src="/app-core.js"></script>
 <script src="/icons.js"></script>
 <script src="/work-core.js"></script>
+<script src="/push-client.js"></script>
 </head>
 <body>
 <main class="wrap" style="padding-bottom:120px">
-  <header class="hdr"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span><div class="hdr-acts"><a class="btn small" id="nav-home" href="/">Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div></header>
+  <header class="hdr topbar"><span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span><div class="hdr-acts"><button type="button" class="btn small" id="bell" hidden>🔕 Notify me</button><a class="btn small" id="nav-home" href="/">Home</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div></header>
   <nav class="bnav" role="tablist" aria-label="Cards">
     <button type="button" role="tab" class="tab" data-tab="mine" hidden><span data-ic="card"></span>My cards<b class="dot" id="nav-mine" hidden></b></button>
     <button type="button" role="tab" class="tab" data-tab="all"><span data-ic="grid"></span>All cards<b class="dot" id="nav-all" hidden></b></button>
@@ -265,9 +266,13 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     if (error || !data || data.error) { toast((data && data.error) || (error && error.message) || 'Could not save.', true); return null; }
     if (ok) toast(ok); return data;
   }
+  // phone notices (015_card_notify.sql + /api/notify-card): the receiver when cards are given, the giver when they are answered
+  async function notify(body) {
+    try { const s = await c.auth.getSession(); const tok = s && s.data && s.data.session && s.data.session.access_token; if (tok) fetch('/api/notify-card', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify(body) }).catch(() => {}); } catch (e) {}
+  }
   async function answer(ids, yes) {
     if (!ids.length) return;
-    if (await rpc('card_answer', { p_moves: ids, p_accept: yes }, yes ? (ids.length > 1 ? ids.length + ' cards accepted. They are now your responsibility.' : 'Accepted. The card is now your responsibility.') : 'Marked as not received. The giver still has them.')) { closeSheets(); await refresh(); }
+    if (await rpc('card_answer', { p_moves: ids, p_accept: yes }, yes ? (ids.length > 1 ? ids.length + ' cards accepted. They are now your responsibility.' : 'Accepted. The card is now your responsibility.') : 'Marked as not received. The giver still has them.')) { notify({ kind: 'answer', moves: ids }); closeSheets(); await refresh(); }
   }
   const closeSheets = () => document.querySelectorAll('.sheet-bg').forEach(x => x.remove());
 
@@ -324,6 +329,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       const v = bg.querySelector('#g-to').value; if (!v) { toast('Pick who gets them.', true); return; }
       const r = await rpc('card_give', { p_cards: list.map(k => k.id), p_to: v === 'office' ? null : v, p_note: bg.querySelector('#g-note').value.trim() || null });
       if (!r) return;
+      notify({ kind: 'give', batch: r.batch });
       sel.clear(); bg.remove(); await refresh();
       toast('Given. Waiting for ' + (v === 'office' ? 'the owner or manager' : nameOf(v)) + ' to accept.');
     });
@@ -460,6 +466,8 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
   const want = new URLSearchParams(location.search).get('tab');
   tab = want && document.querySelector('.bnav .tab[data-tab="' + want + '"]:not([hidden])') ? want : person && !staff ? 'mine' : staff && cards.some(k => k.data === 'hold') ? 'copy' : person && cards.some(k => k.holder === myId) ? 'mine' : 'all';
   $('hi').textContent = desk ? 'Memory cards' : 'My cards';
+  if (window.mutosPush) window.mutosPush.button($('bell'), me, c, toast, { on: '🔔 Notices on', off: '🔕 Notify me', stop: 'Turn notices off', stopped: 'Card notices turned off on this phone.',
+    done: 'Notices on. This phone gets a message when cards are given to you' + (staff ? ' or returned to the office' : '') + ', and when cards you give are accepted.' });
   render();
   // live: a handover or a copy from another phone shows up here
   try {

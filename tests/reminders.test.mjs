@@ -1,6 +1,6 @@
 // Evening reminder job: picks tomorrow's shoots, sends one encrypted notification per phone, cleans up dead sign-ups.
 // Run: node tests/reminders.test.mjs   (the encryption itself is checked against an independent decoder separately)
-import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi } from '../worker/index.js';
+import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi, notifyCardApi } from '../worker/index.js';
 import { b64u } from '../worker/push.js';
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const pad = n => String(n).padStart(2, '0');
@@ -87,5 +87,50 @@ ok(b.title === '2 shoots tomorrow' && b.body.includes('Please confirm'), 'two sh
   mv.to_person = null; pushed.length = 0; r = await call('k', { id: MID }); j = await r.json();
   ok(j.sent === 1 && pushed[0] === 'https://push.test/s2', 'a return to the office notifies the drive keepers');
   mv.status = 'accepted'; r = await call('k', { id: MID }); j = await r.json(); ok(j.sent === 0, 'nothing sent once it is answered');
+}
+// memory card notices (014 + 015): given → receiver; accepted / not received → giver; office returns → owner and managers
+{
+  const B1 = '33333333-3333-4333-8333-333333333333', SHREY = '44444444-4444-4444-8444-444444444444', SUP = '55555555-5555-4555-8555-555555555555';
+  const M = id => id.replace(/^.{8}/, '66666666');
+  const moves = [
+    { id: M('11111111-1111-4111-8111-111111111111'), batch: B1, card: 'k1', from_person: SUP, to_person: SHREY, status: 'pending', given_by: 'sup+1@x.com', note: 'Sharma', answered_by: null },
+    { id: M('11111111-1111-4111-8111-111111111112'), batch: B1, card: 'k2', from_person: SUP, to_person: SHREY, status: 'pending', given_by: 'sup+1@x.com', note: 'Sharma', answered_by: null }];
+  const people = [{ id: SHREY, name: 'Shrey', email: 'shrey@x.com', crew_keys: ['shrey'] }, { id: SUP, name: 'Vikas', email: 'sup+1@x.com', crew_keys: [] }];
+  const members = [{ email: 'o@x.com', role: 'owner', person_key: null }, { email: 'm@x.com', role: 'manager', person_key: null }, { email: 'shrey@x.com', role: 'crew', person_key: 'shrey' }, { email: 'sup+1@x.com', role: 'supervisor', person_key: null }];
+  const phones = [['https://push.test/shrey', 'shrey'], ['https://push.test/sup', 'email:sup+1@x.com'], ['https://push.test/owner', 'email:o@x.com'], ['https://push.test/mgr', 'email:m@x.com']];
+  const subs = []; for (const [endpoint, person_key] of phones) subs.push(Object.assign({ endpoint, person_key, fails: 0 }, await phone()));
+  const pushed = []; let who = 'sup+1@x.com';
+  const vals = (u, col) => { const m = u.match(new RegExp('[?&]' + col + '=in\\.\\(([^)]*)\\)')); return m ? m[1].split(',').map(x => x.replace(/"/g, '')) : null; };
+  const f4 = async (url, opt = {}) => {
+    const u = decodeURIComponent(String(url));
+    if (u.endsWith('/auth/v1/user')) { const t = (opt.headers.Authorization || '').slice(7); return t === 'x' ? { ok: false } : { ok: true, json: async () => ({ email: who }) }; }
+    if (u.startsWith('https://push.test/')) { pushed.push(u); return { status: 201 }; }
+    if (opt.method === 'PATCH' || opt.method === 'DELETE') return { ok: true };
+    const j = d => ({ ok: true, json: async () => d });
+    if (u.includes('/card_moves?')) { const ids = vals(u, 'id'); return j(u.includes('batch=eq.') ? moves.filter(m => u.includes('batch=eq.' + m.batch)) : moves.filter(m => ids.includes(m.id))); }
+    if (u.includes('/cards?')) return j([{ id: 'k2', code: 'C10' }, { id: 'k1', code: 'C2' }].filter(k => vals(u, 'id').includes(k.id)));
+    if (u.includes('/people?')) { const ids = vals(u, 'id'), mails = vals(u, 'email'), eq = u.match(/[?&](id|email)=eq\.([^&]*)/); return j(people.filter(p => ids ? ids.includes(p.id) : mails ? mails.includes(p.email) : eq ? p[eq[1]] === eq[2] : false)); }
+    if (u.includes('/members?')) { const mails = vals(u, 'email'), roles = vals(u, 'role'); return j(members.filter(m => mails ? mails.includes(m.email) : roles ? roles.includes(m.role) : false)); }
+    if (u.includes('/push_subs?')) { const keys = vals(u, 'person_key'); return j(subs.filter(x => keys.includes(x.person_key))); }
+    return j([]);
+  };
+  const call = (tok, body) => notifyCardApi(new Request('https://app.test/api/notify-card', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }), Object.assign({ SUPABASE_PUBLISHABLE_KEY: 'pub' }, env), f4);
+  let r = await call('t', { kind: 'give', batch: B1 }), j = await r.json();
+  ok(j.sent === 1 && pushed.join() === 'https://push.test/shrey', 'cards given: the team leader\'s phone gets one notice for the whole batch');
+  who = 'shrey@x.com'; ok((await call('t', { kind: 'give', batch: B1 })).status === 403, 'only the giver can send the "given" notice');
+  ok((await call('x', { kind: 'give', batch: B1 })).status === 401 && (await call('t', { kind: 'give', batch: 'bad' })).status === 400, 'fake sign-in or id refused');
+  moves.forEach(m => { m.status = 'accepted'; m.answered_by = 'shrey@x.com'; }); pushed.length = 0;
+  r = await call('t', { kind: 'answer', moves: moves.map(m => m.id) }); j = await r.json();
+  ok(j.sent === 1 && pushed.join() === 'https://push.test/sup', 'accepted: the giver (supervisor, signed up by Gmail with a +) gets "Shrey accepted C2, C10"');
+  who = 'sup+1@x.com'; ok((await call('t', { kind: 'answer', moves: moves.map(m => m.id) })).status === 403, 'only the person who answered sends that notice');
+  // Shrey returns the cards to the office: owner and manager are told; then the owner marks one "not received"
+  moves.forEach(m => Object.assign(m, { status: 'pending', from_person: SHREY, to_person: null, given_by: 'shrey@x.com', answered_by: null })); pushed.length = 0; who = 'shrey@x.com';
+  r = await call('t', { kind: 'give', batch: B1 }); j = await r.json();
+  ok(j.sent === 2 && pushed.sort().join() === 'https://push.test/mgr,https://push.test/owner', 'a return to the office notifies the owner and the manager');
+  moves[0].status = 'declined'; moves[0].answered_by = 'o@x.com'; moves[1].status = 'accepted'; moves[1].answered_by = 'o@x.com'; pushed.length = 0; who = 'o@x.com';
+  r = await call('t', { kind: 'answer', moves: moves.map(m => m.id) }); j = await r.json();
+  ok(j.sent === 2 && pushed.every(x => x === 'https://push.test/shrey'), 'Shrey gets one notice for the accepted card and one for the card marked not received');
+  moves.forEach(m => { m.status = 'pending'; }); pushed.length = 0; r = await call('t', { kind: 'answer', moves: moves.map(m => m.id) }); j = await r.json();
+  ok(j.sent === 0, 'nothing sent for handovers not answered yet');
 }
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

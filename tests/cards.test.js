@@ -114,7 +114,8 @@ function handle(e, d) {
   return { data: null, error: { message: 'not allowed in this test: ' + d.op + ' ' + d.table } };
 }
 
-const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!fs.existsSync(f)) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': p.endsWith('.js') ? 'text/javascript' : p.endsWith('.css') ? 'text/css' : 'text/html' }); fs.createReadStream(f).pipe(s); });
+const notices = [];
+const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') { let b = ''; q.on('data', x => { b += x; }); q.on('end', () => { notices.push(JSON.parse(b)); s.writeHead(200, { 'content-type': 'application/json' }); s.end('{"sent":1}'); }); return; } let p = q.url.split('?')[0]; if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!fs.existsSync(f)) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': p.endsWith('.js') ? 'text/javascript' : p.endsWith('.css') ? 'text/css' : 'text/html' }); fs.createReadStream(f).pipe(s); });
 (async () => {
   await new Promise(r => server.listen(8847, r));
   const B = 'http://localhost:8847', b = await chromium.launch(), errs = [];
@@ -158,6 +159,9 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   ok(/4 cards for you: C01, C02, C03, C04/.test(await s.textContent('#inbox')), 'supervisor sees the four cards waiting for him');
   await s.click('[data-acc]'); await s.waitForFunction(() => !document.querySelector('[data-acc]'));
   ok([...T.cards.values()].every(k => k.holder === P.Vikas), 'he accepts all four with one tap');
+  await sleep(300);
+  const b1 = [...T.card_moves.values()][0].batch;
+  ok(notices.some(n => n.kind === 'give' && n.batch === b1) && notices.some(n => n.kind === 'answer' && n.moves.length === 4), 'phone notices: one when given (to him), one when he accepted (to the owner)');
   ok(!(await s.isVisible('.bnav .tab[data-tab="copy"]')), 'no "To copy" for the supervisor');
   await s.click('.bnav .tab[data-tab="mine"]');
   for (const c of ['C01', 'C02', 'C03']) await pick(s, c);
