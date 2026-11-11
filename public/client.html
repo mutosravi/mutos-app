@@ -31,6 +31,7 @@
 .fn.open .fn-body { display: block; }
 .shortnote { background: #fbf1d9; color: #5c4410; border-radius: 14px; padding: 10px 12px; font-size: 13.5px; line-height: 1.45; margin-top: 2px; }
 .shortnote b { display: block; font-size: 13.5px; }
+.bar .pillbtn.pulse { box-shadow: 0 0 0 3px var(--honey); }
 .done-btn { margin-top: 14px; width: 100%; }
 .sechead2 { margin: 22px 2px 4px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .fn-head { display: flex; gap: 12px; align-items: flex-start; }
@@ -170,12 +171,12 @@
     const total = fns.length + ans.extra.length, done = fns.filter(f => filled(ans[f.id])).length + ans.extra.filter(filled).length;
     const first = fns.find(f => f.date >= today), daysTo = first ? Math.round((new Date(first.date + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5) : null;
     $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">Your wedding</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
-      '<h2>' + esc(got.title) + '</h2><p>Tap a function to add or change its time and venue. You can update it any time; our team sees every change.</p>' +
+      '<h2>' + esc(got.title) + '</h2><p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
       '<div class="progress" aria-label="' + done + ' of ' + total + ' ready"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' ready</p>' +
       (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
       (studio ? '<div class="ans wait" style="margin:0" id="studio-note">Editing for the family, from Muto\'s. Your changes save here and the family sees them. Only the family can press Send.' + (got.updated_by ? ' Last changed by ' + esc(got.updated_by) + '.' : '') + '</div>' : '') +
       (late ? '<div class="ans wait" style="margin:0"><b>Payment reminder:</b> ' + inr(bk.overdue) + ' is overdue. Please clear it or call Muto\'s if anything is unclear. Thank you!</div>' : '') +
-      (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. You can still change anything and send again.</div>' : '') + '</section>';
+      (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Changed something? Tap Send again and our team sees it at once.</div>' : '') + '</section>';
     let h = '<div class="sechead2">Your functions</div>';
     fns.forEach(f => {
       const a = ans[f.id] = ans[f.id] || {}, ok = filled(a), short = f.type === 'short';
@@ -221,6 +222,7 @@
       const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcv]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
       dirty = true; $('saved').textContent = 'Not saved yet'; scheduleSave();
+      if (submittedAt && !studio) { $('send').textContent = 'Send changes to Muto\'s'; $('send').classList.add('pulse'); }
       const c2 = inp.closest('.fn'); if (!list || k[0] === 'x') { const ok = filled(obj), go = c2.querySelector('.fn-sum .go'); c2.classList.toggle('done', ok); if (go) { go.classList.toggle('ok', ok); go.textContent = ok ? 'Ready' : 'Add details'; } }
     }));
     const on = (id, fn) => { const b = $(id); if (b) b.addEventListener('click', fn); };
@@ -256,7 +258,7 @@
   $('send').addEventListener('click', async () => {
     const missing = fns.filter(f => !filled(ans[f.id])).map(f => f.name);
     if (missing.length && !confirm('Not filled yet: ' + missing.join(', ') + '.\n\nSend what you have now? You can fill the rest later.')) return;
-    if (await save(true)) { render(); toast('Thank you! Muto\'s has received your details.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    if (await save(true)) { $('send').textContent = 'Send to Muto\'s'; $('send').classList.remove('pulse'); render(); toast('Thank you! Muto\'s has your details, and our team sees the venues now.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   });
   $('add-fn').addEventListener('click', () => { ans.extra.push({ slot: 'Evening' }); openKey = 'x' + (ans.extra.length - 1); render(); const el = $('list').querySelector('[data-card="' + openKey + '"]'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); const n = el.querySelector('[data-f="name"]'); if (n) n.focus(); } });
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });

@@ -2,7 +2,7 @@
 // time, venue, address, contact and notes (public/client.html). The board keeps their function list up to date (client_feed).
 (function () {
   const app = window.mutosApp;
-  let api = null, links = [], itin = [], lastSig = new Map(), bookings = [], payments = [], packages = [];
+  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [];
   const sup = () => window.__mutosRole === 'supervisor'; // supervisor: Gmails, WhatsApp, answers, editing the form; no money
   const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const KIND_LABELS = [['reel', 'Reel'], ['teaser', 'Teaser'], ['trailer', 'Trailer'], ['highlight', 'Highlight film'], ['full', 'Full film'], ['top', 'Top selection'], ['lr', 'LR edit'], ['album_sel', 'Album selection'], ['album', 'Album design'], ['other', 'Other']];
@@ -47,6 +47,8 @@
     const [l, i] = await Promise.all([c.from('client_links').select('*'), c.from('client_itinerary').select('*')]);
     if (l.error) throw l.error;
     links = l.data || []; itin = i.error ? [] : (i.data || []);
+    // what the database put on the board when a family pressed Send (017_client_auto_apply.sql); fine if not set up yet
+    try { const g = await c.from('client_apply_log').select('wedding_key, event_id, at, before, after').order('at', { ascending: false }).limit(500); applied = g.error ? [] : (g.data || []); } catch (e) { applied = []; }
     // packages and payments (009_bookings.sql); fine if not set up yet
     const [b, p, k] = await Promise.all([c.from('bookings').select('*'), c.from('booking_payments').select('*').order('paid_on'), c.from('packages').select('*').order('name')]);
     bookings = b.error ? [] : (b.data || []); payments = p.error ? [] : (p.data || []); packages = k.error ? [] : (k.data || []);
@@ -73,7 +75,7 @@
     if (!it || !it.updated_at) return { l, it, label: 'Link made, not filled', cls: 'wait' };
     const n = filledN(w, it), extra = ((it.data || {}).extra || []).length;
     const fresh = it.submitted_at && (!it.reviewed_at || it.updated_at > it.reviewed_at);
-    return { l, it, fresh, label: (it.submitted_at ? (fresh ? 'New answers to check' : 'Checked') : 'Filling') + ' · ' + n + ' of ' + w.events.length + (extra ? ' · +' + extra + ' new function' + (extra > 1 ? 's' : '') : ''), cls: fresh ? 'wait' : it.submitted_at ? 'ok' : 'mute' };
+    return { l, it, fresh, label: (it.submitted_at ? (fresh ? (applied.some(g => g.wedding_key === w.key && g.at >= it.submitted_at) ? 'New answers · on the board' : 'New answers to check') : 'Checked') : 'Filling') + ' · ' + n + ' of ' + w.events.length + (extra ? ' · +' + extra + ' new function' + (extra > 1 ? 's' : '') : ''), cls: fresh ? 'wait' : it.submitted_at ? 'ok' : 'mute' };
   }
   function summary() {
     if (!api) return null; const ws = weddings(), keys = new Set(ws.map(w => w.key));
@@ -315,6 +317,7 @@
       const x = a[ev.id];
       html += '<div class="sb-manage-row" style="display:block;padding:10px 8px"><b>' + esc(ev.name) + '</b> <span class="sb-manage-sub">' + esc(dayName(ev.date) + ' · ' + ev.slot) + '</span>' +
         '<div class="sb-manage-sub" style="margin:4px 0">Board now: ' + esc(ev.location || 'no venue') + (ev.mapLink ? ' · map ✓' : '') + '</div>' +
+        (() => { const g = applied.find(z => z.wedding_key === w.key && z.event_id === ev.id); return g ? '<div style="font-size:12.5px;color:#1f4d43;margin:2px 0 4px">✓ Put on the board by itself when the family sent it · ' + esc(new Date(g.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + (g.before && g.before.location && g.before.location !== (g.after || {}).location ? ' · was: ' + esc(g.before.location) : '') + '</div>' : ''; })() +
         (x ? '<div style="font-size:12.5px;line-height:1.5">' + block(x) + '</div><div class="sb-btn-row" style="margin-top:6px"><button type="button" class="sb-btn-sm" data-apply="' + esc(ev.id) + '">Apply to board</button></div>' : '<div class="sb-manage-sub">Not filled yet.</div>') + '</div>';
     });
     extra.forEach((x, i) => {
@@ -339,7 +342,7 @@
       if (venue) ev.location = venue.slice(0, 200);
       if (x.map) ev.mapLink = x.map;
       const note = 'From client: ' + [x.time ? 'starts ' + x.time : '', x.contact || x.phone ? 'contact ' + [x.contact, x.phone].filter(Boolean).join(' ') : '', x.guests ? x.guests + ' guests' : '', x.notes].filter(Boolean).join(' · ');
-      if (note.length > 13 && !String(ev.notes || '').includes(note)) ev.notes = (ev.notes ? ev.notes + '\n' : '') + note;
+      if (note.length > 13) { const own = String(ev.notes || '').split('\n').filter(l => l && !l.startsWith('From client:')); ev.notes = own.concat(note).join('\n'); } // replaces the previous family line
       api.save(); if (window.MUTOS_APP) window.MUTOS_APP.changed();
       b.textContent = '✓ Applied'; b.disabled = true; api.toast(ev.name + ': venue, map and notes updated on the board.');
     }));
