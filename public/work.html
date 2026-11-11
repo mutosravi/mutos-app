@@ -135,11 +135,24 @@
       '<h2>' + esc(state) + '</h2>' + (list.length ? '<p>Worked ' + P.fmtH(mins) + ' so far (lunch not counted) · 8 h a day</p>' : '<p>Your time is ' + A.t12(emp.start_time) + ' · 15 minutes grace</p>') +
       (list.length ? '<div class="chipset">' + list.map(p => '<span>' + { in: 'In', lunch_out: 'Lunch out', lunch_in: 'Back', out: 'Out' }[p.kind] + ' ' + P.fmtT(P.istMin(p.at)) + (p.by_fix ? ' (fixed)' : '') + '</span>').join('') + '</div>' : '') +
       (step.length ? '<div class="pillrow" style="grid-template-columns:' + (step.length > 2 ? '1fr 1fr' : '1fr') + '">' + '<button type="button" class="pillbtn" data-punch="' + step[0] + '">' + step[1] + '</button>' + (step[2] ? '<button type="button" class="pillbtn light" data-punch="' + step[2] + '">' + step[3] + '</button>' : '') + '</div>' : '') +
-      (row.note ? '<p style="font-size:13px">' + esc(row.note) + '</p>' : '') + '</section>';
+      (row.note ? '<p style="font-size:13px">' + esc(row.note) + '</p>' : '') +
+      '<p style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:13.5px">' + (canUndo(list) ? '<button type="button" id="att-undo" style="background:none;border:0;padding:6px 0;font:600 13.5px var(--font-body);color:var(--ink);text-decoration:underline;cursor:pointer">Tapped by mistake? Undo</button>' : '') +
+      '<button type="button" id="att-fix" style="background:none;border:0;padding:6px 0;font:600 13.5px var(--font-body);color:var(--ink);text-decoration:underline;cursor:pointer">Wrong time? Ask for a correction</button></p></section>';
+    const ub = $('today').querySelector('#att-undo'); if (ub) ub.addEventListener('click', () => undo(ub));
+    $('today').querySelector('#att-fix').addEventListener('click', () => newRequest('fix', A.todayIST(), list.some(p => p.kind === 'out') ? 'out' : 'in'));
     $('today').querySelectorAll('[data-punch]').forEach(b => b.addEventListener('click', () => punch(b.dataset.punch, b.textContent)));
     // this week
     const wk = tc.days.filter(d => d.date <= t && d.status !== 'before').slice(-7).reverse();
     $('weekl').innerHTML = wk.map(d => { const s = A.STATUS[d.status] || ['', '#fff', '#000']; return '<div class="evrow" style="cursor:default"><span class="dblock"><b>' + Number(d.date.slice(8)) + '</b><span>' + esc(d.day.split(',')[0].slice(0, 3)) + '</span></span><span class="txt"><b>' + esc(d.label || s[0]) + '</b><span>' + esc([d.inAt ? 'In ' + d.inAt : '', d.outAt ? 'Out ' + d.outAt : '', d.note].filter(Boolean).join(' · ')) + '</span></span><span class="pill" style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span></div>'; }).join('');
+  }
+  // a tap by mistake can be taken back for 10 minutes (013_undo_punch.sql); later it needs a correction request
+  const canUndo = list => { const l = list[list.length - 1]; return !!l && !l.by_fix && Date.now() - Date.parse(l.at) < 10 * 60000; };
+  async function undo(btn) {
+    btn.disabled = true;
+    const { data: r, error } = await c.rpc('att_undo');
+    if (error || !r || r.error) { toast((r && r.error) || (error && /att_undo/.test(error.message) ? 'Undo is not set up yet. Ask Ravi.' : error && error.message) || 'Could not undo.', true); btn.disabled = false; return; }
+    toast({ in: 'Check-in', out: 'Check-out', lunch_out: 'Lunch break', lunch_in: 'Back from lunch' }[r.kind] + ' undone.');
+    await load(); renderAll();
   }
   async function punch(kind, label) {
     const codeOn = curData().settings.code_on !== false;
@@ -192,14 +205,14 @@
     $('legend').innerHTML = Object.entries(A.STATUS).filter(([k]) => used.has(k)).map(([, s]) => '<span style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span>').join('');
     $('m-late').innerHTML = '<div class="ans ' + (calc.lates % 3 === 2 ? 'wait' : 'ok') + '" style="margin:0">Late marks this month: <b>' + calc.lates + '</b>' + (calc.lateCut ? ' (' + calc.lateCut + ' day cut)' : '') + ' · every 3rd = ½ day cut' + (calc.lates % 3 === 2 ? '. Next one cuts ½ day.' : '') + '</div>';
     const r = selDay && calc.days.find(x => x.date === selDay);
-    $('m-day').innerHTML = r ? '<div class="evrow" style="cursor:default"><span class="txt"><b>' + esc(r.day + ' · ' + (r.label || '')) + '</b><span>' + esc([r.inAt ? 'In ' + r.inAt : '', r.outAt ? 'Out ' + r.outAt : '', r.note].filter(Boolean).join(' · ') || ' ') + '</span></span>' + (r.status === 'missing' || r.status === 'absent' ? '<button type="button" class="chip" data-fix="' + r.date + '">Fix</button>' : '') + '</div>' : '<p class="sub">Tap a day to see its check-in times.</p>';
+    $('m-day').innerHTML = r ? '<div class="evrow" style="cursor:default"><span class="txt"><b>' + esc(r.day + ' · ' + (r.label || '')) + '</b><span>' + esc([r.inAt ? 'In ' + r.inAt : '', r.outAt ? 'Out ' + r.outAt : '', r.note].filter(Boolean).join(' · ') || ' ') + '</span></span>' + (r.date <= A.todayIST() && !['off', 'before', 'holiday'].includes(r.status) ? '<button type="button" class="chip" data-fix="' + r.date + '">Ask to correct</button>' : '') + '</div>' : '<p class="sub">Tap a day to see its check-in times.</p>';
     const fx = $('m-day').querySelector('[data-fix]'); if (fx) fx.addEventListener('click', () => newRequest('fix', fx.dataset.fix));
   }
   $('m-prev').addEventListener('click', async () => { viewMonth = A.shiftMonth(viewMonth, -1); selDay = null; await load(); renderMonth(); });
   $('m-next').addEventListener('click', async () => { viewMonth = A.shiftMonth(viewMonth, 1); selDay = null; await load(); renderMonth(); });
 
   // ---------- requests ----------
-  const REQ = { leave: 'Leave', fix: 'Fix my day', advance: 'Advance' };
+  const REQ = { leave: 'Leave', fix: 'Attendance correction', advance: 'Advance' };
   const dn = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
   function reqText(r) {
     if (r.kind === 'leave') return (r.half ? 'Half day ' : '') + 'Leave ' + dn(r.day) + (r.day_to && r.day_to !== r.day ? ' to ' + dn(r.day_to) : '');
@@ -213,7 +226,7 @@
       (r.status === 'pending' ? '<button type="button" class="linkbtn" data-del="' + r.id + '">cancel</button>' : '') + '</div></div>').join('') : '<div class="empty">No requests yet.</div>';
     $('reqs').querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { const { error } = await c.from('att_requests').delete().eq('id', b.dataset.del); if (error) toast(error.message, true); else { await load(); renderReq(); toast('Request cancelled.'); } }));
   }
-  function newRequest(kind, day) {
+  function newRequest(kind, day, what) {
     const t = A.todayIST();
     const open = curData().requests.filter(r => r.kind === 'advance' && r.status !== 'declined').reduce((s, r) => s + Number(r.amount) - Number(r.recovered), 0);
     const avail = Math.max(0, Number(emp.monthly_salary) - open);
@@ -224,6 +237,7 @@
     bg.innerHTML = '<div class="sheet" role="dialog" aria-modal="true"><h3>' + REQ[kind] + '</h3>' + body + '<label class="form-grid" style="display:block"><span style="font-size:12px;font-weight:600;color:var(--muted)">Reason</span><textarea class="in" id="r-why" rows="2" maxlength="300" placeholder="' + (kind === 'fix' ? 'e.g. phone switched off' : kind === 'leave' ? 'e.g. family function' : 'e.g. medical') + '"></textarea></label>' +
       '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Send to Ravi</button></div></div>';
     document.body.appendChild(bg);
+    if (what && bg.querySelector('#r-kind')) bg.querySelector('#r-kind').value = what; // check-in or check-out, picked for them
     const v = id => { const el = bg.querySelector('#' + id); return el ? (el.type === 'checkbox' ? el.checked : el.value) : null; };
     bg.querySelector('#cx').addEventListener('click', () => bg.remove());
     bg.addEventListener('click', e => { if (e.target === bg) bg.remove(); });
@@ -271,7 +285,7 @@
   function renderAll() { renderToday(); renderReq(); if (!$('tab-month').hidden) renderMonth(); }
   try { await load(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not load (' + esc(e.message || e) + ').</span>'; return; }
   renderAll();
-  { const first = new URLSearchParams(location.search).get('tab'); if (['month', 'req', 'pay'].includes(first)) showTab(first); } // from the team home (me.html)
+  { const q = new URLSearchParams(location.search), first = q.get('tab'); if (['month', 'req', 'pay'].includes(first)) showTab(first); if (q.get('new') === 'fix') newRequest('fix', A.todayIST(), ['in', 'out', 'lunch_out', 'lunch_in'].includes(q.get('what')) ? q.get('what') : null); } // from the team home (me.html)
   setInterval(() => { if (!document.hidden && !document.querySelector('.sheet-bg')) renderToday(); }, 60000);
   document.addEventListener('visibilitychange', async () => { if (!document.hidden && !document.querySelector('.sheet-bg')) { await load(); renderAll(); } });
 })();

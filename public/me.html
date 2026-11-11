@@ -28,6 +28,8 @@
 .att .go button { min-height: 60px; border: 0; border-radius: 999px; background: var(--ink); color: #fff; font: 700 18px var(--font-body); cursor: pointer; }
 .att .go button.light { min-height: 48px; background: rgba(255,255,255,.8); color: var(--ink); font-size: 15px; font-weight: 600; }
 .att .go button:disabled { opacity: .6; }
+.att .more { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; font-size: 13.5px; }
+.att .more button, .att .more a { background: none; border: 0; padding: 6px 0; min-height: 32px; font: 600 13.5px var(--font-body); color: var(--ink); text-decoration: underline; cursor: pointer; }
 .doors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
 .door { position: relative; background: var(--surface); color: var(--ink); border: 0; border-radius: 22px; min-height: 112px; padding: 16px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 10px; text-align: left; text-decoration: none; box-shadow: var(--shadow); font: inherit; cursor: pointer; }
 .door svg { width: 26px; height: 26px; fill: none; stroke: var(--rose); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -109,8 +111,19 @@
     box.innerHTML = '<section class="att" aria-label="Attendance today"><div class="when"><span>Attendance today</span></div>' +
       '<h2 id="att-state">' + esc(state) + '</h2><p>' + esc(line) + '</p>' +
       (list.length ? '<div class="steps">' + list.map(p => '<span>' + { in: 'In', lunch_out: 'Lunch', lunch_in: 'Back', out: 'Out' }[p.kind] + ' ' + P.fmtT(P.istMin(p.at)) + '</span>').join('') + '</div>' : '') +
-      (step.length ? '<div class="go"><button type="button" data-punch="' + step[0] + '">' + step[1] + '</button>' + (step[2] ? '<button type="button" class="light" data-punch="' + step[2] + '">' + step[3] + '</button>' : '') + '</div>' : '') + '</section>';
+      (step.length ? '<div class="go"><button type="button" data-punch="' + step[0] + '">' + step[1] + '</button>' + (step[2] ? '<button type="button" class="light" data-punch="' + step[2] + '">' + step[3] + '</button>' : '') + '</div>' : '') +
+      '<div class="more">' + (canUndo(list) ? '<button type="button" id="att-undo">Tapped by mistake? Undo</button>' : '') + '<a id="att-fix" href="/work.html?tab=req&new=fix&what=' + (list.some(p => p.kind === 'out') ? 'out' : 'in') + '">Wrong time? Ask for a correction</a></div></section>';
+    const ub = box.querySelector('#att-undo'); if (ub) ub.addEventListener('click', () => undo(ub));
     box.querySelectorAll('[data-punch]').forEach(b => b.addEventListener('click', () => punch(b.dataset.punch, b.textContent, b)));
+  }
+  // a tap by mistake can be taken back for 10 minutes (013_undo_punch.sql); later it needs a correction request
+  const canUndo = list => { const l = list[list.length - 1]; return !!l && !l.by_fix && Date.now() - Date.parse(l.at) < 10 * 60000; };
+  async function undo(btn) {
+    btn.disabled = true;
+    const { data: r, error } = await c.rpc('att_undo');
+    if (error || !r || r.error) { toast((r && r.error) || (error && /att_undo/.test(error.message) ? 'Undo is not set up yet. Ask Ravi.' : error && error.message) || 'Could not undo.', true); btn.disabled = false; return; }
+    toast({ in: 'Check-in', out: 'Check-out', lunch_out: 'Lunch break', lunch_in: 'Back from lunch' }[r.kind] + ' undone.');
+    await load(); render();
   }
   async function punch(kind, label, btn) {
     let code = null;
@@ -194,6 +207,7 @@
   }
   try { await load(); render(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not load (' + esc(e.message || e) + '). Pull down to try again.</span>'; }
   // coming back to the app: fresh numbers (a phone stops the page in the background)
+  setInterval(() => { if (!document.hidden && !document.querySelector('.sheet-bg')) renderAtt(); }, 60000); // the Undo offer ends after 10 minutes
   document.addEventListener('visibilitychange', async () => { if (!document.hidden && !document.querySelector('.sheet-bg')) { try { await load(); render(); } catch (e) {} } });
 })();
 </script>

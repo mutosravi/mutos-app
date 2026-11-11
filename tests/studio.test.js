@@ -184,6 +184,13 @@ function rpc(fn, a, e) {
     return { data: { vip: d.vip || [], contacts: (d.contacts || []).filter(c => !c.fn || c.fn === a.p_event) }, error: null };
   }
   if (fn === 'att_office_code') return ['owner', 'kiosk'].includes(role(e)) ? { data: { code: CODE, seconds_left: 25 }, error: null } : err('Only the office screen can show the code.');
+  if (fn === 'att_undo') { // same as 013_undo_punch.sql
+    const today = istDay(), mine = [...T.att_punch.values()].filter(x => x.email === e && x.day === today).sort((x, y) => x.at.localeCompare(y.at)), l = mine[mine.length - 1];
+    if (!l) return { data: { error: 'Nothing to undo today.' }, error: null };
+    if (l.by_fix) return { data: { error: 'That time was set by an approved correction. Ask Ravi to change it.' }, error: null };
+    if (Date.now() - Date.parse(l.at) > 10 * 60000) return { data: { error: 'That was more than 10 minutes ago. Ask for a correction in My Requests.' }, error: null };
+    T.att_punch.delete(l.id); return { data: { ok: true, kind: l.kind }, error: null };
+  }
   if (fn === 'att_punch') {
     const emp = T.employees.get(e); if (!emp || !emp.active) return { data: { error: 'You are not on the employee list. Ask Ravi.' }, error: null };
     const st = T.att_settings.get('1'); if (st.office_lat == null) return { data: { error: 'The office location is not set yet.' }, error: null };
@@ -423,6 +430,18 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await cr.waitForFunction(() => document.getElementById('att-state') && document.getElementById('att-state').textContent === 'In office');
   ok([...T.att_punch.values()].some(x => x.email === CREWE && x.kind === 'in'), 'checks in from the team home (same office code and location check)');
   ok((await cr.textContent('#att [data-punch="out"]')) === 'Check out' && !!(await cr.$('#att [data-punch="lunch_out"]')), 'then the big button is Check out, with Lunch break below');
+  // a mis-tapped check-out: Undo within 10 minutes, then check out again later
+  await cr.click('#att [data-punch="out"]'); await cr.fill('.sheet #code', CODE); await cr.click('.sheet #go');
+  await cr.waitForFunction(() => document.getElementById('att-state').textContent === 'Checked out');
+  ok(!!(await cr.$('#att-undo')), 'right after checking out: "Tapped by mistake? Undo" shows');
+  await cr.click('#att-undo'); await cr.waitForFunction(() => document.getElementById('att-state').textContent === 'In office');
+  ok(![...T.att_punch.values()].some(x => x.email === CREWE && x.kind === 'out') && !!(await cr.$('#att [data-punch="out"]')), 'Undo takes the check-out back: in office again, Check out button back');
+  ok((await cr.getAttribute('#att-fix', 'href')).includes('new=fix&what=in'), '"Wrong time?" opens a correction with Check-in picked (not checked out yet)');
+  await cr.click('#att-fix'); await cr.waitForSelector('.sheet #r-kind');
+  ok(await cr.$eval('.sheet #r-kind', x => x.value) === 'in' && await cr.$eval('.sheet #r-day', x => x.value) === istDay(), '… the correction form opens for today, Check-in already chosen');
+  await cr.fill('.sheet #r-time', '10:00'); await cr.fill('.sheet #r-why', 'Tapped late, came at 10'); await cr.click('.sheet #go'); await cr.waitForTimeout(800);
+  ok([...T.att_requests.values()].some(r => r.email === CREWE && r.kind === 'fix' && r.fix_kind === 'in' && r.fix_time.startsWith('10:00')), 'check-in correction sent to Ravi');
+  await cr.goto(B + '/me.html'); await cr.waitForSelector('#att [data-punch="out"]');
   await cr.click('[data-go="req"]'); await cr.waitForSelector('.sheet a[href="/crew.html?tab=away"]');
   ok(!!(await cr.$('.sheet a[href="/work.html?tab=req"]')), 'My Requests: leave/advance/correction, and day off from shoots');
   await cr.click('.sheet #cx');
