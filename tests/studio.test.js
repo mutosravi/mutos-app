@@ -18,7 +18,7 @@ const role = e => (T.members.get(e) || {}).role || null;
 const isOwner = e => role(e) === 'owner', staff = e => ['owner', 'manager'].includes(role(e)), payroll = e => ['owner', 'accountant'].includes(role(e));
 const pkOf = e => (T.members.get(e) || {}).person_key;
 const keeper = e => { const p = [...T.people.values()].find(x => e && x.email === e && x.active); return !!(p && (p.skills || []).includes('data')); };
-const canDrive = (e, id) => staff(e) || keeper(e) || ((T.drives.get(id) || {}).holder && T.drives.get(id).holder === myPerson(e));
+const canDrive = (e, id) => staff(e) || ((T.drives.get(id) || {}).holder && T.drives.get(id).holder === myPerson(e)); // 016: the keeper only hands over
 const pname = id => id ? (T.people.get(id) || {}).name : 'the office';
 const dlog = (drive, e, what) => { const id = newId(); T.drive_log.set(id, { id, drive, by_email: e, at: new Date().toISOString(), what }); };
 const myPerson = e => { const p = [...T.people.values()].find(x => e && x.email === e && x.active); return p ? p.id : null; };
@@ -51,7 +51,7 @@ function canWrite(t, r, e) {
   if (t === 'att_requests') return true;
   if (t === 'people') return staff(e);
   if (t === 'people_private') return isOwner(e) || r.person === myPerson(e);
-  if (t === 'drives') return r.id && T.drives.has(r.id) ? canDrive(e, r.id) : staff(e) || keeper(e);
+  if (t === 'drives') return staff(e); // 016: drive details only by the owner and manager
   if (t === 'drive_items') return canDrive(e, r.drive);
   if (['packages', 'bookings', 'booking_payments'].includes(t)) return staff(e);
   if (t === 'salary_history') return isOwner(e);
@@ -567,10 +567,16 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(await owner.$$eval('#tab-drives [data-d]', x => x.length) === 4 && (await owner.textContent('#tab-drives')).includes('Imran'), 'Work desk → Drives lists the register with who has each drive');
   const kul = await as(KUL);
   await kul.goto(B + '/mywork.html?tab=drives'); await kul.waitForSelector('#tab-drives [data-d]');
-  await kul.click('[data-d="' + DRV('M 1').id + '"]'); await kul.waitForSelector('#it-t');
-  await kul.fill('#it-t', 'Client 59 · Haldi'); await kul.fill('#it-s', '600 GB'); await kul.click('#it-add'); await kul.waitForFunction(() => /Added to M 1/.test(document.getElementById('toast').textContent));
+  ok(!(await kul.$('#dadd')), 'the drive keeper has no "Add drive" (016: he only hands over and receives)');
+  await kul.click('[data-d="' + DRV('M 1').id + '"]'); await kul.waitForSelector('#dgive');
+  ok(!(await kul.$('#it-t')) && !(await kul.$('#dedit')) && !(await kul.$('#dclean')) && !(await kul.$('[data-mv]')), '… and on an office drive: no editing, no data list changes, no cleaning');
+  ok(handle(KUL, { op: 'insert', table: 'drive_items', rows: [{ drive: DRV('M 1').id, title: 'x', what: 'raw' }], filters: [] }).error, '… which the rules refuse too');
+  await kul.click('#dclose');
+  await owner.click('[data-d="' + DRV('M 1').id + '"]'); await owner.waitForSelector('#it-t');
+  await owner.fill('#it-t', 'Client 59 · Haldi'); await owner.fill('#it-s', '600 GB'); await owner.click('#it-add'); await owner.waitForFunction(() => /Added to M 1/.test(document.getElementById('toast').textContent));
   const raw = [...T.drive_items.values()].find(i => i.title === 'Client 59 · Haldi');
-  ok(raw && raw.drive === DRV('M 1').id && raw.what === 'raw' && raw.added_by === KUL, 'the drive keeper lists Client 59 Haldi raw on M 1');
+  ok(raw && raw.drive === DRV('M 1').id && raw.what === 'raw' && raw.added_by === OWNER, 'the owner lists Client 59 Haldi raw on M 1');
+  await kul.reload(); await kul.waitForSelector('#tab-drives [data-d]'); await kul.click('[data-d="' + DRV('M 1').id + '"]');
   await kul.waitForSelector('#dgive'); await kul.click('#dgive'); await kul.waitForSelector('#gto');
   await kul.selectOption('#gto', PP('Hamza').id); await kul.fill('#gnote', 'for the reel'); await kul.click('#ggo');
   await kul.waitForFunction(() => /Waiting for Hamza/.test(document.getElementById('toast').textContent));
@@ -598,12 +604,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const found = await owner.textContent('#tab-drives');
   ok(found.includes('Client 59 · Haldi') && /on M 5/.test(found) && /→ Saif, waiting/.test(found), 'search "client 59": the Haldi raw is on M 5 (being handed to Saif)');
   // cleaning
-  await kul.click('.chip-b[data-dv="all"]'); await kul.click('[data-d="' + DRV('Red').id + '"]'); await kul.waitForSelector('#dclean');
-  await kul.fill('#it-t', 'Old project'); await kul.selectOption('#it-w', 'project'); await kul.click('#it-add'); await kul.waitForSelector('#dclean');
-  await kul.click('#dclean'); await kul.waitForSelector('#cl-it input'); await kul.check('#cl-it input'); await kul.fill('#cl-f', '3.9 TB'); await kul.click('#clgo');
-  await kul.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
-  ok(DRV('Red').cleaned_on === istDay() && DRV('Red').free_label === '3.9 TB' && [...T.drive_items.values()].find(i => i.title === 'Old project').removed_why === 'cleaned', 'cleaned Red: date, free space, and what was deleted (kept in history)');
-  ok(handle(KUL, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }).error, 'nobody can hand over a drive by editing it');
+  await owner.reload(); await owner.waitForSelector('.chip-b[data-dv="all"]'); await owner.click('.chip-b[data-dv="all"]'); await owner.click('[data-d="' + DRV('Red').id + '"]'); await owner.waitForSelector('#dclean');
+  await owner.fill('#it-t', 'Old project'); await owner.selectOption('#it-w', 'project'); await owner.click('#it-add'); await owner.waitForSelector('#dclean');
+  await owner.click('#dclean'); await owner.waitForSelector('#cl-it input'); await owner.check('#cl-it input'); await owner.fill('#cl-f', '3.9 TB'); await owner.click('#clgo');
+  await owner.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
+  ok(DRV('Red').cleaned_on === istDay() && DRV('Red').free_label === '3.9 TB' && [...T.drive_items.values()].find(i => i.title === 'Old project').removed_why === 'cleaned', 'the owner cleaned Red: date, free space, and what was deleted (kept in history)');
+  { const r = handle(KUL, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }); ok((r.error || DRV('Red').holder !== PP('Kuldeep').id) && handle(OWNER, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }).error, 'nobody can hand over a drive by editing it (not even the owner)'); }
   if (process.env.SHOTS) { await owner.click('.chip-b[data-dv="all"]').catch(() => {}); await owner.fill('#dq', ''); await owner.screenshot({ path: path.join(SHOTS, 'desk-drives.png'), fullPage: true }); await cr.screenshot({ path: path.join(SHOTS, 'mywork-drives.png'), fullPage: true }); }
 
   // ── 11. packages, payments, client lock, jobs from the package ──

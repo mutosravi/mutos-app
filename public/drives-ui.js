@@ -16,7 +16,9 @@
     const pendingOf = d => moves.find(m => m.drive === d.id && m.status === 'pending');
     const forMe = m => m.status === 'pending' && ((m.to_person && m.to_person === opts.me) || (!m.to_person && (opts.keeper || opts.staff)));
     const canGive = d => d.status === 'in_use' && (opts.staff || (d.holder && d.holder === opts.me) || (!d.holder && opts.keeper));
-    const canEdit = d => opts.staff || opts.keeper || (d.holder && d.holder === opts.me);
+    // drive details: only the studio (owner, manager). Data on a drive: the studio or whoever has it.
+    // A drive keeper only hands over and receives (Ravi, 11 Nov 2026; 016_keeper_handover_only.sql)
+    const canEdit = d => opts.staff || (d.holder && d.holder === opts.me);
 
     async function load() {
       const [d, i, m, p] = await Promise.all([
@@ -42,7 +44,7 @@
       const inbox = moves.filter(forMe);
       el.innerHTML =
         (inbox.length ? '<div class="sechead" style="margin-top:10px"><h2>Waiting for you to accept</h2></div>' + inbox.map(m => { const d = drives.find(x => x.id === m.drive) || { name: '?' }; return '<div class="card"><div class="row2"><div><b>' + esc(d.name) + '</b><div class="meta">From ' + esc(nameOf(m.from_person)) + (m.given_by_person && m.given_by_person !== m.from_person ? ', given by ' + esc(nameOf(m.given_by_person)) : '') + (m.to_person ? '' : ' → back to the office') + ' · ' + esc(when(m.given_at)) + (m.note ? ' · ' + esc(m.note) : '') + '</div></div></div><div class="pillrow" style="margin-top:8px"><button type="button" class="pillbtn light" data-no="' + m.id + '">Not received</button><button type="button" class="pillbtn" data-yes="' + m.id + '">I have it ✓</button></div></div>'; }).join('') : '') +
-        '<div class="tools"><input class="in" type="search" id="dq" placeholder="Find a drive or a wedding (e.g. Jyoti)" value="' + esc(q) + '" style="flex:1 1 220px">' + (opts.staff || opts.keeper ? '<button type="button" class="pillbtn" id="dadd" style="min-height:40px">＋ Add drive</button>' : '') + '</div>' +
+        '<div class="tools"><input class="in" type="search" id="dq" placeholder="Find a drive or a wedding (e.g. Jyoti)" value="' + esc(q) + '" style="flex:1 1 220px">' + (opts.staff ? '<button type="button" class="pillbtn" id="dadd" style="min-height:40px">＋ Add drive</button>' : '') + '</div>' +
         (s ? '' : '<div class="chips" style="margin:6px 0">' + VIEWS.map(([k, l]) => '<button type="button" class="chip-b' + (view === k ? ' on' : '') + '" data-dv="' + k + '">' + esc(l) + '</button>').join('') + '</div>') +
         (hitItems.length ? '<div class="sechead"><h2>Data found</h2></div>' + hitItems.slice(0, 30).map(it => { const d = drives.find(x => x.id === it.drive) || {}; return '<button type="button" class="card jrow" data-d="' + esc(d.id) + '" style="border-top:0;padding:10px 14px"><span class="nm">' + esc(it.title) + ' · ' + esc(whatLabel(it.what)) + '</span><span class="meta" style="grid-column:auto">on <b>' + esc(d.name || '?') + '</b></span><span class="meta">' + esc(holderText(d)) + (it.size_label ? ' · ' + esc(it.size_label) : '') + '</span></button>'; }).join('') + '<div class="sechead"><h2>Drives</h2></div>' : '') +
         (list.length ? list.map(d => {
@@ -75,13 +77,13 @@
         '<div class="ans ' + (pm ? 'wait' : d.status !== 'in_use' ? 'no' : 'ok') + '" style="margin:0 0 10px"><b>' + esc(holderText(d)) + '</b>' + (pm ? ' · given to ' + esc(nameOf(pm.to_person)) + ', waiting for them to accept' + (pm.note ? ' (' + esc(pm.note) + ')' : '') : '') + (d.free_label || d.cleaned_on ? '<br>' + esc([d.free_label ? d.free_label + ' free' : '', d.cleaned_on ? 'cleaned ' + W.dayLong(d.cleaned_on) : ''].filter(Boolean).join(' · ')) : '') + (d.notes ? '<br>' + esc(d.notes) : '') + '</div>' +
         '<div class="pillrow" style="margin-bottom:8px">' +
           (pm && forMe(pm) ? '<button type="button" class="pillbtn light" id="dno">Not received</button><button type="button" class="pillbtn" id="dyes">I have it ✓</button>'
-            : (canGive(d) ? '<button type="button" class="pillbtn" id="dgive">' + (d.holder ? 'Give to someone' : 'Give out') + '</button>' : '') + (pm && (opts.staff || pm.given_by === opts.email) ? '<button type="button" class="pillbtn light" id="dcancel">Take back the handover</button>' : canEdit(d) ? '<button type="button" class="pillbtn light" id="dedit">Edit details</button>' : '')) + '</div>' +
+            : (canGive(d) ? '<button type="button" class="pillbtn" id="dgive">' + (d.holder ? 'Give to someone' : 'Give out') + '</button>' : '') + (pm && (opts.staff || pm.given_by === opts.email) ? '<button type="button" class="pillbtn light" id="dcancel">Take back the handover</button>' : opts.staff ? '<button type="button" class="pillbtn light" id="dedit">Edit details</button>' : '')) + '</div>' +
         '<h4>On this drive</h4>' + (its.length ? its.map(it => '<div class="rep" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) + (it.size_label ? ' · ' + esc(it.size_label) : '') + (it.note ? '<br><span class="meta">' + esc(it.note) + '</span>' : '') + '</span>' +
-          (canEdit(d) || opts.staff || opts.keeper ? '<span style="display:flex;gap:6px;flex:0 0 auto"><button type="button" class="chip" data-mv="' + it.id + '">Move / copy</button><button type="button" class="chip" data-rm="' + it.id + '">Remove</button></span>' : '') + '</div>').join('') : '<p class="sub">Nothing listed yet.</p>') +
+          (canEdit(d) ? '<span style="display:flex;gap:6px;flex:0 0 auto"><button type="button" class="chip" data-mv="' + it.id + '">Move / copy</button><button type="button" class="chip" data-rm="' + it.id + '">Remove</button></span>' : '') + '</div>').join('') : '<p class="sub">Nothing listed yet.</p>') +
         (canEdit(d) ? '<div id="addbox"><div class="form-grid" style="margin-top:8px"><label class="wide">Wedding or event<input class="in" id="it-t" list="dl-wed" maxlength="160" placeholder="e.g. Jyoti & Amit · Haldi"></label>' +
           '<label>What<select class="in" id="it-w">' + WHAT.map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select></label><label>Size<input class="in" id="it-s" maxlength="20" placeholder="e.g. 600 GB"></label>' +
           '<label class="wide">Note<input class="in" id="it-n" maxlength="300" placeholder="optional"></label></div><button type="button" class="pillbtn light" id="it-add" style="width:100%">＋ Add to this drive</button></div>' : '') +
-        (canEdit(d) && d.status === 'in_use' ? '<button type="button" class="pillbtn light" id="dclean" style="width:100%;margin-top:8px">Cleaned this drive</button>' : '') +
+        (opts.staff && d.status === 'in_use' ? '<button type="button" class="pillbtn light" id="dclean" style="width:100%;margin-top:8px">Cleaned this drive</button>' : '') +
         (opts.owner ? '<p style="margin-top:10px"><button type="button" class="x" id="dfix">Correct where it is</button></p>' : '') +
         '<h4>History</h4><div id="dhist" class="sub">Loading…</div>' +
         '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="dclose">Close</button></div>' +

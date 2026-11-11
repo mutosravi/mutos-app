@@ -16,15 +16,22 @@ grant execute on function pg_temp.check(boolean, text), pg_temp.expect_fail(text
 select set_config('t.shrey', (select id::text from people where name = 'Shrey'), false), set_config('t.saif', (select id::text from people where name = 'Saif'), false),
        set_config('t.kul', (select id::text from people where name = 'Kuldeep'), false);
 
--- ── register ──
+-- ── register (016: only the owner and manager add or change drives; the keeper only hands over) ──
 set role authenticated; set request.jwt.claims = '{"email":"kuldeep@x.com"}';
+select pg_temp.expect_fail($$insert into drives (name) values ('K1')$$, 'the drive keeper cannot add drives (016)');
+set request.jwt.claims = '{"email":"m@x.com"}';
 insert into drives (name, kind, size_label, model) values (' M 1 ', 'SSD', '2 TB', 'Crucial'), ('M 5', 'SSD', '2 TB', 'Crucial'), ('Red', 'HDD', '4 TB', 'WD Passport');
-select pg_temp.check((select count(*) from drives) = 3 and (select name from drives where size_label = '2 TB' order by name limit 1) = 'M 1', 'the drive keeper adds drives (names tidied)');
+select pg_temp.check((select count(*) from drives) = 3 and (select name from drives where size_label = '2 TB' order by name limit 1) = 'M 1', 'the manager adds drives (names tidied)');
 select pg_temp.expect_fail($$insert into drives (name) values ('m 1')$$, 'two drives with the same name');
 select set_config('t.m1', (select id::text from drives where name = 'M 1'), false), set_config('t.m5', (select id::text from drives where name = 'M 5'), false), set_config('t.red', (select id::text from drives where name = 'Red'), false);
 insert into drive_items (drive, wedding_key, title, what, size_label) values (current_setting('t.m1')::uuid, 'w:jyoti amit', 'Jyoti & Amit · Haldi', 'raw', '600 GB');
 select set_config('t.item', (select id::text from drive_items limit 1), false);
-select pg_temp.check((select added_by from drive_items) = 'kuldeep@x.com', 'data added, with who added it');
+select pg_temp.check((select added_by from drive_items) = 'm@x.com', 'data added, with who added it');
+set request.jwt.claims = '{"email":"kuldeep@x.com"}';
+update drives set size_label = '9 TB', notes = 'x' where name = 'M 5';
+select pg_temp.check((select size_label from drives where name = 'M 5') = '2 TB', 'the drive keeper cannot change a drive''s details (016)');
+select pg_temp.expect_fail($$insert into drive_items (drive, title) values (current_setting('t.m5')::uuid, 'x')$$, 'the drive keeper cannot list data on an office drive (016)');
+set request.jwt.claims = '{"email":"m@x.com"}';
 select pg_temp.expect_fail($$update drives set holder = current_setting('t.shrey')::uuid where name = 'M 1'$$, 'handing a drive over by editing it');
 set request.jwt.claims = '{"email":"saif@x.com"}';
 select pg_temp.check((select count(*) from drives) = 3 and (select count(*) from drive_items) = 1, 'everyone at Muto''s can find a drive and what is on it');
@@ -86,7 +93,9 @@ reset role;
 set role authenticated; set request.jwt.claims = '{"email":"saif@x.com"}';
 select pg_temp.check((drive_move_item(current_setting('t.item')::uuid, current_setting('t.m5')::uuid, false)) ? 'error', 'an editor cannot move data between drives they do not have');
 set request.jwt.claims = '{"email":"kuldeep@x.com"}';
-select pg_temp.check((drive_move_item(current_setting('t.item')::uuid, current_setting('t.m5')::uuid, false)) ? 'ok', 'the keeper moves Jyoti & Amit Haldi raw from M 1 to M 5');
+select pg_temp.check((drive_move_item(current_setting('t.item')::uuid, current_setting('t.m5')::uuid, false)) ? 'error', 'the keeper cannot move data between office drives (016)');
+set request.jwt.claims = '{"email":"m@x.com"}';
+select pg_temp.check((drive_move_item(current_setting('t.item')::uuid, current_setting('t.m5')::uuid, false)) ? 'ok', 'the manager moves Jyoti & Amit Haldi raw from M 1 to M 5');
 select pg_temp.check((select count(*) from drive_items where wedding_key = 'w:jyoti amit' and what = 'raw' and removed_at is null) = 1
   and (select d.name from drive_items i join drives d on d.id = i.drive where i.wedding_key = 'w:jyoti amit' and i.what = 'raw' and i.removed_at is null) = 'M 5', 'the wedding now shows on M 5');
 select pg_temp.check((select removed_why from drive_items where id = current_setting('t.item')::uuid) = 'moved' and (select moved_to from drive_items where id = current_setting('t.item')::uuid) is not null, 'the old line stays as history, pointing to the new place');
