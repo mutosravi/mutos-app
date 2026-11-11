@@ -18,6 +18,7 @@ function db(env, fetchFn) {
     async del(path) { await fetchFn(base + path, { method: 'DELETE', headers }); }
   };
 }
+export const NOTICE_CRON = '*/5 * * * *';
 export const BACKUP_CRON = '30 21 * * *'; // 21:30 UTC = 3:00 am in India
 const vapidOf = env => ({ publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT });
 const inList = keys => 'in.(' + keys.map(k => '"' + String(k).replace(/"/g, '') + '"').join(',') + ')';
@@ -215,23 +216,45 @@ export async function notifyCardApi(request, env, fetchFn = fetch) {
 
 // new shoots (018_shoot_notices.sql): the database queues one row per shoot that appears in someone's list; this sends them,
 // one message per person, and marks them sent. Called by the board right after it updates the crew pages, and by the evening run.
-export async function flushShootNotices(env, fetchFn = fetch) {
-  const store = db(env, fetchFn);
-  const rows = await store.get('shoot_notices?select=id,person_key,event_id,shoot,date,slot,report,venue,role&sent_at=is.null&order=created_at.asc&limit=300');
-  if (!rows.length) return { people: 0, sent: 0 };
+// one shoot notice as a line: "New: …", "Not on … any more", "Changed: … (date Tue 14 Nov → Wed 15 Nov · venue Taj → Clarks)"
+export function shootNoticeText(n, today) {
   const day = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
+  const when = d => d === today ? 'TODAY' : d === addDays(today, 1) ? 'tomorrow' : day(d);
+  const kind = n.kind || 'new', name = n.shoot || 'a shoot';
+  if (kind === 'removed') return { title: 'Not on ' + name + ' any more', body: when(n.date) + (n.slot ? ' · ' + n.slot : '') + ': you have been taken off this shoot (swapped, or it was cancelled). You do not need to go.' };
+  if (kind === 'changed') {
+    const parts = [];
+    if (n.old_date && n.old_date !== n.date) parts.push('Date: ' + day(n.old_date) + ' → ' + day(n.date));
+    if ((n.old_slot || '') !== (n.slot || '')) parts.push('Time of day: ' + (n.old_slot || '-') + ' → ' + (n.slot || '-'));
+    if ((n.old_report || '') !== (n.report || '')) parts.push('Report: ' + (n.old_report || '-') + ' → ' + (n.report || '-'));
+    if ((n.old_venue || '') !== (n.venue || '')) parts.push('Venue: ' + (n.venue || 'to be confirmed'));
+    return { title: 'Changed: ' + name + (n.date === today || n.date === addDays(today, 1) ? ' (' + when(n.date) + ')' : ''), body: (parts.join(' · ') || when(n.date)) + '. Open the app for details.' };
+  }
+  return { title: (n.date === today ? 'New shoot TODAY: ' : n.date === addDays(today, 1) ? 'New shoot tomorrow: ' : 'New shoot: ') + name,
+    body: [day(n.date) + (n.slot ? ' · ' + n.slot : ''), n.report ? 'Report ' + n.report : '', n.venue || 'Venue to be confirmed', n.role ? 'Role: ' + n.role : ''].filter(Boolean).join(' · ') + '. Open the app to confirm.' };
+}
+function addDays(d, n) { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+// new shoots, swaps and changes (018 + 019): the database queues one row per person per shoot; this sends them, one message per
+// person (a few lines together when there are several), and marks them sent. Called by the board right after it updates the crew
+// pages, every 5 minutes (cron) and by the evening run.
+export async function flushShootNotices(env, fetchFn = fetch) {
+  const store = db(env, fetchFn), today = istDate(0);
+  const rows = await store.get('shoot_notices?select=*&sent_at=is.null&order=created_at.asc&limit=300');
+  if (!rows.length) return { people: 0, sent: 0 };
   const byPerson = new Map(); rows.forEach(r => { if (!byPerson.has(r.person_key)) byPerson.set(r.person_key, []); byPerson.get(r.person_key).push(r); });
   let sent = 0;
   for (const [key, list] of byPerson) {
-    list.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const s = list[0], one = list.length === 1;
-    const msg = one
-      ? { title: 'New shoot: ' + (s.shoot || 'a shoot'), body: [day(s.date) + (s.slot ? ' · ' + s.slot : ''), s.report ? 'Report ' + s.report : '', s.venue || 'Venue to be confirmed', s.role ? 'Role: ' + s.role : ''].filter(Boolean).join(' · ') + '. Open the app to confirm.' }
-      : { title: list.length + ' new shoots for you', body: list.slice(0, 5).map(x => x.shoot + ' (' + day(x.date) + (x.slot ? ', ' + x.slot : '') + ')').join(' · ') + (list.length > 5 ? ' …' : '') + '. Open the app to confirm.' };
+    // a shoot that was changed several times in a row: only the latest change counts; new + changed = new (with the latest details)
+    const last = new Map(); list.sort((a, b) => a.id - b.id).forEach(r => { const p = last.get(r.event_id); last.set(r.event_id, p && p.kind === 'new' && r.kind === 'changed' ? Object.assign({}, r, { kind: 'new' }) : p && r.kind === 'changed' && p.kind === 'changed' ? Object.assign({}, r, { old_date: p.old_date, old_slot: p.old_slot, old_report: p.old_report, old_venue: p.old_venue }) : r); });
+    const items = [...last.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const texts = items.map(n => shootNoticeText(n, today));
+    const urgent = items.some(n => n.date === today || n.date === addDays(today, 1));
+    const msg = texts.length === 1 ? texts[0]
+      : { title: texts.length + ' updates to your shoots' + (urgent ? ' (some today/tomorrow)' : ''), body: texts.slice(0, 4).map(t => t.title).join(' · ') + (texts.length > 4 ? ' …' : '') + '. Open the app for details.' };
     const members = await store.get('members?select=email&person_key=eq.' + encodeURIComponent(key));
     const keys = [...new Set([key].concat(await phoneKeys(store, members.map(m => m.email), [])))];
     const subs = await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inListQ(keys));
-    const n = subs.length ? await deliver(env, store, subs, Object.assign(msg, { tag: 'newshoot-' + key + '-' + s.id, url: '/crew.html' }), fetchFn) : 0;
+    const n = subs.length ? await deliver(env, store, subs, Object.assign(msg, { tag: 'shoots-' + key + '-' + list[list.length - 1].id, url: '/crew.html' }), fetchFn) : 0;
     sent += n;
     await store.patch('shoot_notices?id=' + inListQ(list.map(x => x.id)), { sent_at: new Date().toISOString(), result: subs.length ? 'sent to ' + n + ' phone(s)' : 'notices not turned on' });
   }
@@ -245,7 +268,7 @@ export async function notifyShootsApi(request, env, fetchFn = fetch) {
   if (!u.ok) return Response.json({ error: 'Sign in again.' }, { status: 401 });
   const email = String((await u.json()).email || '').toLowerCase();
   const [m] = await db(env, fetchFn).get('members?select=role&email=eq.' + encodeURIComponent(email));
-  if (!m || !['owner', 'manager'].includes(m.role)) return Response.json({ error: 'Only the owner and managers assign shoots.' }, { status: 403 });
+  if (!m || !['owner', 'manager', 'supervisor'].includes(m.role)) return Response.json({ error: 'Only the studio sends shoot notices.' }, { status: 403 });
   return Response.json(await flushShootNotices(env, fetchFn));
 }
 
@@ -297,6 +320,11 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled(event, env, ctx) {
+    if (event.cron === NOTICE_CRON) {   // every 5 minutes: only the shoot notices (swaps, changes, family venues)
+      if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return;
+      ctx.waitUntil(flushShootNotices(env).then(r => { if (r.people) console.log('shoot notices', JSON.stringify(r)); }).catch(e => console.log('shoot notices failed', e)));
+      return;
+    }
     if (event.cron === BACKUP_CRON) {
       if (!env.SUPABASE_SECRET_KEY || !env.BACKUPS) { console.log('backup skipped: secret key or storage missing'); return; }
       ctx.waitUntil(runBackup(env, 'nightly').then(r => console.log('backup', JSON.stringify(r))));

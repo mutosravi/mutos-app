@@ -5,7 +5,7 @@
   "main": "worker/index.js",
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "./public", "binding": "ASSETS" },
-  "triggers": { "crons": ["30 13 * * *", "30 21 * * *"] },   // 7:00 pm India: reminders · 3:00 am India: backup
+  "triggers": { "crons": ["30 13 * * *", "30 21 * * *", "*/5 * * * *"] },   // 7:00 pm India: reminders · 3:00 am India: backup · every 5 min: shoot notices
   "vars": {
     "SUPABASE_URL": "https://plbixpdyxpayyzpzrvna.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_BBsRicVGu4a7qv0Xv__3cA_5b8DLUQm",

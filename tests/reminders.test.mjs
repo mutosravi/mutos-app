@@ -1,6 +1,6 @@
 // Evening reminder job: picks tomorrow's shoots, sends one encrypted notification per phone, cleans up dead sign-ups.
 // Run: node tests/reminders.test.mjs   (the encryption itself is checked against an independent decoder separately)
-import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi, notifyCardApi, notifyShootsApi, flushShootNotices } from '../worker/index.js';
+import { runReminders, reminderFor, notifyDecisionApi, notifyDriveApi, notifyCardApi, notifyShootsApi, flushShootNotices, shootNoticeText } from '../worker/index.js';
 import { b64u } from '../worker/push.js';
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const pad = n => String(n).padStart(2, '0');
@@ -164,5 +164,17 @@ ok(b.title === '2 shoots tomorrow' && b.body.includes('Please confirm'), 'two sh
   ok(marked.length === 3 && marked.some(m => m.b.result === 'notices not turned on'), 'all queued rows are marked sent (with the result)');
   const again = await flushShootNotices(Object.assign({ SUPABASE_PUBLISHABLE_KEY: 'pub' }, env), f5);
   ok(again.people === 0, 'nothing is sent twice');
+}
+// swaps and changes (019): the words on the phone
+{
+  const t0 = ist(0), t1 = ist(1), t5 = ist(5);
+  let m = shootNoticeText({ kind: 'removed', shoot: 'Sharma Wedding', date: t0, slot: 'Evening' }, t0);
+  ok(/^Not on Sharma Wedding any more$/.test(m.title) && /^TODAY · Evening: you have been taken off/.test(m.body), 'swapped off today\'s shoot: "Not on Sharma Wedding any more · TODAY · Evening …"');
+  m = shootNoticeText({ kind: 'new', shoot: 'Sharma Wedding', date: t0, slot: 'Evening', report: '5:00 pm', venue: 'Taj' }, t0);
+  ok(m.title === 'New shoot TODAY: Sharma Wedding' && /Report 5:00 pm · Taj/.test(m.body), 'put on today\'s shoot: "New shoot TODAY: …" with report time and venue');
+  m = shootNoticeText({ kind: 'changed', shoot: 'Sharma Haldi', date: t5, old_date: t1, slot: 'Morning', old_slot: 'Morning', venue: 'Clarks Awadh', old_venue: 'Taj', report: '9:00 am', old_report: '9:00 am' }, t0);
+  ok(m.title === 'Changed: Sharma Haldi' && /^Date: .+ → .+ · Venue: Clarks Awadh\. Open the app/.test(m.body), 'date and venue change: "Changed: Sharma Haldi · Date: … → … · Venue: Clarks Awadh"');
+  m = shootNoticeText({ kind: 'changed', shoot: 'Sharma Haldi', date: t1, old_date: t1, slot: 'Morning', report: '8:00 am', old_report: '9:00 am', venue: 'Taj', old_venue: 'Taj' }, t0);
+  ok(m.title === 'Changed: Sharma Haldi (tomorrow)' && /Report: 9:00 am → 8:00 am/.test(m.body), 'report time moved for tomorrow: says "(tomorrow)"');
 }
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

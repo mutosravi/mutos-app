@@ -74,7 +74,7 @@
       // 3. the Gear desk's view: items and who carries what (no client details)
       await pushGear(c);
       // shoots that just appeared in someone's list were queued by the database (018_shoot_notices.sql): send them now
-      if (wrote && who && ['owner', 'manager'].includes(who.role)) notifyShoots(c);
+      if (wrote && who && ['owner', 'manager', 'supervisor'].includes(who.role)) notifyShoots(c);
       last = { at: new Date().toISOString(), feeds: want.size, wrote, error: '' };
     } catch (e) {
       last = Object.assign({}, last, { error: String(e && e.message || e) });
