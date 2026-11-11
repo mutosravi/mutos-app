@@ -18,7 +18,8 @@
 
   // one office day from its check-ins: { hours, inMin, outMin, late, kind: ok|late|half|open|missing, pay }
   function officeDay(list, start, opts) {
-    const at = k => { const p = list.filter(x => x.kind === k).sort((a, b) => a.at.localeCompare(b.at)); return p.length ? istMin(p[0].at) : null; };
+    // an approved correction (by_fix) wins over what was tapped: e.g. a check-out tapped by mistake at 2 pm, corrected to 7 pm
+    const at = k => { const p = list.filter(x => x.kind === k).sort((a, b) => a.at.localeCompare(b.at)); if (!p.length) return null; const fx = p.filter(x => x.by_fix); return istMin((fx.length ? fx[fx.length - 1] : k === 'out' ? p[p.length - 1] : p[0]).at); };
     const inM = at('in'), outM = at('out'), lo = at('lunch_out'), li = at('lunch_in');
     if (inM == null) return null;
     if (outM == null) return { inMin: inM, kind: opts.isToday ? 'open' : 'missing', hours: 0, pay: 0 };

@@ -73,5 +73,17 @@ ok(day(r, d4).status === 'before' && day(r, d4).pay === 0 && day(r, d5).status =
 // ── so far / today ──
 r = P.monthCalc({ emp, month, upto: d3, today: d3, punches: punches(d3, ['in', '09:55']) });
 ok(r.days.length === days.indexOf(d3) + 1 && day(r, d3).status === 'open', 'this month so far stops at today; today shows "in office"');
+// ── a check-out tapped by mistake, then corrected (Ravi, 11 Nov) ──
+{
+  const wrong = punches(d1, ['in', '10:00'], ['out', '14:00']);
+  let x = P.monthCalc({ emp, month, punches: wrong, upto: d1 });
+  ok(day(x, d1).pay < 1 && day(x, d1).outAt === '2:00 pm', 'mistaken check-out at 2 pm alone: a short day');
+  const fixed = wrong.concat([{ day: d1, kind: 'out', at: at(d1, '19:00'), by_fix: true }]);
+  x = P.monthCalc({ emp, month, punches: fixed, upto: d1 });
+  ok(day(x, d1).status === 'present' && day(x, d1).pay === 1 && day(x, d1).outAt === '7:00 pm', 'after the approved correction to 7 pm: full day, out 7:00 pm');
+  const fixIn = punches(d2, ['in', '11:45'], ['out', '19:00']).concat([{ day: d2, kind: 'in', at: at(d2, '10:00'), by_fix: true }]);
+  x = P.monthCalc({ emp, month, punches: fixIn, upto: d2 });
+  ok(day(x, d2).inAt === '10:00 am' && day(x, d2).pay === 1, 'a corrected check-in also wins over the tapped one');
+}
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED');
 process.exit(fails ? 1 : 0);
