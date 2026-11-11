@@ -73,7 +73,7 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     <button type="button" role="tab" class="tab" data-tab="rep"><span data-ic="log"></span>Today's report<b class="dot" id="nav-rep" hidden></b></button>
     <button type="button" role="tab" class="tab" data-tab="drives"><span data-ic="drive"></span>Drives<b class="dot" id="nav-drv" hidden></b></button>
     <button type="button" role="tab" class="tab" data-tab="me"><span data-ic="idcard"></span>Me</button>
-    <a class="tab" id="nav-att" href="/work.html" hidden><span data-ic="clock"></span>Attendance</a>
+    <a class="tab" id="nav-att" href="/work.html" style="display:none!important" hidden><span data-ic="clock"></span>Attendance</a>
   </nav>
   <section class="hello" style="display:block"><h1 id="hi">My work</h1><p class="sub" id="sub">Loading…</p></section>
   <section id="tab-jobs"></section>
@@ -225,7 +225,7 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     ({ jobs: renderJobs, rep: renderRep, drives: renderDrives, me: renderMe })[t]();
     window.scrollTo(0, 0);
   }
-  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  document.querySelectorAll('.bnav .tab[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load your jobs (' + esc(e.message || e) + ').</div>'; return; }
   const first = new URLSearchParams(location.search).get('tab');
   showTab(['jobs', 'rep', 'drives', 'me'].includes(first) ? first : 'jobs');

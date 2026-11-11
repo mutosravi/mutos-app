@@ -28,11 +28,12 @@
     <div class="hdr-acts"><button type="button" class="btn small" id="bell" hidden>🔔 Reminders</button><a class="btn small" id="to-board" href="/board.html" hidden>Board</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
   </header>
   <nav class="bnav" role="tablist" aria-label="Main">
-  <button type="button" role="tab" class="tab on" data-tab="home" aria-selected="true"><span data-ic="home"></span>Home</button>
+  <a class="tab" id="nav-home" href="/me.html" hidden><span data-ic="home"></span>Home</a>
+  <button type="button" role="tab" class="tab on" data-tab="home" aria-selected="true"><span data-ic="camera"></span>Next</button>
   <button type="button" role="tab" class="tab" data-tab="shoots" aria-selected="false"><span data-ic="calendar"></span>Shoots<b class="dot" id="nav-shoots-n" hidden></b></button>
   <button type="button" role="tab" class="tab" data-tab="away" aria-selected="false"><span data-ic="off"></span>Days off</button>
-  <a class="tab" id="nav-work" href="/work.html" hidden><span data-ic="clock"></span>Work</a>
-  <a class="tab" id="nav-jobs" href="/mywork.html" hidden><span data-ic="film"></span>Jobs</a>
+  <a class="tab" id="nav-work" href="/work.html" style="display:none!important" hidden><span data-ic="clock"></span>Work</a>
+  <a class="tab" id="nav-jobs" href="/mywork.html" style="display:none!important" hidden><span data-ic="film"></span>Jobs</a>
 </nav>
   <div id="preview" hidden style="margin:8px 0 0"><label class="who" for="pick">Preview as </label><select class="pick" id="pick"></select> <span class="who">· view only</span></div>
   <section class="hello"><span class="avatar soft" id="av" aria-hidden="true"></span><div><h1 id="hello">My shoots</h1><p class="sub" id="count">Loading…</p></div></section>
@@ -97,6 +98,7 @@
   const staff = me.role === 'owner' || me.role === 'manager';
   $('who').textContent = me.email;
   if (staff) $('to-board').hidden = false;
+  if (!staff) $('nav-home').hidden = false; // the team home (me.html): attendance, work, requests, profile
   if (!staff) c.from('people').select('id').eq('email', me.email).maybeSingle().then(r => { if (r && r.data) $('nav-jobs').hidden = false; }).catch(() => {});
   if (!staff) c.from('employees').select('email').eq('email', me.email).maybeSingle().then(r => { if (r && r.data) $('nav-work').hidden = false; }).catch(() => {});
 
@@ -430,7 +432,7 @@
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.goto)));
-  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  document.querySelectorAll('.bnav .tab[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   $('aw-from').min = today(); $('aw-to').min = today();
 
   // reminders (phone notifications) — crew only
@@ -444,7 +446,7 @@
     finally { busy = false; }
   }
   await refresh();
-  if (new URLSearchParams(location.search).get('tab') === 'away') showTab('away');
+  { const first = new URLSearchParams(location.search).get('tab'); if (['away', 'shoots'].includes(first)) showTab(first); }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.activeElement.matches('input, textarea, select')) refresh(); });
   setInterval(() => { if (!document.hidden && !document.activeElement.matches('input, textarea, select')) refresh(); }, 3 * 60 * 1000);
 })();

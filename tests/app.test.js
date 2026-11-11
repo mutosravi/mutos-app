@@ -203,7 +203,8 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   // 5. crew member signs in
   const crew = await as(CREW, { width: 390, height: 844 });
   await crew.goto(B + '/');
-  await crew.waitForURL('**/crew.html');
+  await crew.waitForURL('**/me.html'); await crew.waitForSelector('[data-go="shoots"]'); ok(true, 'crew land on the team home with My Shoots');
+  await crew.click('[data-go="shoots"]'); await crew.waitForURL('**/crew.html');
   await crew.waitForSelector('#next .hero');
   ok((await crew.textContent('#next')).includes(upcoming[0].shoot) && (await crew.$$('#week .wd')).length === 7 && (await crew.$$('#qm .tile')).length >= 5, 'crew Home: next shoot, week strip, quick menu');
   await crew.screenshot({ path: path.join(process.env.SHOTS || '.', 'crew-home.png') });
@@ -219,7 +220,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await crew.screenshot({ path: path.join(process.env.SHOTS || '.', 'crew.png'), fullPage: false });
   const hscroll = await crew.evaluate(() => document.documentElement.scrollWidth > innerWidth);
   ok(!hscroll, 'crew page has no sideways scroll on a phone');
-  await crew.goto(B + '/board.html'); await crew.waitForURL('**/crew.html'); ok(true, 'crew sent away from the board');
+  await crew.goto(B + '/board.html'); await crew.waitForURL('**/me.html'); ok(true, 'crew sent away from the board');
   const leak = handle(CREW, { table: 'docs', op: 'select', filters: [], order: [] }).data.length + handle(CREW, { table: 'crew_feed', op: 'select', filters: [], order: [] }).data.length;
   ok(leak === 1, 'crew can read only their own page (rows visible: ' + leak + ')');
 

@@ -334,7 +334,9 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
   // ── 5. the employee checks in at the office ──
   const st = await as(STAFF);
-  await st.goto(B + '/'); await st.waitForURL('**/work.html'); await st.waitForSelector('#today .hero');
+  await st.goto(B + '/'); await st.waitForURL('**/me.html'); await st.waitForSelector('#att .att');
+  ok(!(await st.$('[data-go="shoots"]')) && !!(await st.$('[data-go="att"]')) && !!(await st.$('[data-go="req"]')) && !!(await st.$('[data-go="profile"]')), 'office employee: team home with check-in, My Attendance, My Requests, My Profile and no My Shoots');
+  await st.goto(B + '/work.html'); await st.waitForSelector('#today .hero');
   ok((await st.textContent('#today')).includes('Not checked in'), 'employee lands on My work');
   await st.click('[data-punch="in"]'); await st.waitForSelector('.sheet #code'); await st.fill('.sheet #code', '000000'); await st.click('.sheet #go'); await st.waitForTimeout(500);
   ok((await st.textContent('#toast')).includes('Wrong or old office code') && T.att_punch.size === 0, 'wrong office code refused');
@@ -407,10 +409,24 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   T.crew_feed.set('hamza', { person_key: 'hamza', name: 'Hamza', data: { name: 'Hamza', shoots: [] } });
   T.employees.set(CREWE, { email: CREWE, name: 'Hamza', person_key: 'hamza', monthly_salary: 20000, start_time: '10:00', weekly_off: 2, paid_leave: 0, shoot_type: 'B', active: true });
   const cr = await as(CREWE);
-  await cr.goto(B + '/'); await cr.waitForURL('**/crew.html'); await cr.waitForSelector('#nav-work:not([hidden])');
+  await cr.goto(B + '/'); await cr.waitForURL('**/me.html'); await cr.waitForSelector('[data-go="att"]');
+  ok(!!(await cr.$('[data-go="shoots"]')) && !!(await cr.$('#att .att')), 'crew on salary: team home has check-in and My Shoots');
   ok(true, 'crew employee sees the Work tab');
-  await cr.click('#nav-work'); await cr.waitForURL('**/work.html'); await cr.waitForSelector('#to-shoots:not([hidden])');
+  await cr.click('[data-go="att"]'); await cr.waitForURL('**/work.html?tab=month'); await cr.waitForSelector('#nav-home'); await cr.click('.bnav .tab[data-tab="today"]');
   ok(true, '… and My shoots from the Work page');
+
+  // check in and out straight from the team home
+  await cr.goto(B + '/me.html'); await cr.waitForSelector('#att [data-punch="in"]');
+  ok((await cr.textContent('#att-state')) === 'Not checked in', 'team home: "Not checked in" with one big Check in button');
+  if (process.env.SHOTS) await cr.screenshot({ path: path.join(process.env.SHOTS, 'team-home.png') });
+  await cr.click('#att [data-punch="in"]'); await cr.waitForSelector('.sheet #code'); await cr.fill('.sheet #code', CODE); await cr.click('.sheet #go');
+  await cr.waitForFunction(() => document.getElementById('att-state') && document.getElementById('att-state').textContent === 'In office');
+  ok([...T.att_punch.values()].some(x => x.email === CREWE && x.kind === 'in'), 'checks in from the team home (same office code and location check)');
+  ok((await cr.textContent('#att [data-punch="out"]')) === 'Check out' && !!(await cr.$('#att [data-punch="lunch_out"]')), 'then the big button is Check out, with Lunch break below');
+  await cr.click('[data-go="req"]'); await cr.waitForSelector('.sheet a[href="/crew.html?tab=away"]');
+  ok(!!(await cr.$('.sheet a[href="/work.html?tab=req"]')), 'My Requests: leave/advance/correction, and day off from shoots');
+  await cr.click('.sheet #cx');
+  if (process.env.SHOTS) await cr.screenshot({ path: path.join(process.env.SHOTS, 'team-home-in.png') });
 
   // ── 9. work desk: people register, jobs, editors' daily report ──
   const shooterId = n => [...T.docs.values()].filter(r => r.collection === 'shooters' && String(r.data.name).trim().toLowerCase() === n.toLowerCase()).map(r => r.id);
@@ -447,8 +463,8 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   if (process.env.SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'desk-jobs.png'), fullPage: true });
   const sj = crypto.randomUUID(); T.work_jobs.set(sj, { id: sj, wedding_key: wk, wedding_title: 'X', kind: 'trailer', assignee: PP('Saif').id, status: 'todo', progress: 0, count_done: 0, round: 1, event_ids: [] });
   // the editor
-  await cr.goto(B + '/crew.html'); await cr.waitForSelector('#nav-jobs:not([hidden])');
-  await cr.click('#nav-jobs'); await cr.waitForURL('**/mywork.html'); await cr.waitForSelector('.job');
+  await cr.goto(B + '/me.html'); await cr.waitForSelector('[data-go="work"]');
+  await cr.click('[data-go="work"]'); await cr.waitForURL('**/mywork.html'); await cr.waitForSelector('.job');
   ok(await cr.$$eval('.job', x => x.length) === 2, 'Hamza sees only his 2 jobs on My work (not Saif\'s)');
   const reel = hj().find(j => j.kind === 'reel'), lr = hj().find(j => j.kind === 'lr');
   await cr.fill('.job[data-j="' + reel.id + '"] [data-f="progress"]', '40'); await cr.fill('.job[data-j="' + reel.id + '"] [data-f="drive"]', 'M 5');
@@ -491,7 +507,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(hrow && hrow[1] === '1' && hrow[2] === '6' && hrow[3] === '1' && hrow[4] === '1 Reel' && hrow[5] === '350' && hrow[6] === '1' && hrow[7] === '0%', 'Month: days, hours, finished, photos, change rounds, on time (was due yesterday)');
   // office-only editor, partner, someone not on the list
   const im = await as(IMRAN);
-  await im.goto(B + '/'); await im.waitForURL('**/mywork.html'); await im.waitForSelector('#tab-jobs .empty');
+  await im.goto(B + '/'); await im.waitForURL('**/me.html'); await im.waitForSelector('[data-go="work"]'); await im.click('[data-go="work"]'); await im.waitForURL('**/mywork.html'); await im.waitForSelector('#tab-jobs .empty');
   ok((await im.textContent('#sub')).includes('M005'), 'office-only editor signs in and lands on My work with their code');
   await im.click('.bnav .tab[data-tab="me"]'); await im.waitForSelector('#mu'); ok(await im.inputValue('#mu') === 'imran@okhdfc', 'and sees their own private details');
   const pa = await as(PARTNER);

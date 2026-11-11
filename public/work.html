@@ -47,14 +47,15 @@
 <main class="wrap">
   <header class="hdr topbar">
     <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
-    <div class="hdr-acts"><a class="btn small" id="to-shoots" href="/crew.html" hidden>My shoots</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+    <div class="hdr-acts"><a class="btn small" id="to-shoots" href="/crew.html" style="display:none!important" hidden>My shoots</a><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
   </header>
   <nav class="bnav" role="tablist" aria-label="Main">
-  <button type="button" role="tab" class="tab on" data-tab="today"><span data-ic="home"></span>Today</button>
+  <a class="tab" id="nav-home" href="/me.html"><span data-ic="home"></span>Home</a>
+  <button type="button" role="tab" class="tab on" data-tab="today"><span data-ic="clock"></span>Today</button>
   <button type="button" role="tab" class="tab" data-tab="month"><span data-ic="calendar"></span>Month</button>
   <button type="button" role="tab" class="tab" data-tab="req"><span data-ic="log"></span>Requests<b class="dot" id="nav-req" hidden></b></button>
   <button type="button" role="tab" class="tab" data-tab="pay"><span data-ic="money"></span>Pay</button>
-  <a class="tab" id="nav-jobs" href="/mywork.html" hidden><span data-ic="film"></span>Jobs</a>
+  <a class="tab" id="nav-jobs" href="/mywork.html" style="display:none!important" hidden><span data-ic="film"></span>Jobs</a>
 </nav>
   <section class="hello"><span class="avatar soft" id="av"></span><div><h1 id="hello">My work</h1><p class="sub" id="sub">Loading…</p></div></section>
   <section id="tab-today"><div id="today"></div><div class="sechead"><h2>This week</h2></div><div id="weekl"></div></section>
@@ -266,10 +267,11 @@
     if (t === 'month') renderMonth(); if (t === 'req') renderReq(); if (t === 'pay') renderPay();
     window.scrollTo(0, 0);
   }
-  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  document.querySelectorAll('.bnav .tab[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   function renderAll() { renderToday(); renderReq(); if (!$('tab-month').hidden) renderMonth(); }
   try { await load(); } catch (e) { $('sub').innerHTML = '<span class="err">Could not load (' + esc(e.message || e) + ').</span>'; return; }
   renderAll();
+  { const first = new URLSearchParams(location.search).get('tab'); if (['month', 'req', 'pay'].includes(first)) showTab(first); } // from the team home (me.html)
   setInterval(() => { if (!document.hidden && !document.querySelector('.sheet-bg')) renderToday(); }, 60000);
   document.addEventListener('visibilitychange', async () => { if (!document.hidden && !document.querySelector('.sheet-bg')) { await load(); renderAll(); } });
 })();
