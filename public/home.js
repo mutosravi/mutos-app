@@ -118,13 +118,13 @@
     { k: 'gear', ic: 'box', title: 'Gear desk', tools: [
       ['/gear.html', 'box', 'Gear desk', 'main'], ['sb-manage-gear', 'camera', 'Gear list'], ['sb-rentals', 'truck', 'Rentals']] },
     { k: 'clients', ic: 'heart', title: 'Clients', tools: [
-      ['clients', 'heart', 'Clients', 'main'], ['packages', 'money', 'Packages']] },
+      ['clients', 'heart', 'Clients', 'main'], ['clientdata', 'drive', 'Client data'], ['packages', 'money', 'Packages']] },
     { k: 'people', ic: 'idcard', title: 'People', tools: [
       ['/desk.html?tab=people', 'idcard', 'People', 'main'], ['/attendance.html', 'clock', 'Attendance', '', 'owner'], ['/attendance.html?tab=hist', 'list', 'Salary history', '', 'owner']] },
     { k: 'settings', ic: 'settings', title: 'Settings' }
   ];
   // what a supervisor gets from each desk (the rest he cannot change, see supervisor.js and 012_supervisor.sql)
-  const SUP = { shoots: ['board', 'sb-new-wedding', 'sb-callsheet', 'sb-history'], work: ['/desk.html', '/desk.html?tab=today', '/desk.html?tab=month', '/desk.html?tab=drives', '/cards.html'], clients: ['clients'] };
+  const SUP = { shoots: ['board', 'sb-new-wedding', 'sb-callsheet', 'sb-history'], work: ['/desk.html', '/desk.html?tab=today', '/desk.html?tab=month', '/desk.html?tab=drives', '/cards.html'], clients: ['clients', 'clientdata'] };
   const desks = () => sup() ? DESKS.filter(d => SUP[d.k]) : DESKS;
   function deskTools(d) {
     const a = api();
@@ -164,6 +164,7 @@
     if (k === 'board') toBoard(() => window.scrollTo(0, 0));
     else if (k === 'sync') { if (a) { a.syncTeamSheet(); toast('Syncing Team Alignment…'); } }
     else if (k === 'clients') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.open();
+    else if (k === 'clientdata') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.data && window.MUTOS_CLIENTS.data();
     else if (k === 'packages') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.packages && window.MUTOS_CLIENTS.packages();
     else click(k); // the board's own buttons open their windows on top of Home
   }

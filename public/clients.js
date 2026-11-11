@@ -29,7 +29,7 @@
   const dayName = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) : '';
 
   // weddings on the board: shoots grouped by the client (wedding name, else phone, else shoot name)
-  function weddings() {
+  function weddings(all) {
     const st = api.state(), today = api.todayStr(), by = new Map();
     st.events.forEach(ev => {
       if (!api.isActive(ev) || !ev.date) return;
@@ -38,7 +38,7 @@
       const w = by.get(key); w.events.push(ev); if (!w.phone && ev.contactPhone) w.phone = ev.contactPhone;
     });
     return [...by.values()].map(w => { w.events.sort((a, b) => a.date.localeCompare(b.date)); w.first = w.events[0].date; w.last = w.events[w.events.length - 1].date; return w; })
-      .filter(w => w.last >= today).sort((a, b) => a.first.localeCompare(b.first));
+      .filter(w => all || w.last >= today).sort((a, b) => all ? b.first.localeCompare(a.first) : a.first.localeCompare(b.first));
   }
   const feedOf = w => ({ functions: w.events.map(ev => ({ id: ev.id, name: ev.name, date: ev.date, slot: ev.slot, venue: ev.location || '', type: ev.eventType === 'full' ? 'full' : 'short' })) });
 
@@ -89,12 +89,12 @@
     const html = '<div class="sb-modal-list">' + (ws.length ? ws.map(w => {
       const s = stateOf(w);
       return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span></div>' +
-        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
+        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
         (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Open &amp; edit</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
           : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
         (s.l && !(s.l.emails || []).length ? '<div class="sb-manage-sub" style="color:#7a2d1e;margin-top:4px">No Gmail yet: the family cannot sign in. Tap Gmails.</div>' : s.l ? '<div class="sb-manage-sub" style="margin-top:4px">Signs in with: ' + esc(s.l.emails.join(', ')) + '</div>' : '') + '</div>';
     }).join('') : '<p class="sb-modal-empty">No upcoming weddings on the board.</p>') + '</div>';
-    const modal = api.makeModal(api.modalHead('Clients', 'Add the family\'s Gmail(s) to a wedding. They sign in at ' + location.host + '/client with that Gmail and fill time, venue, address and contact for every function. Nobody else can open it.') + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="cl-packages">Packages</button><button type="button" id="cl-done">Done</button></div>', true);
+    const modal = api.makeModal(api.modalHead('Clients', 'Add the family\'s Gmail(s) to a wedding. They sign in at ' + location.host + '/client with that Gmail and fill time, venue, address and contact for every function. Nobody else can open it.') + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="cl-find">Find client data</button><button type="button" class="secondary" id="cl-packages">Packages</button><button type="button" id="cl-done">Done</button></div>', true);
     modal.querySelector('#cl-done').addEventListener('click', api.closeModal);
     const byKey = k => ws.find(w => w.key === k);
     modal.querySelectorAll('[data-make], [data-mails]').forEach(b => b.addEventListener('click', () => gmails(byKey(b.dataset.make || b.dataset.mails))));
@@ -105,6 +105,8 @@
     });
     modal.querySelectorAll('[data-see]').forEach(b => b.addEventListener('click', () => answers(byKey(b.dataset.see))));
     modal.querySelectorAll('[data-book]').forEach(b => b.addEventListener('click', () => booking(byKey(b.dataset.book))));
+    modal.querySelectorAll('[data-data]').forEach(b => b.addEventListener('click', () => dataWin(byKey(b.dataset.data), open)));
+    modal.querySelector('#cl-find').addEventListener('click', () => findData(open));
     const pk = modal.querySelector('#cl-packages'); if (pk) pk.addEventListener('click', () => packagesWin());
     if (sup()) modal.querySelectorAll('[data-book], #cl-packages').forEach(x => x.remove());
   }
@@ -234,6 +236,75 @@
   }
 
   // what the family wrote, next to the board, with "Apply to board"
+  // ── where is this client's data (11 Nov 2026, Ravi): every drive line for the wedding (raw, backup, project, render, final),
+  // which drive and who has it now, cards from its functions not copied yet, and a warning where a function has no backup ──
+  function findData(back) {
+    const all = weddings(true);
+    const row = w => '<button type="button" class="sb-manage-row" data-dw="' + esc(w.key) + '" style="display:block;width:100%;text-align:left;padding:10px 8px;background:none;border:0;border-bottom:1px solid var(--line,#eee);cursor:pointer;font:inherit;color:inherit"><b>' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></button>';
+    const modal = api.makeModal(api.modalHead('Find client data', 'Type the client or wedding name. Past weddings are here too.') +
+      '<div style="padding:0 2px 8px"><input class="sb-input" id="fd-q" type="search" placeholder="e.g. Sharma" style="width:100%;min-height:42px;border-radius:12px;border:1px solid var(--line,#ddd);padding:8px 12px;font:inherit;box-sizing:border-box"></div><div class="sb-modal-list" id="fd-list"></div>' +
+      '<div class="sb-modal-foot"><button type="button" class="secondary" id="fd-back">' + (back ? '← Back' : 'Close') + '</button></div>', true);
+    const list = modal.querySelector('#fd-list'), q = modal.querySelector('#fd-q');
+    const draw = () => { const t = q.value.trim().toLowerCase(), hit = all.filter(w => !t || w.title.toLowerCase().includes(t) || w.events.some(e => String(e.name).toLowerCase().includes(t))).slice(0, 40);
+      list.innerHTML = hit.length ? hit.map(row).join('') : '<p class="sb-modal-empty">No wedding with that name on the board.</p>';
+      list.querySelectorAll('[data-dw]').forEach(b => b.addEventListener('click', () => dataWin(all.find(w => w.key === b.dataset.dw), () => findData(back)))); };
+    q.addEventListener('input', draw); draw(); setTimeout(() => q.focus(), 50);
+    modal.querySelector('#fd-back').addEventListener('click', () => back ? back() : api.closeModal());
+  }
+  async function dataWin(w, back) {
+    if (!w) return;
+    const modal = api.makeModal(api.modalHead('Data · ' + w.title, 'Loading…') + '<div class="sb-modal-list" id="dw-body"><p class="sb-modal-empty">Loading…</p></div><div class="sb-modal-foot"><button type="button" class="secondary" id="dw-back">← Back</button><a class="sb-btn-sm secondary" href="/desk.html?tab=drives" style="align-self:center">Open Drives</a></div>', true);
+    modal.querySelector('#dw-back').addEventListener('click', () => back ? back() : api.closeModal());
+    const c = await app.client(), q = async p => { try { const r = await p; return r && !r.error ? r.data || [] : []; } catch (e) { return []; } };
+    const evIds = w.events.map(e => e.id), tl = w.title.toLowerCase();
+    const [linked, loose, drives, dir, uses] = await Promise.all([
+      q(c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').eq('wedding_key', w.key)),
+      q(c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').is('wedding_key', null)),
+      q(c.from('drives').select('id, name, holder, status, owner_type')),
+      q(c.rpc('people_directory')),
+      q(c.from('card_uses').select('id, card, cycle, event_id, shoot, media, style, used').in('event_id', evIds))
+    ]);
+    const items = linked.concat(loose.filter(i => String(i.title || '').toLowerCase().includes(tl)));
+    const cardIds = [...new Set(uses.map(u => u.card))];
+    const [cards, copies] = cardIds.length ? await Promise.all([q(c.from('cards').select('id, code, holder, data, cycle').in('id', cardIds)), q(c.from('card_copies').select('card, cycle, backup, drive_name, folder, files, items').in('card', cardIds))]) : [[], []];
+    const who = id => id ? ((dir.find(p => p.id === id) || {}).name || 'someone') : 'the office';
+    const drv = id => drives.find(d => d.id === id) || { name: '?' };
+    const where = d => d.status === 'delivered' ? 'given to the client' : d.status === 'retired' || d.status === 'faulty' ? d.status : d.holder ? 'with ' + who(d.holder) : 'in the office';
+    // which function a line belongs to: the card copy that made it, else its title
+    const itemEv = new Map(), itemCopy = new Map();
+    copies.forEach(cp => (cp.items || []).forEach(id => itemCopy.set(id, cp)));
+    copies.forEach(cp => uses.filter(u => u.card === cp.card && u.cycle === cp.cycle && u.used).forEach(u => (cp.items || []).forEach(id => itemEv.set(id, u.event_id))));
+    const short = ev => { const n = String(ev.name || ''); return n.toLowerCase().startsWith(tl + ' ') ? n.slice(w.title.length + 1) : n; };
+    const evOf = it => itemEv.get(it.id) || (w.events.find(ev => String(it.title || '').toLowerCase().includes(short(ev).toLowerCase())) || {}).id || null;
+    const now = items.filter(i => !i.removed_at), old = items.filter(i => i.removed_at);
+    const WHAT = { raw: 'Raw', backup: 'Backup', project: 'Project', render: 'Render', final: 'Final', other: 'Other' };
+    const line = it => { const d = drv(it.drive); return '<div style="font-size:12.5px;line-height:1.55"><b>' + esc(WHAT[it.what] || it.what) + '</b> · <b>' + esc(d.name) + '</b> <span class="sb-manage-sub">(' + esc(where(d)) + ')</span>' + (it.size_label ? ' · ' + esc(it.size_label) : '') + '<br><span class="sb-manage-sub">' + esc([it.title, it.note].filter(Boolean).join(' · ')) + '</span></div>'; };
+    const today = api.todayStr(); let warn = 0, html = '';
+    w.events.forEach(ev => {
+      const mine = now.filter(i => evOf(i) === ev.id), raw = mine.filter(i => i.what === 'raw'), bk = mine.filter(i => i.what === 'backup');
+      const open = uses.filter(u => u.event_id === ev.id && u.used).map(u => ({ u, k: cards.find(k => k.id === u.card) })).filter(x => x.k && x.k.cycle === x.u.cycle && x.k.data === 'hold');
+      const past = ev.date <= today;
+      let flag = '';
+      if (open.length) flag = '<div style="color:#7a2d1e;font-size:12.5px"><b>⚠ Not copied yet:</b> ' + esc(open.map(x => x.k.code + ' (' + (x.k.holder ? 'with ' + who(x.k.holder) : 'in the office') + ')').join(', ')) + '</div>';
+      if (past && !mine.length && !open.length) flag += '<div style="color:#7a2d1e;font-size:12.5px"><b>⚠ Nothing listed on any drive</b> for this function.</div>';
+      // a raw line is safe when a backup of the same thing (same title) is on another drive
+      // (from a card: the same card and round has a backup copy; typed by hand: a backup line with the same title on another drive)
+      const lone = raw.filter(i => { const cp = itemCopy.get(i.id); return cp ? !copies.some(x => x.card === cp.card && x.cycle === cp.cycle && x.backup) : !bk.some(b => b.title === i.title && b.drive !== i.drive); });
+      const cardOf = i => { const cp = itemCopy.get(i.id), k = cp && cards.find(x => x.id === cp.card); return k ? ' · card ' + k.code : ''; };
+      if (lone.length) flag += '<div style="color:#5c4410;font-size:12.5px"><b>⚠ No backup</b> of ' + esc(lone.map(i => i.title + cardOf(i) + ' (' + drv(i.drive).name + ')').join(', ')) + '</div>';
+      if (flag) warn++;
+      html += '<div class="sb-manage-row" style="display:block;padding:10px 8px' + (flag ? ';border-left:3px solid #b23a26' : mine.length ? ';border-left:3px solid #3d7a6e' : '') + '"><b>' + esc(short(ev)) + '</b> <span class="sb-manage-sub">' + esc(dayName(ev.date) + ' · ' + ev.slot) + (raw.length && !lone.length ? ' · ✓ raw + backup' : '') + '</span>' + flag +
+        (mine.length ? mine.sort((a, b) => ['raw', 'backup', 'project', 'render', 'final', 'other'].indexOf(a.what) - ['raw', 'backup', 'project', 'render', 'final', 'other'].indexOf(b.what)).map(line).join('') : past ? '' : '<div class="sb-manage-sub">Not shot yet.</div>') + '</div>';
+    });
+    const rest = now.filter(i => !evOf(i));
+    if (rest.length) html += '<div class="sb-manage-row" style="display:block;padding:10px 8px"><b>Other data for ' + esc(w.title) + '</b>' + rest.map(line).join('') + '</div>';
+    if (old.length) html += '<details style="padding:8px"><summary class="sb-manage-sub" style="cursor:pointer">History: ' + old.length + ' older line' + (old.length > 1 ? 's' : '') + ' (moved, cleaned or given)</summary>' + old.map(it => '<div style="font-size:12px;line-height:1.5;color:var(--muted,#777)">' + esc((WHAT[it.what] || it.what) + ' · ' + drv(it.drive).name + ' · ' + it.title + ' · ' + (it.removed_why || 'removed') + ' ' + new Date(it.removed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })) + '</div>').join('') + '</details>';
+    const drivesUsed = [...new Set(now.map(i => drv(i.drive).name))];
+    const head = modal.querySelector('.sb-modal-sub');
+    const sub = (now.length ? now.length + ' line' + (now.length > 1 ? 's' : '') + ' on ' + drivesUsed.length + ' drive' + (drivesUsed.length > 1 ? 's' : '') + ': ' + drivesUsed.join(', ') : 'Nothing listed on any drive yet') + (warn ? ' · ' + warn + (warn > 1 ? ' functions need' : ' function needs') + ' attention' : now.length ? ' · all safe' : '');
+    if (head) head.textContent = 'Every drive line for this wedding, and who has each drive now.';
+    modal.querySelector('#dw-body').innerHTML = '<div class="sb-manage-sub" id="dw-sum" style="padding:4px 8px 8px">' + esc(sub) + '</div>' + html;
+  }
   function answers(w) {
     const s = stateOf(w), a = (s.it && s.it.data) || {}, extra = a.extra || [];
     const line = (k, v) => v ? '<div><span class="sb-manage-sub">' + esc(k) + ':</span> ' + esc(v) + '</div>' : '';
@@ -284,7 +355,7 @@
   window.MUTOS_CLIENTS = {
     attach(a) { const first = !api; api = a; if (first) { load().then(() => { sync(); document.dispatchEvent(new Event('mutos:updates')); }).catch(() => {}); setInterval(() => load().then(sync).catch(() => {}), 10 * 60 * 1000); } },
     changed() { clearTimeout(this._t); this._t = setTimeout(sync, 3500); },
-    open, summary, money, _weddings: () => weddings(), _sync: sync, _load: load,
+    open, summary, money, data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
     packages() { if (!api) { alert('The board is still loading.'); return; } load().then(packagesWin).catch(e => api.toast('Could not load packages: ' + (e.message || e))); }
   };
 })();

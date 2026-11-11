@@ -88,7 +88,7 @@ function rpc(fn, a, e) {
   }
   return err('unknown rpc ' + fn);
 }
-const readable = (t, e) => ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
+const readable = (t, e) => ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
 function handle(e, d) {
   if (d.op === 'session') return e ? { id: 'u-' + e, email: e, user_metadata: { full_name: e } } : null;
   if (d.op === 'rpc') { const r = rpc(d.fn, d.args, e); return { data: r, error: null }; }
@@ -257,6 +257,17 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   ok(await s.$('[data-c="' + K('C04').id + '"].grey') && !(await s.$('[data-c="' + K('C04').id + '"] [data-sel]')), 'shown grey and cannot be given out');
   await shot(o, 'cards-all.png');
 
+  // ── where is the client's data (Clients desk → Client data) ──
+  T.drive_items.set('old1', { id: 'old1', drive: m5.id, wedding_key: null, title: 'Sharma Engagement raw (from the drive sheet)', what: 'raw', note: null, removed_at: null });
+  await o.goto(B + '/board.html'); await o.waitForSelector('[data-desk="clients"]', { timeout: 20000 });
+  await o.click('[data-desk="clients"]'); await o.click('[data-tile="clientdata"]'); await o.waitForSelector('#fd-q');
+  await o.fill('#fd-q', 'sharma'); await o.click('[data-dw]'); await o.waitForSelector('#dw-sum');
+  const dw = await o.textContent('#dw-body');
+  ok(/No backup of Sharma · Haldi \(Photo candid\) · card C02 \(M 5\)/.test(dw) && !/card C01 \(M 5\)/.test(dw) && !/✓ raw \+ backup/.test(dw) && /needs? attention/.test(dw), 'the cine card (C02) has only one copy: "⚠ No backup" on Haldi');
+  ok(/Haldi/.test(dw) && /Raw · M 5/.test(dw) && /Backup · Dibba 2/.test(dw) && /812 files/.test(dw), 'Client data → Sharma: Haldi has raw on M 5 and a backup on Dibba 2 (with the folder and file count)');
+  ok(/Other data for Sharma/.test(dw) && /from the drive sheet/.test(dw), 'lines typed before the app (no wedding link) are found by the name');
+  ok(/in the office/.test(dw), '… and it says where each drive is right now');
+  await shot(o, 'client-data.png');
   ok(errs.length === 0, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await b.close(); server.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
