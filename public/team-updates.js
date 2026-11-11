@@ -160,7 +160,7 @@
   }
 
   window.MUTOS_UPDATES = {
-    attach(a) { const first = !api; api = a; if (first) { load(); live(); setInterval(load, 5 * 60 * 1000); } },
+    attach(a) { const first = !api; api = a; if (first) { load(); live(); setInterval(load, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); }); } },
     changed() { if (loaded) { mirror(); badge(); setTimeout(autoResolve, 1500); } }, // after the board's save reaches the crew pages
     open, summary: () => (loaded ? summary() : null), _state: () => ({ aways, statuses, loaded }), _reload: load
   };

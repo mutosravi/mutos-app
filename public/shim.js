@@ -34,19 +34,32 @@
     const fire = name => { const s = snapOf(name); col(name).subs.forEach(sub => { try { sub.next(s); } catch (e) { console.error(e); } }); };
     const timers = {};
     const emit = name => { clearTimeout(timers[name]); timers[name] = setTimeout(() => fire(name), 60); }; // several changes in a row reach the board as one update
+    async function fetchAll(name) {
+      const m = new Map(); let from = 0; const page = 1000;
+      for (;;) {
+        const { data, error } = await c.from('docs').select('id, data').eq('collection', name).range(from, from + page - 1);
+        if (error) throw error;
+        data.forEach(r => m.set(r.id, r.data));
+        if (data.length < page) break; from += page;
+      }
+      return m;
+    }
     async function load(name) {
       const k = col(name);
-      if (!k.loading) k.loading = (async () => {
-        let from = 0; const page = 1000;
-        for (;;) {
-          const { data, error } = await c.from('docs').select('id, data').eq('collection', name).range(from, from + page - 1);
-          if (error) throw error;
-          data.forEach(r => k.map.set(r.id, r.data));
-          if (data.length < page) break; from += page;
-        }
-        k.loaded = true;
-      })();
+      if (!k.loading) k.loading = (async () => { k.map = await fetchAll(name); k.loaded = true; })();
       return k.loading;
+    }
+    // Coming back to the app (a phone cuts the live connection in the background), or back online: read everything again,
+    // so changes made on another device show without reloading the page. The board merges it with any unsaved change here.
+    let lastRefresh = Date.now(), refreshing = false, joined = false;
+    async function refreshAll(force) {
+      if (refreshing || (!force && Date.now() - lastRefresh < 3000)) return;
+      if (inflight > 0) { setTimeout(() => refreshAll(force), 1500); return; } // let this device's own saves land first
+      refreshing = true;
+      try {
+        for (const name of Object.keys(cols)) { const k = cols[name]; if (!k.loaded) continue; k.map = await fetchAll(name); emit(name); }
+        lastRefresh = Date.now();
+      } catch (e) { console.warn('refresh', e && e.message || e); } finally { refreshing = false; }
     }
     function live() {
       if (channel) return;
@@ -56,9 +69,21 @@
         if (p.eventType === 'DELETE') k.map.delete(row.id); else k.map.set(row.id, p.new.data);
         if (k.loaded) emit(row.collection);
       }).subscribe(status => {
+        if (status === 'SUBSCRIBED') { if (joined) refreshAll(true); joined = true; } // re-joined: catch up on what was missed
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') Object.values(cols).forEach(k => k.subs.forEach(s => s.error && s.error({ code: 'unavailable', message: 'Live connection lost' })));
       });
     }
+    function wake() {
+      if (document.hidden) return;
+      // a connection that died in the background is replaced by a fresh one
+      try { if (channel && channel.state && channel.state !== 'joined' && channel.state !== 'joining' && c.removeChannel) { c.removeChannel(channel); channel = null; live(); } } catch (e) {}
+      refreshAll(false);
+    }
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('pageshow', e => { if (e.persisted) wake(); });
+    window.addEventListener('online', () => refreshAll(true));
+    window.addEventListener('focus', wake);
+    window.__mutosRefresh = () => refreshAll(true);
     function doc(name, id) {
       return {
         id,
