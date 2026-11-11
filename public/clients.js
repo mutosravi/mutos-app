@@ -40,7 +40,7 @@
     return [...by.values()].map(w => { w.events.sort((a, b) => a.date.localeCompare(b.date)); w.first = w.events[0].date; w.last = w.events[w.events.length - 1].date; return w; })
       .filter(w => w.last >= today).sort((a, b) => a.first.localeCompare(b.first));
   }
-  const feedOf = w => ({ functions: w.events.map(ev => ({ id: ev.id, name: ev.name, date: ev.date, slot: ev.slot, venue: ev.location || '' })) });
+  const feedOf = w => ({ functions: w.events.map(ev => ({ id: ev.id, name: ev.name, date: ev.date, slot: ev.slot, venue: ev.location || '', type: ev.eventType === 'full' ? 'full' : 'short' })) });
 
   async function load() {
     const c = await app.client();

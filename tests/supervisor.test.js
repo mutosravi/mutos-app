@@ -196,7 +196,7 @@ const srv = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p ===
   await p.goto(B + '/client.html?k=' + link.token); await p.waitForSelector('.fn');
   ok(await p.isVisible('#studio-note') && await p.isHidden('#send') && await p.isVisible('#save') && !(await p.$eval('.fn input', x => x.disabled)), 'family page opens for editing, Send hidden (only the family sends)');
   ok(!/₹/.test(await p.innerText('body')), 'no money on the family page for him');
-  await p.fill('.fn input[data-f="time"]', '18:30'); await p.click('#save'); await sleep(1200);
+  await p.click('.fn:not(.sec) .fn-sum'); await p.fill('.fn input[data-f="time"]', '18:30'); await p.click('#save'); await sleep(1200);
   const it = T.client_itinerary.get(link.wedding_key);
   ok(it && it.updated_by === SUP && !it.submitted_at, 'saved with his name, not counted as sent by the family');
   if (SHOTS) await p.screenshot({ path: path.join(SHOTS, 'supervisor-client.png') });
