@@ -106,7 +106,7 @@
     else if (step[0] === 'lunch_in') { state = 'At lunch'; line = 'Since ' + at('lunch_out'); }
     else if (!step.length) { state = 'Checked out'; line = 'In ' + at('in') + ' · out ' + at('out'); }
     else { state = 'In office'; line = 'Since ' + at('in'); }
-    box.innerHTML = '<section class="att" aria-label="Attendance today"><div class="when"><span>Attendance</span><span>' + esc(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })) + '</span></div>' +
+    box.innerHTML = '<section class="att" aria-label="Attendance today"><div class="when"><span>Attendance today</span></div>' +
       '<h2 id="att-state">' + esc(state) + '</h2><p>' + esc(line) + '</p>' +
       (list.length ? '<div class="steps">' + list.map(p => '<span>' + { in: 'In', lunch_out: 'Lunch', lunch_in: 'Back', out: 'Out' }[p.kind] + ' ' + P.fmtT(P.istMin(p.at)) + '</span>').join('') + '</div>' : '') +
       (step.length ? '<div class="go"><button type="button" data-punch="' + step[0] + '">' + step[1] + '</button>' + (step[2] ? '<button type="button" class="light" data-punch="' + step[2] + '">' + step[3] + '</button>' : '') + '</div>' : '') + '</section>';
