@@ -1,7 +1,7 @@
 // Nightly backup of the whole team app into Cloudflare KV (a second company's storage, separate from Supabase).
 // The file has the same shape as the board's "Save backup", so "Load backup" can restore it directly.
 // Kept: the last 30 nightly copies, one per month for good, and the last 20 made by hand.
-const KEEP_NIGHTLY = 30, KEEP_MANUAL = 20;
+const KEEP_NIGHTLY = 30, KEEP_MANUAL = 20, PHOTO_SPLIT = 20e6;
 const pad = n => String(n).padStart(2, '0');
 export function istNow(ms = Date.now()) { const d = new Date(ms + 5.5 * 3600e3); return { date: d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()), time: pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) }; }
 
@@ -17,14 +17,33 @@ async function allRows(env, fetchFn, table, select, order) {
   }
 }
 
+// every studio table (12 Nov 2026, Ravi: "download all data on everyday basis"), with a column that gives a stable order for paging.
+// Left out on purpose: att_secret (the office code seed), push_subs (phones re-sign up), shoot_notices (sent already),
+// crew_feed / gear_feed (rebuilt from the board).
+export const STUDIO_TABLES = [
+  ['people', 'id'], ['people_private', 'person'],
+  ['employees', 'email'], ['att_settings', 'id'], ['att_punch', 'id'], ['att_requests', 'id'], ['att_log', 'id'], ['holidays', 'id'],
+  ['payroll_runs', 'month'], ['payslips', 'month,email'], ['salary_history', 'person,month'],
+  ['work_jobs', 'id'], ['work_reports', 'id'],
+  ['drives', 'id'], ['drive_items', 'id'], ['drive_moves', 'id'], ['drive_log', 'id'],
+  ['cards', 'id'], ['card_moves', 'id'], ['card_uses', 'id'], ['card_copies', 'id'], ['card_log', 'id'],
+  ['client_links', 'token'], ['client_feed', 'wedding_key'], ['client_itinerary', 'wedding_key'], ['client_apply_log', 'id'],
+  ['packages', 'id'], ['bookings', 'wedding_key'], ['booking_payments', 'id']
+];
+
 export async function makeBackup(env, fetchFn = fetch) {
   const docs = await allRows(env, fetchFn, 'docs', 'collection,id,data', 'collection,id');
   const of = c => docs.filter(d => d.collection === c).map(d => Object.assign({}, d.data, { id: d.id }));
   const history = docs.filter(d => d.collection === 'history').map(d => Object.assign({}, d.data, { id: d.id })).sort((a, b) => String(b.t).localeCompare(String(a.t))).slice(0, 500);
   const extra = async t => { try { return await allRows(env, fetchFn, t, '*', t === 'crew_status' ? 'person_key,event_id' : t === 'members' ? 'email' : t === 'gear_log' ? 'at' : 'id'); } catch (e) { return []; } };
   const [members, crewAway, crewStatus, gearLog] = await Promise.all([extra('members'), extra('crew_away'), extra('crew_status'), extra('gear_log')]);
+  // the studio's own tables; a table that cannot be read is listed in studio_errors (never silently empty)
+  const studio = {}, studioErrors = {};
+  await Promise.all(STUDIO_TABLES.map(async ([t, order]) => {
+    try { studio[t] = await allRows(env, fetchFn, t, '*', order); } catch (e) { studioErrors[t] = String(e && e.message || e).slice(0, 200); }
+  }));
   const b = {
-    version: 3, savedAt: new Date().toISOString(), source: 'Mutos team app · automatic backup',
+    version: 4, studio, studio_errors: studioErrors, savedAt: new Date().toISOString(), source: 'Mutos team app · automatic backup',
     shooters: of('shooters'), assistants: of('assistants'), equipment: of('gear'), events: of('events'), unavailability: of('away'), seasons: of('seasons'), settings: of('settings'),
     history, app: { members, crew_away: crewAway, crew_status: crewStatus, gear_log: gearLog }
   };
@@ -33,15 +52,28 @@ export async function makeBackup(env, fetchFn = fetch) {
 
 export async function runBackup(env, kind = 'nightly', fetchFn = fetch) {
   if (!env.BACKUPS) throw new Error('Backup storage is not connected yet.');
-  const b = await makeBackup(env, fetchFn), now = istNow(), json = JSON.stringify(b);
-  const meta = { at: b.savedAt, shoots: b.events.length, people: b.shooters.length + b.assistants.length, gear: b.equipment.length, bytes: json.length };
+  const b = await makeBackup(env, fetchFn), now = istNow();
+  let json = JSON.stringify(b);
+  const st = b.studio || {}, rows = Object.values(st).reduce((n, l) => n + l.length, 0);
+  const meta = { at: b.savedAt, shoots: b.events.length, people: b.shooters.length + b.assistants.length, gear: b.equipment.length, tables: Object.keys(st).length, rows, errors: Object.keys(b.studio_errors || {}).length, bytes: json.length };
   const name = kind === 'manual' ? 'manual/' + now.date + '-' + now.time : 'nightly/' + now.date;
+  // one stored copy may be at most 25 MB: families' photos of important people go in a second copy when the file gets big
+  let photos = null;
+  if (json.length > PHOTO_SPLIT) {
+    photos = {};
+    (st.client_itinerary || []).forEach(it => { const v = it.data && Array.isArray(it.data.vip) ? it.data.vip : []; v.forEach((p, i) => { if (p && p.photo) { photos[it.wedding_key + '#' + i] = p.photo; p.photo = 'photos:' + it.wedding_key + '#' + i; } }); });
+    json = JSON.stringify(b); meta.bytes = json.length; meta.photos = Object.keys(photos).length;
+  }
   await env.BACKUPS.put(name, json, { metadata: meta });
-  if (kind === 'nightly' && now.date.endsWith('-01')) await env.BACKUPS.put('monthly/' + now.date.slice(0, 7), json, { metadata: meta });
+  if (photos) await env.BACKUPS.put('photos/' + name, JSON.stringify(photos), { metadata: { at: b.savedAt, photos: meta.photos } });
+  if (kind === 'nightly' && now.date.endsWith('-01')) {
+    await env.BACKUPS.put('monthly/' + now.date.slice(0, 7), json, { metadata: meta });
+    if (photos) await env.BACKUPS.put('photos/monthly/' + now.date.slice(0, 7), JSON.stringify(photos), { metadata: { at: b.savedAt, photos: meta.photos } });
+  }
   // tidy up
   for (const [prefix, keep] of [['nightly/', KEEP_NIGHTLY], ['manual/', KEEP_MANUAL]]) {
     const names = (await listAll(env, prefix)).map(k => k.name).sort();
-    for (const old of names.slice(0, Math.max(0, names.length - keep))) await env.BACKUPS.delete(old);
+    for (const old of names.slice(0, Math.max(0, names.length - keep))) { await env.BACKUPS.delete(old); await env.BACKUPS.delete('photos/' + old); }
   }
   return { name, ...meta };
 }

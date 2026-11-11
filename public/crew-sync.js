@@ -182,6 +182,23 @@
     const r = await fetch(path, { method: method || 'GET', headers: { Authorization: 'Bearer ' + (s.data.session && s.data.session.access_token) } });
     return r;
   }
+  // a backup file → an Excel workbook: one tab per part; nested values written as text so nothing is lost
+  function backupWorkbook(b) {
+    const wb = XLSX.utils.book_new(), used = new Set();
+    const cell = v => v == null ? '' : typeof v === 'object' ? JSON.stringify(v).slice(0, 32000) : typeof v === 'string' ? v.slice(0, 32000) : v;
+    const add = (title, rows) => {
+      let name = String(title).replace(/[\\/?*\[\]:]/g, ' ').slice(0, 31), i = 2; while (used.has(name)) name = String(title).slice(0, 28) + ' ' + i++; used.add(name);
+      const list = (rows || []).map(r => { const o = {}; Object.keys(r || {}).forEach(k => { o[k] = cell(r[k]); }); return o; });
+      XLSX.utils.book_append_sheet(wb, list.length ? XLSX.utils.json_to_sheet(list) : XLSX.utils.aoa_to_sheet([['(empty)']]), name);
+    };
+    add('About', [{ saved: b.savedAt, source: b.source, note: 'Muto\'s backup. Each tab is one part of the app. Long or nested values are written as text.' }].concat(Object.entries(b.studio_errors || {}).map(([t, e]) => ({ saved: 'NOT READ: ' + t, source: e, note: '' }))));
+    add('Shoots', b.events); add('Shooters', b.shooters); add('Assistants', b.assistants); add('Gear', b.equipment); add('Days off', b.unavailability); add('Seasons', b.seasons);
+    const app = b.app || {}; add('Logins', app.members); add('Crew days off', app.crew_away); add('Crew answers', app.crew_status); add('Gear log', app.gear_log);
+    Object.entries(b.studio || {}).forEach(([t, rows]) => add(t.replace(/_/g, ' '), rows));
+    add('History', b.history);
+    return wb;
+  }
+  window.MUTOS_BACKUP_XLSX = backupWorkbook; // used by tests/backup.test.mjs
   async function openBackups() {
     if (!api) return;
     const esc = api.escapeHtml;
@@ -190,9 +207,9 @@
     const label = n => n.startsWith('nightly/') ? 'Nightly' : n.startsWith('monthly/') ? 'Monthly (kept for good)' : 'Made by hand';
     const when = b => b.at ? new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : b.name;
     const kb = n => n ? (n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1000)) + ' KB') : '';
-    const html = api.modalHead('Backups', 'A full copy of the board and the crew\'s answers is saved every night at 3 am on Cloudflare, separate from the database. The last 30 nights are kept, plus one per month for good. To restore one: Download, then Load backup at the top of the board.') +
+    const html = api.modalHead('Backups', 'Everything is copied every night at 3 am to Cloudflare, a different company from the database: the board, crew, attendance and salaries, people, work, drives, cards, clients, packages and payments. The last 30 nights are kept, plus one per month for good. Excel opens in any spreadsheet app, without this app. To restore the board: Download, then Load backup at the top of the board.') +
       '<div class="sb-modal-list">' + (err ? '<p class="sb-modal-sub" style="padding:8px;color:#9a5b00">' + esc(err) + '</p>' : '') +
-      (list.length ? list.map(b => '<div class="sb-manage-row" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><b>' + esc(when(b)) + '</b><br><span class="sb-manage-sub">' + esc([label(b.name), b.shoots != null ? b.shoots + ' shoots' : '', b.people != null ? b.people + ' people' : '', kb(b.bytes)].filter(Boolean).join(' · ')) + '</span></span><button type="button" class="sb-btn-sm secondary bk-dl" data-n="' + esc(b.name) + '">Download</button></div>').join('')
+      (list.length ? list.map(b => '<div class="sb-manage-row" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><b>' + esc(when(b)) + '</b><br><span class="sb-manage-sub">' + esc([label(b.name), b.shoots != null ? b.shoots + ' shoots' : '', b.rows != null ? b.rows + ' studio records' : 'board only (older copy)', kb(b.bytes)].filter(Boolean).join(' · ')) + '</span>' + (b.errors ? '<br><span class="sb-manage-sub" style="color:#9a5b00">' + b.errors + ' table(s) could not be read: see the file</span>' : '') + '</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="sb-btn-sm bk-xl" data-n="' + esc(b.name) + '">Excel</button><button type="button" class="sb-btn-sm secondary bk-dl" data-n="' + esc(b.name) + '">Download</button>' + (b.photos ? '<button type="button" class="sb-btn-sm secondary bk-dl" data-n="photos/' + esc(b.name) + '">Photos</button>' : '') + '</span></div>').join('')
         : (err ? '' : '<p class="sb-modal-empty">No backups yet. The first one is made tonight at 3 am, or tap "Back up now".</p>')) +
       '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="bk-now">Back up now</button><button type="button" id="bk-done">Done</button></div>';
     const modal = api.makeModal(html, true);
@@ -202,11 +219,23 @@
       const r = await callApi('/api/backups/now', 'POST').catch(() => null); const j = r ? await r.json().catch(() => ({})) : {};
       if (r && r.ok) { api.toast('Backup saved: ' + j.shoots + ' shoots.'); openBackups(); } else { api.toast('Backup failed: ' + (j.error || 'no connection')); e.target.disabled = false; e.target.textContent = 'Back up now'; }
     });
+    const saveBlob = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); };
     modal.querySelectorAll('.bk-dl').forEach(btn => btn.addEventListener('click', async () => {
       const r = await callApi('/api/backups/file?name=' + encodeURIComponent(btn.dataset.n)).catch(() => null);
       if (!r || !r.ok) { api.toast('Download failed.'); return; }
-      const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob()); a.download = 'mutos-backup-' + btn.dataset.n.replace('/', '-') + '.json';
-      document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      saveBlob(await r.blob(), 'mutos-backup-' + btn.dataset.n.replace(/\//g, '-') + '.json');
+    }));
+    // the same copy as one Excel file: a tab per part (shoots, crew, gear, attendance, people, drives, cards, clients, payments…)
+    modal.querySelectorAll('.bk-xl').forEach(btn => btn.addEventListener('click', async () => {
+      if (typeof XLSX === 'undefined') { api.toast('The spreadsheet maker did not load. Reload the page and try again.'); return; }
+      btn.disabled = true; btn.textContent = 'Making…';
+      try {
+        const r = await callApi('/api/backups/file?name=' + encodeURIComponent(btn.dataset.n));
+        if (!r.ok) throw new Error('download failed');
+        const wb = backupWorkbook(await r.json());
+        saveBlob(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'mutos-backup-' + btn.dataset.n.replace(/\//g, '-') + '.xlsx');
+      } catch (e) { api.toast('Could not make the Excel file: ' + (e.message || e)); }
+      btn.disabled = false; btn.textContent = 'Excel';
     }));
   }
 

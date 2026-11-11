@@ -284,10 +284,10 @@ export async function backupApi(request, env, fetchFn = fetch) {
   if (url.pathname === '/api/backups/now' && request.method === 'POST') return Response.json(await runBackup(env, 'manual', fetchFn));
   if (url.pathname === '/api/backups/file' && request.method === 'GET') {
     const name = url.searchParams.get('name') || '';
-    if (!/^(nightly|monthly|manual)\/[\d-]+$/.test(name)) return Response.json({ error: 'Unknown backup.' }, { status: 400 });
+    if (!/^(photos\/)?(nightly|monthly|manual)\/[\d-]+$/.test(name)) return Response.json({ error: 'Unknown backup.' }, { status: 400 });
     const body = await env.BACKUPS.get(name);
     if (body == null) return Response.json({ error: 'That backup no longer exists.' }, { status: 404 });
-    return new Response(body, { headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="mutos-backup-' + name.replace('/', '-') + '.json"', 'Cache-Control': 'no-store' } });
+    return new Response(body, { headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="mutos-backup-' + name.replace(/\//g, '-') + '.json"', 'Cache-Control': 'no-store' } });
   }
   return Response.json({ error: 'Not found' }, { status: 404 });
 }
