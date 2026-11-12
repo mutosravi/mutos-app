@@ -341,8 +341,10 @@
       const venue = [x.venue, x.address].filter(Boolean).join(', ');
       if (venue) ev.location = venue.slice(0, 200);
       if (x.map) ev.mapLink = x.map;
-      const note = 'From client: ' + [x.time ? 'starts ' + x.time : '', x.contact || x.phone ? 'contact ' + [x.contact, x.phone].filter(Boolean).join(' ') : '', x.guests ? x.guests + ' guests' : '', x.notes].filter(Boolean).join(' · ');
-      if (note.length > 13) { const own = String(ev.notes || '').split('\n').filter(l => l && !l.startsWith('From client:')); ev.notes = own.concat(note).join('\n'); } // replaces the previous family line
+      // the family's note may have several lines: one "From client:" line on the board (020), never piled up
+      const famLines = String(x.notes || '').split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+      const note = 'From client: ' + [x.time ? 'starts ' + x.time : '', x.contact || x.phone ? 'contact ' + [x.contact, x.phone].filter(Boolean).join(' ') : '', x.guests ? x.guests + ' guests' : '', famLines.join(' · ')].filter(Boolean).join(' · ');
+      if (note.length > 13) { const own = String(ev.notes || '').split('\n').filter(l => l.trim() && !l.startsWith('From client:') && !famLines.includes(l.trim())); ev.notes = own.concat(note).join('\n'); } // replaces the previous family line
       api.save(); if (window.MUTOS_APP) window.MUTOS_APP.changed();
       b.textContent = '✓ Applied'; b.disabled = true; api.toast(ev.name + ': venue, map and notes updated on the board.');
     }));
