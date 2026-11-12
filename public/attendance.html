@@ -33,6 +33,7 @@
 .checks { display: flex; flex-wrap: wrap; gap: 6px; }
 .checks label { display: inline-flex; gap: 6px; align-items: center; background: var(--bg); border-radius: 999px; padding: 6px 10px; font-size: 13px; color: var(--ink); font-weight: 400; }
 .lines { background: var(--surface); border-radius: 20px; padding: 6px 16px; box-shadow: var(--shadow); }
+.who { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; } .who b { text-decoration: underline; text-decoration-color: var(--sand); text-underline-offset: 3px; }
 .lines div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--sand); font-size: 14px; }
 @media print { .bnav, .hdr, .noprint { display: none !important; } body { background: #fff; } }
 </style>
@@ -41,6 +42,7 @@
 <script src="/icons.js"></script>
 <script src="/payroll.js"></script>
 <script src="/att-data.js"></script>
+<script src="/att-profile.js"></script>
 </head>
 <body>
 <main class="wrap wide">
@@ -97,6 +99,9 @@
   }
   const active = () => emps.filter(e => e.active);
   const empOf = email => emps.find(e => e.email === email) || { name: email, email };
+  // tap a name anywhere → that employee's attendance profile (att-profile.js)
+  const whoBtn = (e, inner) => '<button type="button" class="who" data-prof="' + esc(e.email) + '" title="Open ' + esc(e.name) + '\'s attendance">' + inner + '</button>';
+  document.addEventListener('click', ev => { const b = ev.target.closest('[data-prof]'); if (!b) return; const e = emps.find(x => x.email === b.dataset.prof); if (e) window.MutosAttProfile.open({ c, emp: e, shoots: shootsBy.get(e.person_key) || [], month: b.dataset.month || undefined }); });
   const pill = st => { const s = A.STATUS[st] || [st, '#fff', '#000']; return '<span class="pill" style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span>'; };
 
   // ---------- today ----------
@@ -107,7 +112,7 @@
     $('tab-today').innerHTML = '<section class="hello" style="display:block"><h1>Today</h1><p class="sub">' + esc(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })) + ' · ' + active().length + ' employees</p></section>' +
       '<div class="statgrid" style="margin-top:14px;grid-template-columns:repeat(4,minmax(0,1fr))"><div class="stat"><b>' + count(['open', 'present', 'late', 'half', 'short']) + '</b><span>in office</span></div><div class="stat honey"><b>' + count(['late', 'half']) + '</b><span>late</span></div><div class="stat lilac"><b>' + count(['shoot', 'shoot_paid']) + '</b><span>on shoot</span></div><div class="stat peach"><b>' + count(['today']) + '</b><span>not in yet</span></div></div>' +
       (flagged.length ? '<div class="ans wait">' + flagged.length + ' came in on today\'s holiday without being asked. Add them to the holiday\'s "asked to come in" list (Holidays tab) if you want to pay them for it.</div>' : '') +
-      '<div style="margin-top:12px">' + (rows.length ? rows.map(({ e, d }) => '<div class="card row2"><div><b>' + esc(e.name) + '</b><div class="meta">' + esc([A.t12(e.start_time) + ' start', d.inAt ? 'in ' + d.inAt : '', d.outAt ? 'out ' + d.outAt : '', d.note].filter(Boolean).join(' · ')) + '</div></div>' + pill(d.status || 'today') + '</div>').join('') : '<div class="empty">No employees yet. Add them in People.</div>') + '</div>';
+      '<div style="margin-top:12px">' + (rows.length ? rows.map(({ e, d }) => '<div class="card row2">' + whoBtn(e, '<b>' + esc(e.name) + '</b><div class="meta">' + esc([A.t12(e.start_time) + ' start', d.inAt ? 'in ' + d.inAt : '', d.outAt ? 'out ' + d.outAt : '', d.note].filter(Boolean).join(' · ')) + '</div>') + pill(d.status || 'today') + '</div>').join('') : '<div class="empty">No employees yet. Add them in People.</div>') + '</div>';
   }
 
   // ---------- requests ----------
@@ -148,7 +153,7 @@
     $('tab-pay').innerHTML = '<div class="sechead"><button type="button" class="allbtn" id="p-prev">‹</button><h2>Salary · ' + esc(A.monthLabel(payMonth)) + '</h2><button type="button" class="allbtn" id="p-next"' + (isCurrent ? ' disabled' : '') + '>›</button></div>' +
       '<div class="ans ' + (locked ? 'ok' : 'wait') + '" style="margin:0">' + (locked ? '🔒 Locked ' + esc(new Date(run.locked_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Payslips are with each employee.' : isCurrent ? 'This month so far (up to today). It can be locked after the month ends.' : 'Draft. Check each line, add any bonus or cut, save, then Ravi locks it. Pay day is the 5th.') + '</div>' +
       '<div class="tblwrap"><table class="tbl"><thead><tr><th>Employee</th><th class="n">Paid days</th><th class="n">Lates</th><th class="n">Salary</th><th class="n">Advance cut</th><th class="n">Adjust ₹</th><th class="n">To pay</th><th></th></tr></thead><tbody>' +
-      rows.map((r, i) => '<tr><td><b>' + esc(r.name) + '</b><div class="meta">' + r.workingDays + ' working days · day ' + A.rs(r.daily) + '</div></td><td class="n">' + r.paidDays + '</td><td class="n">' + r.lates + (r.lateCut ? ' (−' + r.lateCut + ')' : '') + '</td><td class="n">' + A.rs(r.gross) + '</td><td class="n">' + (r.recovery.length ? '−' + A.rs(r.recovery.reduce((s, x) => s + x.amount, 0)) : '–') + '</td>' +
+      rows.map((r, i) => '<tr><td>' + (emps.some(e => e.email === r.email) ? whoBtn(empOf(r.email), '<b>' + esc(r.name) + '</b>').replace('<button ', '<button data-month="' + payMonth + '" ') : '<b>' + esc(r.name) + '</b>') + '<div class="meta">' + r.workingDays + ' working days · day ' + A.rs(r.daily) + '</div></td><td class="n">' + r.paidDays + '</td><td class="n">' + r.lates + (r.lateCut ? ' (−' + r.lateCut + ')' : '') + '</td><td class="n">' + A.rs(r.gross) + '</td><td class="n">' + (r.recovery.length ? '−' + A.rs(r.recovery.reduce((s, x) => s + x.amount, 0)) : '–') + '</td>' +
         '<td class="n">' + (locked ? (r.adjust ? A.rs(r.adjust) : '–') : '<input class="in" type="number" data-adj="' + i + '" value="' + (r.adjust || '') + '" placeholder="0"><input class="in" data-note="' + i + '" value="' + esc(r.adjustNote) + '" placeholder="note" style="margin-top:4px">') + '</td>' +
         '<td class="n"><b>' + A.rs(r.final) + '</b></td><td><button type="button" class="chip" data-slip="' + i + '">Payslip</button></td></tr>').join('') +
       '<tr><td><b>Total</b></td><td></td><td></td><td class="n">' + A.rs(tot('gross')) + '</td><td></td><td></td><td class="n"><b id="p-total">' + A.rs(tot('final')) + '</b></td><td></td></tr></tbody></table></div>' +
@@ -203,8 +208,8 @@
   function renderPeople() {
     const todo = notSetUp();
     $('tab-people').innerHTML = '<div class="sechead"><h2>Attendance set up</h2>' + (owner ? '<button type="button" class="allbtn" id="pp-add">＋ Someone new</button>' : '') + '</div>' +
-      (emps.length ? emps.map(e => '<div class="card row2"><div><b>' + (personOfEmp(e) ? '<span class="pill mute" style="margin-right:6px">' + esc(personOfEmp(e).code) + '</span>' : '') + esc(e.name) + '</b>' + (e.active ? '' : ' <span class="pill mute">left</span>') + '<div class="meta">' + esc([e.email, A.rs(e.monthly_salary) + '/month', A.t12(e.start_time) + ' start', 'off ' + A.WEEK[e.weekly_off], e.paid_leave > 0 ? e.paid_leave + ' paid leave/month' : 'no paid leave', e.person_key ? 'shooter · Type ' + e.shoot_type + (e.shoot_type === 'A' ? ' (shoot = paid office day)' : ' (shoot = unpaid office day)') : 'office only'].join(' · ')) + '</div></div>' +
-        (owner ? '<button type="button" class="chip" data-edit="' + esc(e.email) + '">Edit</button>' : '') + '</div>').join('') : '<div class="empty">Nobody yet. Set people up from the list below.</div>') +
+      (emps.length ? emps.map(e => '<div class="card row2"><div>' + whoBtn(e, '<b>' + (personOfEmp(e) ? '<span class="pill mute" style="margin-right:6px">' + esc(personOfEmp(e).code) + '</span>' : '') + esc(e.name) + '</b>')  + (e.active ? '' : ' <span class="pill mute">left</span>') + '<div class="meta">' + esc([e.email, A.rs(e.monthly_salary) + '/month', A.t12(e.start_time) + ' start', 'off ' + A.WEEK[e.weekly_off], e.paid_leave > 0 ? e.paid_leave + ' paid leave/month' : 'no paid leave', e.person_key ? 'shooter · Type ' + e.shoot_type + (e.shoot_type === 'A' ? ' (shoot = paid office day)' : ' (shoot = unpaid office day)') : 'office only'].join(' · ')) + '</div></div>' +
+        '<span style="display:flex;gap:6px"><button type="button" class="chip" data-prof="' + esc(e.email) + '">Attendance</button>' + (owner ? '<button type="button" class="chip" data-edit="' + esc(e.email) + '">Edit</button>' : '') + '</span></div>').join('') : '<div class="empty">Nobody yet. Set people up from the list below.</div>') +
       (todo.length ? '<div class="sechead" style="margin-top:18px"><h2>Not set up yet · ' + todo.length + '</h2></div><p class="sub">Everyone on the People list (Home → People). Add salary, start time and weekly off to start their attendance.</p>' +
         todo.map(p => '<div class="card row2"><div><b><span class="pill mute" style="margin-right:6px">' + esc(p.code) + '</span>' + esc(p.name) + '</b><div class="meta">' + esc(p.email || 'No Gmail yet') + '</div></div>' + (owner ? '<button type="button" class="chip" data-setup="' + p.id + '">Set up</button>' : '') + '</div>').join('') : '');
     const add = $('pp-add'); if (add) add.addEventListener('click', () => editEmp(null));

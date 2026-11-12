@@ -42,6 +42,7 @@
 <script src="/icons.js"></script>
 <script src="/payroll.js"></script>
 <script src="/att-data.js"></script>
+<script src="/att-profile.js"></script>
 </head>
 <body>
 <main class="wrap">
@@ -203,7 +204,7 @@
     $('cal').querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => { selDay = b.dataset.d; renderMonth(); }));
     const used = new Set(calc.days.map(d => d.status));
     $('legend').innerHTML = Object.entries(A.STATUS).filter(([k]) => used.has(k)).map(([, s]) => '<span style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span>').join('');
-    $('m-late').innerHTML = '<div class="ans ' + (calc.lates % 3 === 2 ? 'wait' : 'ok') + '" style="margin:0">Late marks this month: <b>' + calc.lates + '</b>' + (calc.lateCut ? ' (' + calc.lateCut + ' day cut)' : '') + ' · every 3rd = ½ day cut' + (calc.lates % 3 === 2 ? '. Next one cuts ½ day.' : '') + '</div>';
+    $('m-late').innerHTML = '<div class="ans ' + (calc.lates % 3 === 2 ? 'wait' : 'ok') + '" style="margin:0">Late marks this month: <b>' + calc.lates + '</b>' + (calc.lateCut ? ' (' + calc.lateCut + ' day cut)' : '') + ' · every 3rd = ½ day cut' + (calc.lates % 3 === 2 ? '. Next one cuts ½ day.' : '') + '</div>' + (window.MutosAttProfile ? window.MutosAttProfile.summaryHtml(calc, emp) : '');
     const r = selDay && calc.days.find(x => x.date === selDay);
     $('m-day').innerHTML = r ? '<div class="evrow" style="cursor:default"><span class="txt"><b>' + esc(r.day + ' · ' + (r.label || '')) + '</b><span>' + esc([r.inAt ? 'In ' + r.inAt : '', r.outAt ? 'Out ' + r.outAt : '', r.note].filter(Boolean).join(' · ') || ' ') + '</span></span>' + (r.date <= A.todayIST() && !['off', 'before', 'holiday'].includes(r.status) ? '<button type="button" class="chip" data-fix="' + r.date + '">Ask to correct</button>' : '') + '</div>' : '<p class="sub">Tap a day to see its check-in times.</p>';
     const fx = $('m-day').querySelector('[data-fix]'); if (fx) fx.addEventListener('click', () => newRequest('fix', fx.dataset.fix));
