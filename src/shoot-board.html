@@ -527,6 +527,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       ...(ev.sharedGearNA ? { sharedGearNA: true } : {}),
       ...(ev.sharedGearOK ? { sharedGearOK: true } : {}),
       ...(ev.assistNA ? { assistNA: true } : {}),
+      ...(ev.quick ? { quick: true } : {}),
       ...(Array.isArray(ev.travelFrom) && ev.travelFrom.length ? { travelFrom: ev.travelFrom.slice() } : {}),
       ...(ev.noteSent && ev.notes && ev.noteSent === ev.notes ? { noteSent: ev.notes } : {}),
       ...(ev.preSent ? { preSent: String(ev.preSent) } : {}),
@@ -718,8 +719,11 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p) keys.add(normalizeName(p.name)); });
     return keys;
   }
-  function peopleKeysBusyElsewhere(ev) { const busy = new Set(); state.events.forEach(o => { if (o.id !== ev.id && overlaps(ev, o)) peopleKeysUsedInEvent(o).forEach(k => busy.add(k)); }); return busy; }
-  function peopleKeysBusyAt(target) { const busy = new Set(); state.events.forEach(o => { if (o.id !== target.id && isActive(o) && sameTime(o, target)) peopleKeysUsedInEvent(o).forEach(k => busy.add(k)); }); return busy; }
+  // a "quick visit" (e.g. a vendor's decor shoot, 12 Nov 2026, Ravi): whoever goes there keeps their main shoot, so it never makes anyone busy
+  // and nobody is moved off another shoot by it; days off still count. Gear on it still counts as gear in use.
+  const isQuick = ev => !!(ev && ev.quick);
+  function peopleKeysBusyElsewhere(ev) { const busy = new Set(); if (isQuick(ev)) return busy; state.events.forEach(o => { if (o.id !== ev.id && !isQuick(o) && overlaps(ev, o)) peopleKeysUsedInEvent(o).forEach(k => busy.add(k)); }); return busy; }
+  function peopleKeysBusyAt(target) { const busy = new Set(); if (isQuick(target)) return busy; state.events.forEach(o => { if (o.id !== target.id && !isQuick(o) && isActive(o) && sameTime(o, target)) peopleKeysUsedInEvent(o).forEach(k => busy.add(k)); }); return busy; }
   // ---- quantities: an item can have several identical units; the board counts units instead of numbered copies ----
   function gearQty(gid) { const eq = findEquip(gid); return eq ? Math.max(1, Math.floor(Number(eq.qty)) || 1) : 1; }
   function sharedUnits(ev, gid) { return ev.equipmentIds.includes(gid) ? Math.max(1, Math.floor(Number((ev.sharedQty || {})[gid])) || 1) : 0; }
@@ -873,7 +877,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     if (!isActive(ev)) return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce };
     const mine = allGearIds(ev);
     state.events.forEach(o => {
-      if (o.id === ev.id || !overlaps(ev, o)) return;
+      if (o.id === ev.id || !overlaps(ev, o) || isQuick(ev) || isQuick(o)) return;   // a quick visit never double-books people
       const keys = peopleKeysUsedInEvent(o);
       const og = allGearIds(o);
       ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && keys.has(normalizeName(p.name))) cs.add(a.memberId); });
@@ -2026,7 +2030,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       }
     });
   }
-  function sameTimeShoots(ev, pid) { return state.events.filter(o => o.id !== ev.id && isActive(o) && sameTime(o, ev) && o.assignments.some(x => x.memberId === pid)); }
+  function sameTimeShoots(ev, pid) { if (isQuick(ev)) return []; return state.events.filter(o => o.id !== ev.id && !isQuick(o) && isActive(o) && sameTime(o, ev) && o.assignments.some(x => x.memberId === pid)); }
   function pullFromSameTime(ev, pid) {
     const names = [];
     sameTimeShoots(ev, pid).forEach(o => {
@@ -2124,15 +2128,22 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   function openPersonalGearPicker(ev, assignment) {
     const person = findShooter(assignment.memberId);
     const def = new Set(person && person.defaultGear ? person.defaultGear : []);
+    // default kit items keep their count ("2 of 3 free") and also stay in their own group of the main list (12 Nov 2026, Ravi)
+    const freeText = it => { const q = gearQty(it.id), spare = isShareable(it.id) ? 1 : unitsSpare(ev, it.id), mine = assignment.gearIds.includes(it.id);
+      return q > 1 ? Math.max(0, spare) + ' of ' + q + ' free' : mine ? 'with ' + (person ? person.name : 'them') : spare > 0 ? 'free' : 'with someone else here'; };
     let items = gearItems(ev, assignment.gearIds).map(it => {
       if (!def.has(it.id)) return it;
       const later = gearWhereToday(ev, it.id).filter(w => !w.clash);
-      return Object.assign({}, it, { note: 'default' + (it.note ? ' · ' + it.note : ''), sub: later.length ? 'also out ' + later.map(w => w.ev.slot + ' at ' + w.ev.name).join(', ') : it.sub });
+      const base = offUnits(it.id, ev.date) ? it.sub : freeText(it);
+      return Object.assign({}, it, { note: 'default' + (it.note ? ' · ' + it.note : ''), sub: base + (later.length ? ' · also out ' + later.map(w => w.ev.slot + ' at ' + w.ev.name).join(', ') : '') });
     });
     // default items booked elsewhere at this time still show, greyed out, so you know why they are missing
     def.forEach(gid => { const eq = findEquip(gid); if (!eq || items.some(it => it.id === gid)) return; const c = gearWhereToday(ev, gid).find(w => w.clash);
       items.push({ id: gid, name: eq.name, group: eq.category || 'Other', note: 'default', noteBusy: true, disabledReason: c ? 'Busy: ' + c.ev.name + ' (' + c.who + ')' : 'Not available' }); });
-    if (def.size) { const order = it => def.has(it.id) ? 0 : String(it.group).startsWith('Booked rentals') ? 1 : 2; items = items.map(it => def.has(it.id) ? Object.assign({}, it, { group: 'Default kit' }) : it).sort((x, y) => order(x) - order(y) || (order(x) === 2 && order(y) === 2 ? String(x.group).localeCompare(String(y.group)) : 0)); }
+    if (def.size) { // the default kit on top (a copy), and every item still in its own group below
+      const order = it => it.group === 'Default kit' ? 0 : String(it.group).startsWith('Booked rentals') ? 1 : 2;
+      const tops = items.filter(it => def.has(it.id)).map(it => Object.assign({}, it, { group: 'Default kit' }));
+      items = tops.concat(items).sort((x, y) => order(x) - order(y) || (order(x) === 2 && order(y) === 2 ? String(x.group).localeCompare(String(y.group)) : 0)); }
     openPicker({
       title: 'Gear for ' + (person ? person.name : 'shooter'), sub: ev.name + ' · picking an item already with someone here moves it', items,
       action: person && !isTeam(person) ? {
@@ -2180,7 +2191,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const day = dayBookings(ev);
     const away = unavailableKeysForDateSlot(ev.date, ev.slot);
     // where is someone booked at this same time? -> [{ ev, a }]
-    const sameTimeSpots = pid => state.events.filter(o => o.id !== ev.id && isActive(o) && sameTime(o, ev)).flatMap(o => o.assignments.filter(x => x.memberId === pid).map(x => ({ ev: o, a: x })));
+    const sameTimeSpots = pid => isQuick(ev) ? [] : state.events.filter(o => o.id !== ev.id && !isQuick(o) && isActive(o) && sameTime(o, ev)).flatMap(o => o.assignments.filter(x => x.memberId === pid).map(x => ({ ev: o, a: x })));
     const replace = state.shooters.filter(p => p.id !== memberId && (mine.has(p.id) || (!p.left && !myAsst.has(normalizeName(p.name)))) && (!assignment.slot || fits(p.role, assignment.slot)))
       .map(p => {
         const k = normalizeName(p.name), b = day.get(k), spots = mine.has(p.id) ? [] : sameTimeSpots(p.id), clash = !mine.has(p.id) && busy.has(k);
@@ -2744,12 +2755,13 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       '<label class="sb-edit-label" for="ef-loc">Location</label><input id="ef-loc" class="sb-field">' +
       '<label class="sb-edit-label" for="ef-map">Map link</label><input id="ef-map" class="sb-field" type="url" placeholder="Paste a Google Maps link">' +
       '<div class="sb-two"><div><label class="sb-edit-label" for="ef-cname">Client name</label><input id="ef-cname" class="sb-field" placeholder="e.g. Mr Verma"></div><div><label class="sb-edit-label" for="ef-cphone">Client WhatsApp number</label><input id="ef-cphone" class="sb-field" type="tel" inputmode="tel" placeholder="e.g. 98765 43210"></div></div>' +
+      '<label class="sb-edit-label" style="display:flex;gap:8px;align-items:flex-start;font-weight:400;text-transform:none;letter-spacing:0"><input type="checkbox" id="ef-quick" style="width:18px;height:18px;margin-top:2px"><span><b>Quick visit</b> (e.g. a vendor\'s decor shoot): crew sent here keep their own shoot, and it is never marked double-booked</span></label>' +
       '<label class="sb-edit-label" for="ef-notes">Notes for the crew</label><textarea id="ef-notes" class="sb-field" rows="2"></textarea>' +
       (notePhrases().length ? '<div class="sb-gear-wrap" id="ef-phrases" aria-label="Notes you used before">' + notePhrases().map(t => '<button type="button" class="sb-zone-add" data-phrase="' + escapeHtml(t) + '">+ ' + escapeHtml(t) + '</button>').join('') + '</div>' : '') +
       '</div><div class="sb-modal-foot"><button class="danger" id="ef-delete" type="button">Delete</button><button class="secondary" id="ef-cancel" type="button">' + (ev.status === 'cancelled' ? 'Restore shoot' : 'Mark cancelled') + '</button><button id="ef-save" type="button">Save</button></div>', true);
     const q = s => modal.querySelector(s);
     q('#ef-name').value = ev.name; q('#ef-wedding').value = ev.wedding; q('#ef-date').value = ev.date; q('#ef-coverage').value = ev.coverage; q('#ef-call').value = ev.callTime;
-    q('#ef-tier').value = ev.tier; q('#ef-loc').value = ev.location; q('#ef-map').value = ev.mapLink; q('#ef-cname').value = ev.contactName; q('#ef-cphone').value = ev.contactPhone; q('#ef-notes').value = ev.notes;
+    q('#ef-tier').value = ev.tier; q('#ef-loc').value = ev.location; q('#ef-map').value = ev.mapLink; q('#ef-cname').value = ev.contactName; q('#ef-cphone').value = ev.contactPhone; q('#ef-notes').value = ev.notes; q('#ef-quick').checked = !!ev.quick;
     modal.querySelectorAll('[data-phrase]').forEach(b => b.addEventListener('click', () => {
       const ta = q('#ef-notes'), cur = ta.value.trim(), t = b.dataset.phrase;
       if (cur.toLowerCase().includes(t.toLowerCase())) return;
@@ -2763,7 +2775,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     // a login with limits (supervisor): only the itinerary and the client's contact can be changed here
     const L = window.MUTOS_APP && window.MUTOS_APP.limits ? window.MUTOS_APP.limits() : null;
     if (L) {
-      [['#ef-wedding', 'wedding'], ['#ef-coverage', 'coverage'], ['#ef-tier', 'tier']].forEach(([sel, f]) => { if (!L.fields.includes(f)) { q(sel).disabled = true; q(sel).title = L.note; } });
+      [['#ef-wedding', 'wedding'], ['#ef-coverage', 'coverage'], ['#ef-tier', 'tier'], ['#ef-quick', 'quick']].forEach(([sel, f]) => { if (!L.fields.includes(f)) { q(sel).disabled = true; q(sel).title = L.note; } });
       if (!L.fields.includes('eventType')) segs.forEach(b => { b.disabled = true; b.title = L.note; });
       if (!L.fields.includes('status')) q('#ef-cancel').hidden = true;
       if (!L.canDelete(ev.id)) q('#ef-delete').hidden = true;
@@ -2775,6 +2787,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       const map = q('#ef-map').value.trim();
       if (map && !/^https?:\/\//i.test(map)) { toast('The map link should start with https://'); return false; }
       Object.assign(ev, { name, date, wedding: q('#ef-wedding').value.trim(), coverage: q('#ef-coverage').value.trim(), callTime: q('#ef-call').value, tier: q('#ef-tier').value, location: q('#ef-loc').value.trim(), slot: q('#ef-slot').value, mapLink: map, contactName: q('#ef-cname').value.trim(), contactPhone: q('#ef-cphone').value.trim(), notes: q('#ef-notes').value.trim(), eventType: type });
+      if (q('#ef-quick').checked) ev.quick = true; else delete ev.quick;
       if (ev.contactPhone || ev.contactName) {
         let n = 0; const ck = normalizeName(clientLabel(ev));
         state.events.forEach(o => { if (o !== ev && Math.abs((parseD(o.date) || 0) - (parseD(ev.date) || 0)) < 20 * 86400000 && normalizeName(clientLabel(o)) === ck) { let c = false; if (!o.contactPhone && ev.contactPhone) { o.contactPhone = ev.contactPhone; c = true; } if (!o.contactName && ev.contactName) { o.contactName = ev.contactName; c = true; } if (c) n++; } });
@@ -3865,6 +3878,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     if (ev.wedding) h += '<span class="sb-tag wedding">' + escapeHtml(ev.wedding) + ' wedding</span>';
     h += ev.tier === 'Premium' ? '<span class="sb-tag premium">★ Premium · 4K HDR</span>' : '<span class="sb-tag">Standard</span>';
     h += '<span class="sb-tag">' + (ev.eventType === 'full' ? 'Full event' : 'Short event') + '</span>';
+    if (ev.quick) h += '<span class="sb-tag" title="Crew sent here keep their own shoot; never double-booked">⚡ Quick visit</span>';
     if (ev.coverage) h += '<span class="sb-tag">' + escapeHtml(ev.coverage) + '</span>';
     if (need !== null && !cancelled) h += '<span class="sb-tag ' + (have >= need ? 'crew-ok' : 'crew-short') + '">Crew ' + have + '/' + need + '</span>';
     const ds = droneStatus(ev);
@@ -4717,7 +4731,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       segs.forEach(b => b.addEventListener('click', () => {
         slot = b.dataset.v; segs.forEach(o => o.setAttribute('aria-pressed', String(o === b)));
         const probe = Object.assign({}, x.ev, { slot, id: '__probe' });
-        const busy = new Set(); state.events.forEach(o => { if (isActive(o) && sameTime(o, probe)) peopleKeysUsedInEvent(o).forEach(k => busy.add(k)); });
+        const busy = new Set(); state.events.forEach(o => { if (isActive(o) && !isQuick(o) && sameTime(o, probe)) peopleKeysUsedInEvent(o).forEach(k => busy.add(k)); });
         const free = allPeopleKeys().filter(k => !busy.has(k)).length;
         hint.textContent = free + ' people free in this slot on ' + formatDay(x.ev.date) + '.';
       }));
