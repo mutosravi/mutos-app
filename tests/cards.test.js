@@ -10,9 +10,9 @@ const istDay = (n = 0) => new Date(Date.now() + 330 * 60000 + n * 864e5).toISOSt
 
 // ── data ──
 const T = { members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map() };
-const OWNER = 'o@x.com', SUP = 's@x.com', SHREY = 'shrey@x.com', SAIF = 'saif@x.com';
-[[OWNER, 'owner', null], [SUP, 'supervisor', null], [SHREY, 'crew', 'shrey'], [SAIF, 'crew', 'saif']].forEach(([email, role, person_key]) => T.members.set(email, { email, role, person_key }));
-const P = {}; [['Ravi', OWNER], ['Vikas', SUP], ['Shrey', SHREY], ['Saif', SAIF], ['Hamza', 'hamza@x.com']].forEach(([name, email], i) => { const id = uid(); P[name] = id; T.people.set(id, { id, code: 'M00' + (i + 1), name, email, active: true, skills: [] }); });
+const OWNER = 'o@x.com', SUP = 's@x.com', SHREY = 'shrey@x.com', SAIF = 'saif@x.com', GEARM = 'gearm@x.com';
+[[OWNER, 'owner', null], [SUP, 'supervisor', null], [SHREY, 'crew', 'shrey'], [SAIF, 'crew', 'saif'], [GEARM, 'gear', null]].forEach(([email, role, person_key]) => T.members.set(email, { email, role, person_key }));
+const P = {}; [['Ravi', OWNER], ['Vikas', SUP], ['Shrey', SHREY], ['Saif', SAIF], ['Hamza', 'hamza@x.com'], ['Raju', GEARM]].forEach(([name, email], i) => { const id = uid(); P[name] = id; T.people.set(id, { id, code: 'M00' + (i + 1), name, email, active: true, skills: [] }); });
 [['M 5', 'SSD'], ['Dibba 2', 'HDD']].forEach(([name, kind]) => { const id = uid(); T.drives.set(id, { id, name, kind, status: 'in_use' }); });
 const ev = { id: 'ev-haldi', name: 'Sharma Haldi', wedding: 'Sharma', date: istDay(-1), slot: 'Morning', status: 'confirmed', assignments: [], equipmentIds: [], assistantIds: [] };
 T.docs.set('events/' + ev.id, { collection: 'events', id: ev.id, data: ev });
@@ -256,6 +256,20 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   ok(K('C04').condition === 'retired', 'two errors: C04 retired');
   ok(await s.$('[data-c="' + K('C04').id + '"].grey') && !(await s.$('[data-c="' + K('C04').id + '"] [data-sel]')), 'shown grey and cannot be given out');
   await shot(o, 'cards-all.png');
+
+  // ── the gear manager (Gear desk login, on People) is given a card: banner on his Gear desk + My cards door ──
+  const free = [...T.cards.values()].find(k => !k.holder && k.condition === 'ok' && k.data !== 'hold');
+  ok(!rpc('card_give', { p_cards: [free.id], p_to: P.Raju, p_note: 'for the Gupta shoot' }, OWNER).error, 'owner gives ' + free.code + ' to Raju (gear manager)');
+  const g = await phone(GEARM);
+  await g.goto(B + '/'); await g.waitForURL('**/gear.html'); await g.waitForSelector('#gear-inbox .ibx-i', { timeout: 15000 });
+  ok((await g.textContent('#gear-inbox')).includes(free.code), 'gear manager: the handover banner on his Gear desk shows ' + free.code);
+  await g.click('#gear-inbox .ibx-a .y'); await g.waitForFunction(() => !document.querySelector('#gear-inbox .ibx-i'));
+  ok(T.cards.get(free.id).holder === P.Raju, '"I have it ✓" on the banner: the card is now with him');
+  await g.waitForFunction(() => /1 card with you/.test((document.getElementById('my-cards') || {}).textContent || ''), null, { timeout: 8000 }).catch(() => {});
+  ok(/1 card with you/.test(await g.textContent('#gear-cards')), 'My cards door: "1 card with you"');
+  await g.click('#my-cards'); await g.waitForURL('**/cards.html'); await g.waitForFunction(() => !/Loading/.test(document.getElementById('sub').textContent));
+  ok((await g.textContent('body')).includes(free.code), 'it opens the Cards page with his card');
+  await shot(g, 'gear-cards.png');
 
   // ── where is the client's data (Clients desk → Client data) ──
   T.drive_items.set('old1', { id: 'old1', drive: m5.id, wedding_key: null, title: 'Sharma Engagement raw (from the drive sheet)', what: 'raw', note: null, removed_at: null });

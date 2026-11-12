@@ -60,6 +60,7 @@
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
 <script src="/icons.js"></script>
+<script src="/inbox.js"></script>
 </head>
 <body>
 <main class="wrap wide">
@@ -75,7 +76,9 @@
   <button type="button" role="tab" class="tab" data-tab="log" aria-selected="false"><span data-ic="log"></span>Log</button>
 </nav>
   <section id="tab-home">
+    <div id="gear-inbox"></div>
     <div id="gear-myday"></div>
+    <div id="gear-cards"></div>
     <div class="hello" style="display:block"><h1>Gear today</h1><p class="sub" id="status">Loading…</p></div>
     <div id="sum"></div>
     <div style="margin-top:16px"><button type="button" class="pillbtn rose" id="free-out" style="width:100%"><span data-ic="add"></span>Hand out any gear</button>
@@ -151,6 +154,26 @@
         '<span style="flex:1;color:var(--ink)"><b style="display:block">My attendance</b><small class="sub">' + st[0] + '</small></span><span class="pillbtn" style="min-height:38px;padding:0 14px;display:inline-flex;align-items:center">' + st[1] + '</span></a>';
     } catch (x) {}
   }
+  // cards and drives given to him (12 Nov 2026, Ravi: "Gear manager is unable to see cards given to him"): the same banner as the
+  // team home until he accepts or says "not received", and a "My cards" door to the Cards page (he must be on People with his Gmail)
+  let myPerson = null;
+  async function loadCardsDoor() {
+    if (!myPerson) return;
+    try {
+      const [k, m] = await Promise.all([c.from('cards').select('id').eq('holder', myPerson.id), c.from('card_moves').select('id').eq('to_person', myPerson.id).eq('status', 'pending')]);
+      const n = (k.data || []).length, w = (m.data || []).length;
+      $('gear-cards').innerHTML = '<a id="my-cards" href="/cards.html" style="display:flex;align-items:center;gap:12px;text-decoration:none;margin:10px 0 4px;background:var(--surface);border-radius:20px;padding:14px 16px;box-shadow:var(--shadow);color:var(--rose)">' + window.MUTOS_ICON('card', 26) +
+        '<span style="flex:1;color:var(--ink)"><b style="display:block">My cards</b><small class="sub">' + (n ? n + ' card' + (n > 1 ? 's' : '') + ' with you' : 'No cards with you') + (w ? ' · ' + w + ' waiting for you to accept' : '') + '</small></span><span class="pillbtn" style="min-height:38px;padding:0 14px;display:inline-flex;align-items:center">Open</span></a>';
+    } catch (x) {}
+  }
+  (async () => {
+    try {
+      const pr = await c.from('people').select('id, skills').eq('email', me.email).maybeSingle();
+      myPerson = pr && !pr.error ? pr.data : null; if (!myPerson) return;
+      if (window.MutosInbox) window.MutosInbox.mount($('gear-inbox'), { c, staff: false, personId: myPerson.id, keeper: (myPerson.skills || []).includes('data'), drivesHref: '/mywork.html?tab=drives', toast: (m, bad) => (typeof toast === 'function' ? toast(m, bad) : null), onChange: loadCardsDoor });
+      loadCardsDoor(); setInterval(loadCardsDoor, 2 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadCardsDoor(); });
+    } catch (x) {}
+  })();
   loadMyDay(); setInterval(loadMyDay, 2 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadMyDay(); });
 
   // ---------- data ----------
