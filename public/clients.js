@@ -83,6 +83,14 @@
     return { toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
   }
 
+  // shoots of the same family left out of a wedding (12 Nov 2026, Ravi: "I filled the Gmail … but it only shows in a single
+  // function"): a wedding is the shoots with the same Wedding name; shoots with the same phone but no / another wedding name are
+  // a different "client" for the app, so the family does not see them. Shown on the wedding with "Join them".
+  function strays(w) {
+    const ph = new Set(w.events.map(e => digits(e.contactPhone)).filter(x => x.length >= 10)); if (!ph.size) return [];
+    const mine = new Set(w.events.map(e => e.id)), today = api.todayStr();
+    return api.state().events.filter(e => api.isActive(e) && e.date && e.date >= today && !mine.has(e.id) && ph.has(digits(e.contactPhone)));
+  }
   let clientsTab = 'coming';
   async function open() {
     if (!api) { alert('The board is still loading.'); return; }
@@ -96,8 +104,10 @@
     const pastRow = w => '<div class="sb-manage-row cl-past" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></div>' + moneyPill(w.key) + '</div>' +
       '<div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm" data-data="' + esc(w.key) + '">Data copied</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>') + '</div></div>';
     const html = tabs + '<div class="sb-modal-list" id="cl-list">' + (past ? (ws.length ? ws.map(pastRow).join('') : '<p class="sb-modal-empty">No past weddings on the board.</p>') : ws.length ? ws.map(w => {
-      const s = stateOf(w);
-      return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span></div>' +
+      const s = stateOf(w), sx = strays(w);
+      return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span>' +
+        (sx.length ? '<div class="cl-stray" style="margin-top:6px;background:#f2dfa7;color:#5c4410;border-radius:10px;padding:6px 8px;font-size:12.5px;line-height:1.4">Same phone, but not in this wedding (the family will not see them): <b>' + esc(sx.map(e => e.name + ' (' + dayName(e.date) + ')').join(', ')) + '</b>' +
+          (w.key.startsWith('w:') && !sup() ? ' <button type="button" class="sb-btn-sm" data-join="' + esc(w.key) + '" style="margin-left:4px">Join them</button>' : '') + '</div>' : '') + '</div>' +
         '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
         (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Open &amp; edit</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
           : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
@@ -105,6 +115,12 @@
     }).join('') : '<p class="sb-modal-empty">No upcoming weddings on the board. Past ones are under Past.</p>') + '</div>';
     const modal = api.makeModal(api.modalHead('Clients', 'Add the family\'s Gmail(s) to a wedding. They sign in at ' + location.host + '/client with that Gmail and fill time, venue, address and contact for every function. Nobody else can open it.') + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="cl-find">Find client data</button><button type="button" class="secondary" id="cl-packages">Packages</button><button type="button" id="cl-done">Done</button></div>', true);
     modal.querySelector('#cl-done').addEventListener('click', api.closeModal);
+    modal.querySelectorAll('[data-join]').forEach(b => b.addEventListener('click', () => {
+      const w = ws.find(x => x.key === b.dataset.join), name = w.events[0].wedding, sx = strays(w); if (!w || !name || !sx.length) return;
+      if (!confirm('Put ' + sx.map(e => e.name).join(', ') + ' into the wedding "' + name + '"? The family will then see ' + (sx.length > 1 ? 'them' : 'it') + ' on their page too.')) return;
+      sx.forEach(e => { e.wedding = name; }); api.save(); if (window.MUTOS_APP && window.MUTOS_APP.changed) window.MUTOS_APP.changed(); api.renderBoard();
+      api.toast(sx.length + ' function' + (sx.length > 1 ? 's' : '') + ' joined to ' + name + '.'); open();
+    }));
     modal.querySelectorAll('[data-cltab]').forEach(b => b.addEventListener('click', () => { clientsTab = b.dataset.cltab; open(); }));
     { const qi = modal.querySelector('#cl-q'); if (qi) qi.addEventListener('input', () => { const v = qi.value.trim().toLowerCase(); modal.querySelectorAll('.cl-past').forEach(r => { r.style.display = !v || r.dataset.q.includes(v) ? 'block' : 'none'; }); }); }
     const byKey = k => ws.find(w => w.key === k);

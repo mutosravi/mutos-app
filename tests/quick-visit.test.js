@@ -95,6 +95,20 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   ok(rows.length === 2 && rows[0].g === 'Default kit' && rows[1].g === kit.group, 'it shows on top under Default kit AND in its own group "' + kit.group + '" (' + rows.map(r => r.g).join(' / ') + ')');
   ok(rows.every(r => /\d+ of \d+ free/.test(r.sub)), 'both rows say how many are left: ' + rows.map(r => r.sub).join(' | '));
   if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/default-kit.png' });
+  // ── Clients: a family's function without the wedding name (same phone) is flagged and can be joined ──
+  await p.keyboard.press('Escape'); await sleep(300);
+  const fam = await p.evaluate(() => { const A = window.__boardApi, st = A.state(), d = A.todayStr();
+    const day = n => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+    const a = A.cleanEvent({ name: 'Bansal Ring', wedding: 'Bansal', date: day(30), slot: 'Evening', contactPhone: '9335288988', contactName: 'Divya Bansal' });
+    const b = A.cleanEvent({ name: 'Bansal Haldi', wedding: '', date: day(31), slot: 'Morning', contactPhone: '+91 93352 88988' });
+    st.events.push(a, b); A.save(); A.renderBoard(); return { a: a.id, b: b.id }; });
+  await p.evaluate(() => window.MUTOS_CLIENTS.open()); await p.waitForSelector('.sb-modal [data-join]');
+  const strayTxt = await p.textContent('.cl-stray');
+  ok(/Bansal Haldi/.test(strayTxt) && /will not see/.test(strayTxt), 'Clients: "Same phone, but not in this wedding: Bansal Haldi" on the Bansal wedding');
+  p.once('dialog', dg => dg.accept()); await p.click('.sb-modal [data-join="w:bansal"]'); await sleep(800);
+  ok(await p.evaluate(id => window.__boardApi.state().events.find(e => e.id === id).wedding === 'Bansal', fam.b), '"Join them" puts Bansal Haldi into the Bansal wedding');
+  ok(await p.evaluate(() => (window.MUTOS_CLIENTS._weddings().find(w => w.key === 'w:bansal') || { events: [] }).events.length) === 2 && !(await p.$('.sb-modal [data-join]')), 'the wedding now has both functions, and the warning is gone');
+  if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/clients-join.png' });
   ok(errs.length === 0, 'no page errors ' + errs.slice(0, 2).join(' | '));
   await b.close(); server.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
