@@ -132,6 +132,7 @@
   if (!Array.isArray(ans.extra)) ans.extra = [];
   if (!Array.isArray(ans.contacts)) ans.contacts = [];
   if (!Array.isArray(ans.vip)) ans.vip = [];
+  if (!ans.couple || typeof ans.couple !== 'object') ans.couple = {};   // { bride, groom } (12 Nov 2026, Ravi)
   // a photo from the phone, shrunk to a small JPEG (about 20–40 KB) so it saves quickly
   const shrink = file => new Promise((res, rej) => {
     const img = new Image(), url = URL.createObjectURL(file);
@@ -167,17 +168,21 @@
   const shortNote = '<div class="shortnote"><b>Short event: 5-hour coverage</b>Our team covers up to 5 hours from the start time. Please plan the main rituals within those 5 hours, and tell us early if you need longer.</div>';
   const fcard = (key, cls, sumInner, body) => '<article class="fn' + cls + (openKey === key ? ' open' : '') + '" data-card="' + esc(key) + '"><button type="button" class="fn-sum" data-open="' + esc(key) + '" aria-expanded="' + (openKey === key) + '">' + sumInner + chev + '</button><div class="fn-body">' + body + '</div></article>';
   const doneBtn = '<button type="button" class="pillbtn light done-btn" data-close>Done</button>';
+  const coupleTitle = () => { const c2 = ans.couple || {}; return c2.bride && c2.groom ? String(c2.bride).trim().split(/\s+/)[0] + ' & ' + String(c2.groom).trim().split(/\s+/)[0] : ''; };
   function render() {
     const total = fns.length + ans.extra.length, done = fns.filter(f => filled(ans[f.id])).length + ans.extra.filter(filled).length;
     const first = fns.find(f => f.date >= today), daysTo = first ? Math.round((new Date(first.date + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5) : null;
     $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">Your wedding</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
-      '<h2>' + esc(got.title) + '</h2><p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
+      '<h2>' + esc(coupleTitle() || got.title) + '</h2><p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
       '<div class="progress" aria-label="' + done + ' of ' + total + ' ready"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' ready</p>' +
       (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
       (studio ? '<div class="ans wait" style="margin:0" id="studio-note">Editing for the family, from Muto\'s. Your changes save here and the family sees them. Only the family can press Send.' + (got.updated_by ? ' Last changed by ' + esc(got.updated_by) + '.' : '') + '</div>' : '') +
       (late ? '<div class="ans wait" style="margin:0"><b>Payment reminder:</b> ' + inr(bk.overdue) + ' is overdue. Please clear it or call Muto\'s if anything is unclear. Thank you!</div>' : '') +
       (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Changed something? Tap Send again and our team sees it at once.</div>' : '') + '</section>';
-    let h = '<div class="sechead2">Your functions</div>';
+    const cp = ans.couple, cpOk = !!(cp.bride && cp.groom);
+    let h = fcard('couple', ' sec' + (cpOk ? ' done' : ''), '<span class="txt"><h2>The couple</h2><span class="meta">' + esc(cpOk ? cp.bride + ' & ' + cp.groom : 'Bride\'s and groom\'s names') + '</span></span><span class="go' + (cpOk ? ' ok' : '') + '">' + (cpOk ? 'Edit' : 'Add') + '</span>',
+      '<div class="grid">' + field('couple', cp, ['bride', 'Bride\'s name', 'text', 'e.g. Divya Bansal', 'wide']) + field('couple', cp, ['groom', 'Groom\'s name', 'text', 'e.g. Swastik Gupta', 'wide']) + '</div>' + doneBtn);
+    h += '<div class="sechead2">Your functions</div>';
     fns.forEach(f => {
       const a = ans[f.id] = ans[f.id] || {}, ok = filled(a), short = f.type === 'short';
       h += fcard(f.id, ok ? ' done' : '',
@@ -222,6 +227,7 @@
       const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcv]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
       dirty = true; $('saved').textContent = 'Not saved yet'; scheduleSave();
+      if (k === 'couple') { const h2 = document.querySelector('#top .hero h2'); if (h2) h2.textContent = coupleTitle() || got.title; const m = document.querySelector('[data-card="couple"] .fn-sum .meta'); if (m) m.textContent = ans.couple.bride && ans.couple.groom ? ans.couple.bride + ' & ' + ans.couple.groom : 'Bride\'s and groom\'s names'; }
       if (submittedAt && !studio) { $('send').textContent = 'Send changes to Muto\'s'; $('send').classList.add('pulse'); }
       const c2 = inp.closest('.fn'); if (!list || k[0] === 'x') { const ok = filled(obj), go = c2.querySelector('.fn-sum .go'); c2.classList.toggle('done', ok); if (go) { go.classList.toggle('ok', ok); go.textContent = ok ? 'Ready' : 'Add details'; } }
     }));
@@ -244,6 +250,7 @@
     if (saving) { setTimeout(() => save(submit), 400); return false; }
     saving = true; $('saved').textContent = 'Saving…';
     const clean = { extra: ans.extra.filter(a => Object.values(a).some(Boolean)), contacts: ans.contacts.filter(a => a.name || a.phone), vip: ans.vip.filter(a => a.name || a.photo) };
+    if (ans.couple && (ans.couple.bride || ans.couple.groom)) clean.couple = { bride: String(ans.couple.bride || '').trim().slice(0, 80), groom: String(ans.couple.groom || '').trim().slice(0, 80) };
     fns.forEach(f => { if (ans[f.id] && Object.values(ans[f.id]).some(Boolean)) clean[f.id] = ans[f.id]; });
     try {
       const { data, error } = await c.rpc('client_save', { p_token: token, p_data: clean, p_submit: !!submit });

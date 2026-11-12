@@ -188,7 +188,7 @@ function rpc(fn, a, e) {
     if (!e) return err('permission denied');
     const fd = T.crew_feed.get(pkOf(e)); if (!staff(e) && !(fd && (fd.data.shoots || []).some(s => s.id === a.p_event))) return { data: { error: 'Only the crew on this shoot can see the family\'s details.' }, error: null };
     const cf = [...T.client_feed.values()].find(f => (f.data.functions || []).some(x => x.id === a.p_event)); const d = cf && (T.client_itinerary.get(cf.wedding_key) || {}).data || {};
-    return { data: { vip: d.vip || [], contacts: (d.contacts || []).filter(c => !c.fn || c.fn === a.p_event) }, error: null };
+    return { data: { vip: d.vip || [], contacts: (d.contacts || []).filter(c => !c.fn || c.fn === a.p_event), couple: { bride: (d.couple || {}).bride || '', groom: (d.couple || {}).groom || '' } }, error: null }; // 025
   }
   if (fn === 'att_office_code') return ['owner', 'kiosk'].includes(role(e)) ? { data: { code: CODE, seconds_left: 25 }, error: null } : err('Only the office screen can show the code.');
   if (fn === 'att_undo') { // same as 013_undo_punch.sql
@@ -692,12 +692,15 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await fam.click('[data-open="vip"]'); await fam.click('#add-v'); await fam.fill('#sec-vip [data-f="name"]', 'Dadi'); await fam.fill('#sec-vip [data-f="rel"]', 'Grandmother');
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFTGMSgwhCQBTkj/Bmb6ilQAAAABJRU5ErkJggg==', 'base64');
   await fam.setInputFiles('#sec-vip input[type=file]', { name: 'dadi.png', mimeType: 'image/png', buffer: png }); await fam.waitForSelector('#sec-vip .ph[style*="data:image/jpeg"]');
+  await fam.click('[data-open="couple"]'); await fam.fill('[data-k="couple"][data-f="bride"]', 'Akriti Sharma'); await fam.fill('[data-k="couple"][data-f="groom"]', 'Rohan Verma');
   await fam.click('#save'); await fam.waitForFunction(() => /Saved/.test(document.getElementById('saved').textContent));
   const it2 = T.client_itinerary.get(wed.key).data;
+  ok(it2.couple && it2.couple.bride === 'Akriti Sharma' && it2.couple.groom === 'Rohan Verma' && (await fam.textContent('#top')).includes('Akriti & Rohan'), 'the family fills the couple\'s names; their page is headed "Akriti & Rohan"');
   ok(it2.contacts.length === 1 && it2.contacts[0].name === 'Rohit' && it2.vip.length === 1 && /^data:image\/jpeg;base64,/.test(it2.vip[0].photo) && it2.vip[0].photo.length < 60000, 'family saves a person to call and Dadi with a small photo');
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
   await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal img');
   ok((await owner.textContent('.sb-modal')).includes('Rohit') && (await owner.textContent('.sb-modal')).includes('Dadi'), 'See answers shows the people to call and the important people with photos');
+  ok(/Bride: Akriti Sharma · Groom: Rohan Verma/.test(await owner.textContent('.sb-modal .cl-couple')), 'See answers shows the couple');
   await owner.click('.sb-modal .ca-ph'); await owner.waitForFunction(() => [...document.querySelectorAll('body > div')].some(d => d.style.zIndex === '99999' && d.textContent.includes('Dadi')));
   ok(true, 'the owner can tap a family photo to see it big'); await owner.click('text=tap to close');
   const evId = T.client_feed.get(wed.key).data.functions[0].id;
@@ -705,6 +708,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   T.members.set(CREWE, { email: CREWE, role: 'crew', person_key: 'hamza', display_name: 'Hamza' }); // the owner's board removed this test login (Hamza has no Login Gmail on the test board)
   await cr.goto(B + '/crew.html'); await cr.click('.bnav .tab[data-tab="shoots"]'); await cr.waitForSelector('.shoot [data-act="vip"]'); await cr.click('.shoot [data-act="vip"]'); await cr.waitForSelector('.vipbox img');
   ok((await cr.textContent('.vipbox')).includes('Dadi') && (await cr.textContent('.vipbox')).includes('Rohit'), 'the crew on that shoot see Dadi\'s photo and who to call');
+  ok(/Couple: Akriti Sharma \(bride\) · Rohan Verma \(groom\)/.test(await cr.textContent('.vipbox .couple')), 'the crew see the couple\'s names');
   ok((await cr.textContent('.studio-note')).includes('Bring the drone') && !(await cr.textContent('.studio-note')).includes('From client') && (await cr.$$eval('.fam-note li', l => l.map(x => x.textContent))).join('|') === 'starts 7:30 pm|Couple entry 8 pm', 'the studio note and the family\'s points are shown apart (family points as a list)');
   await cr.click('.vipbox .vip-ph'); await cr.waitForSelector('#photo-view img');
   ok((await cr.textContent('#photo-view')).includes('Dadi') && (await cr.textContent('#photo-view')).includes('Grandmother'), 'tapping a family photo opens it big, with the name and relation');
