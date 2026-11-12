@@ -353,7 +353,11 @@
           const others = [...heldBy(H, gid).entries()].filter(([k]) => k !== b.key);
           let st, act = '';
           const offTag = offOn(gid, date) ? ' <span class="tag bad">⛔ ' + esc(offLabel(gid, date)) + '</span>' : '';
-          if (b.shared) { const holders = s.team.filter(t => heldBy(H, gid).get(t.key)); st = holders.length ? '<span class="tag ok">With ' + esc(holders.map(t => t.name).join(', ')) + '</span>' : free ? '<span class="tag mute">In studio</span>' : '<span class="tag warn">Not in studio</span>'; if (!holders.length && free) act = '<button type="button" class="chip" data-give-shared="' + esc(gid) + '">Give…</button>'; }
+          if (b.shared) { // shared ×n: count what the team already holds, offer the rest
+            const holders = s.team.map(t => ({ t, q: (heldBy(H, gid).get(t.key) || {}).qty || 0 })).filter(x => x.q), held = holders.reduce((n, x) => n + x.q, 0), left = Math.max(0, need - held);
+            const withTxt = holders.length ? 'With ' + holders.map(x => x.t.name + (x.q > 1 ? ' ×' + x.q : '')).join(', ') : '';
+            st = !left ? '<span class="tag ok">✓ ' + esc(withTxt) + '</span>' : free ? '<span class="tag ' + (held ? 'warn' : 'mute') + '">' + esc((held ? withTxt + ' · ' + left + ' more' : 'In studio') + (it.qty > 1 ? ' · ' + free + ' of ' + it.qty + ' free' : '')) + '</span>' : '<span class="tag warn">' + esc(held ? withTxt + ' · ' + left + ' short' : 'Not in studio') + '</span>';
+            if (left && free) act = '<button type="button" class="chip" data-give-shared="' + esc(gid) + '" data-n="' + Math.min(left, free) + '">Give…</button>'; }
           else if (mine >= need) st = '<span class="tag ok">✓ With ' + esc(b.name) + '</span>';
           else if (free >= need - mine) {
             const lr = lastReturn(gid), bad = lr && (lr.condition === 'damaged' || lr.condition === 'missing') && !heldBy(H, gid).size;
@@ -391,7 +395,7 @@
     }));
     $('day').querySelectorAll('[data-give-shared]').forEach(btn => btn.addEventListener('click', () => {
       const card = btn.closest('.carrier'), s = feed.shoots.find(x => x.id === card.dataset.s), gid = btn.dataset.giveShared;
-      sheet({ title: 'Hand out ' + itemOf(gid).name, sub: s.shoot + ' · shared gear', mode: 'out', rows: [{ gid, qty: 1, max: 1, label: itemOf(gid).name, event_id: s.id, shoot_date: s.date }], people: s.team.length ? s.team : feed.people, defaultPerson: (s.team[0] || {}).key,
+      sheet({ title: 'Hand out ' + itemOf(gid).name, sub: s.shoot + ' · shared gear', mode: 'out', rows: [{ gid, qty: Number(btn.dataset.n) || 1, max: Number(btn.dataset.n) || 1, label: itemOf(gid).name, event_id: s.id, shoot_date: s.date }], people: s.team.length ? s.team : feed.people, defaultPerson: (s.team[0] || {}).key,
         onSave: o => write(o.chosen.map(r => entry(r, 'out', o.person, o)), itemOf(gid).name + ' handed to ' + personOf(o.person).name + '.') });
     }));
     $('day').querySelectorAll('[data-pass]').forEach(btn => btn.addEventListener('click', () => {

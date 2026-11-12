@@ -95,7 +95,7 @@
       const carriers = [];
       ev.assignments.forEach(a => { const p = st.shooters.find(x => x.id === a.memberId); if (p && (a.gearIds.length || a.ownKit)) carriers.push({ key: key(p), name: p.name, gear: a.gearIds.slice(), ownKit: !!a.ownKit }); });
       const team = ev.assignments.map(a => st.shooters.find(x => x.id === a.memberId)).concat(ev.assistantIds.map(id => st.assistants.find(x => x.id === id))).filter(Boolean).map(p => ({ key: key(p), name: p.name }));
-      return { id: ev.id, date: ev.date, slot: ev.slot, shoot: ev.name, venue: ev.location || '', callTime: ev.callTime || '', carriers, shared: ev.equipmentIds.slice(), team };
+      return { id: ev.id, date: ev.date, slot: ev.slot, shoot: ev.name, venue: ev.location || '', callTime: ev.callTime || '', carriers, shared: ev.equipmentIds.flatMap(g => Array(Math.max(1, Math.floor(Number((ev.sharedQty || {})[g])) || 1)).fill(g)), team };
     }).sort((a, b) => a.date.localeCompare(b.date) || String(a.slot).localeCompare(String(b.slot)));
     return { items, people: [...people.values()].sort((a, b) => a.name.localeCompare(b.name)), shoots, updated: new Date().toISOString() };
   }

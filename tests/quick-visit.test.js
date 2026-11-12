@@ -9,14 +9,15 @@ const bk = JSON.parse(fs.readFileSync(process.argv[2]));
 bk.events.forEach(e => docs.set('events/' + e.id, { collection: 'events', id: e.id, data: e }));
 bk.shooters.forEach(e => docs.set('shooters/' + e.id, { collection: 'shooters', id: e.id, data: e }));
 bk.equipment.forEach(e => docs.set('gear/' + e.id, { collection: 'gear', id: e.id, data: e }));
-const members = new Map([[OWNER, { email: OWNER, role: 'owner' }]]);
-async function handle(d) {
-  if (d.op === 'session') return { id: 'u1', email: OWNER, user_metadata: {} };
+const GEAR = 'g@x.com', members = new Map([[OWNER, { email: OWNER, role: 'owner' }], [GEAR, { email: GEAR, role: 'gear' }]]);
+const gearFeed = new Map(), crewFeed = new Map();
+async function handle(d, who = OWNER) {
+  if (d.op === 'session') return { id: who === OWNER ? 'u1' : 'u2', email: who, user_metadata: {} };
   await sleep(30);
-  const t = d.table === 'docs' ? docs : d.table === 'members' ? members : new Map();
+  const t = d.table === 'docs' ? docs : d.table === 'members' ? members : d.table === 'gear_feed' ? gearFeed : d.table === 'crew_feed' ? crewFeed : new Map();
   const match = r => d.filters.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c]) >= v : v.includes(r[c]));
   if (d.op === 'select') { let rows = [...t.values()].filter(match); if (d.range) rows = rows.slice(d.range[0], d.range[1] + 1); return { data: d.single ? rows[0] || null : rows, error: null }; }
-  if (d.op === 'upsert') { d.rows.forEach(r => { const k = d.table === 'docs' ? r.collection + '/' + r.id : (r.email || r.person_key); t.set(k, r); }); return { data: null, error: null }; }
+  if (d.op === 'upsert') { d.rows.forEach(r => { const k = d.table === 'docs' ? r.collection + '/' + r.id : (r.email || r.person_key || r.id); t.set(k, r); }); return { data: null, error: null }; }
   if (d.op === 'delete') { [...t.entries()].forEach(([k, r]) => { if (match(r)) t.delete(k); }); return { data: null, error: null }; }
   return { data: null, error: null };
 }
@@ -95,6 +96,28 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   ok(rows.length === 2 && rows[0].g === 'Default kit' && rows[1].g === kit.group, 'it shows on top under Default kit AND in its own group "' + kit.group + '" (' + rows.map(r => r.g).join(' / ') + ')');
   ok(rows.every(r => /\d+ of \d+ free/.test(r.sub)), 'both rows say how many are left: ' + rows.map(r => r.sub).join(' | '));
   if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/default-kit.png' });
+  // ── shared gear ×2 (Ravi: "I assigned LC×2 but it is showing only LC to everyone") ──
+  await p.keyboard.press('Escape'); await sleep(300);
+  const sh = await p.evaluate(x => { const A = window.__boardApi, st = A.state(), m = st.events.find(e => e.id === x.main);
+    m.equipmentIds = (m.equipmentIds || []).filter(g => g !== x.gid).concat(x.gid); m.sharedQty = Object.assign({}, m.sharedQty || {}, { [x.gid]: 2 }); A.save(); A.renderBoard();
+    return JSON.stringify(A.crewFeedFor(A.normalizeName(x.person))); }, Object.assign({}, pick, kit, { person: pick.name }));
+  ok(sh.includes(kit.name + ' ×2'), 'crew page: "Shared on this shoot" says ' + kit.name + ' ×2');
+  await p.evaluate(() => window.MUTOS_APP._push()); for (let i = 0; i < 30 && !gearFeed.get('main'); i++) await sleep(150);
+  const gs = (gearFeed.get('main') || { data: { shoots: [] } }).data.shoots.find(x => x.id === pick.main);
+  ok(gs && gs.shared.filter(g => g === kit.gid).length === 2, 'gear desk feed carries both units of the shared item');
+  const gctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  await gctx.exposeBinding('__mockCall', (src, d) => handle(d, GEAR));
+  await gctx.addInitScript(fs.readFileSync('tests/mock-supabase.js', 'utf8'));
+  await gctx.addInitScript(() => { try { sessionStorage.setItem('mutos-stay-old', '1'); } catch (e) {} });
+  const gp = await gctx.newPage(); gp.on('pageerror', e => errs.push('gear: ' + e));
+  await gp.goto('http://localhost:8795/gear.html'); await gp.waitForSelector('.tab[data-tab="day"]'); await gp.click('.tab[data-tab="day"]');
+  await gp.waitForSelector('#d-date'); await gp.fill('#d-date', gs.date); await gp.dispatchEvent('#d-date', 'change'); await sleep(500);
+  const card = await gp.evaluate(id => { const c = document.querySelector('.carrier[data-s="' + id + '"]:last-of-type') || [...document.querySelectorAll('.carrier[data-s="' + id + '"]')].pop(); return c ? c.textContent : ''; }, pick.main);
+  ok(/Shared on this shoot/.test(card) && card.includes(kit.name + ' ×2'), 'Gear desk Day: shared item shows ×2 (' + card.slice(0, 120) + ')');
+  const btn = await gp.$('.carrier[data-s="' + pick.main + '"] [data-give-shared="' + kit.gid + '"]');
+  ok(btn && await btn.getAttribute('data-n') === '2', 'Give… hands out both units at once');
+  if (process.env.SHOTS) await gp.screenshot({ path: process.env.SHOTS + '/gear-shared-x2.png' });
+  await gctx.close();
   // ── Clients: a family's function without the wedding name (same phone) is flagged and can be joined ──
   await p.keyboard.press('Escape'); await sleep(300);
   const fam = await p.evaluate(() => { const A = window.__boardApi, st = A.state(), d = A.todayStr();

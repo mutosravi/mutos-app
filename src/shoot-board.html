@@ -1110,7 +1110,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: clientRoleOn(ev, a), phone: p.phone || '' }); });
       ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: 'Assistant', phone: p.phone || '' }); });
       out.push({ id: ev.id, date: ev.date, day: formatDay(ev.date), slot: ev.slot, callTime: ev.callTime || '', report: ev.callTime ? formatTime12(ev.callTime) : '', shoot: ev.name, wedding: ev.wedding || '', venue: ev.location || '', map: ev.mapLink || '',
-        premium: ev.tier === 'Premium', role, gear, shared: ev.equipmentIds.map(gName), team, clientName: ev.contactName || '', clientPhone: ev.contactPhone || '', notes: ev.notes || '', travel: travelNotes(ev, key) });
+        premium: ev.tier === 'Premium', role, gear, shared: ev.equipmentIds.map(gid => sharedLabel(ev, gid)), team, clientName: ev.contactName || '', clientPhone: ev.contactPhone || '', notes: ev.notes || '', travel: travelNotes(ev, key) });
     });
     return out.sort((a, b) => a.date.localeCompare(b.date) || (SLOT_ORDER[a.slot] || 0) - (SLOT_ORDER[b.slot] || 0) || a.shoot.localeCompare(b.shoot));
   }
