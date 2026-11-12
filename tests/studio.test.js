@@ -656,11 +656,17 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
   await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal img');
   ok((await owner.textContent('.sb-modal')).includes('Rohit') && (await owner.textContent('.sb-modal')).includes('Dadi'), 'See answers shows the people to call and the important people with photos');
+  await owner.click('.sb-modal .ca-ph'); await owner.waitForFunction(() => [...document.querySelectorAll('body > div')].some(d => d.style.zIndex === '99999' && d.textContent.includes('Dadi')));
+  ok(true, 'the owner can tap a family photo to see it big'); await owner.click('text=tap to close');
   const evId = T.client_feed.get(wed.key).data.functions[0].id;
-  T.crew_feed.set('hamza', { person_key: 'hamza', name: 'Hamza', data: { name: 'Hamza', shoots: [{ id: evId, date: istDay(1), day: 'Tomorrow', slot: 'Evening', shoot: 'Akriti Haldi', wedding: '', venue: 'Taj', role: 'Photo', gear: [], shared: [], team: [], notes: '' }] } });
+  T.crew_feed.set('hamza', { person_key: 'hamza', name: 'Hamza', data: { name: 'Hamza', shoots: [{ id: evId, date: istDay(1), day: 'Tomorrow', slot: 'Evening', shoot: 'Akriti Haldi', wedding: '', venue: 'Taj', role: 'Photo', gear: [], shared: [], team: [], notes: 'Bring the drone\nFrom client: starts 7:30 pm · Couple entry 8 pm' }] } });
   T.members.set(CREWE, { email: CREWE, role: 'crew', person_key: 'hamza', display_name: 'Hamza' }); // the owner's board removed this test login (Hamza has no Login Gmail on the test board)
   await cr.goto(B + '/crew.html'); await cr.click('.bnav .tab[data-tab="shoots"]'); await cr.waitForSelector('.shoot [data-act="vip"]'); await cr.click('.shoot [data-act="vip"]'); await cr.waitForSelector('.vipbox img');
   ok((await cr.textContent('.vipbox')).includes('Dadi') && (await cr.textContent('.vipbox')).includes('Rohit'), 'the crew on that shoot see Dadi\'s photo and who to call');
+  ok((await cr.textContent('.studio-note')).includes('Bring the drone') && !(await cr.textContent('.studio-note')).includes('From client') && (await cr.$$eval('.fam-note li', l => l.map(x => x.textContent))).join('|') === 'starts 7:30 pm|Couple entry 8 pm', 'the studio note and the family\'s points are shown apart (family points as a list)');
+  await cr.click('.vipbox .vip-ph'); await cr.waitForSelector('#photo-view img');
+  ok((await cr.textContent('#photo-view')).includes('Dadi') && (await cr.textContent('#photo-view')).includes('Grandmother'), 'tapping a family photo opens it big, with the name and relation');
+  await cr.click('#photo-view [data-x="close"]'); ok(!(await cr.$('#photo-view')), 'the photo closes with ✕');
   ok(rpc('crew_vip', { p_event: 'not-my-shoot' }, CREWE).data.error, 'but not for shoots they are not on');
 
   // the work desk adds every deliverable of the package
