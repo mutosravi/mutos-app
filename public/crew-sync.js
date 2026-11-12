@@ -199,6 +199,47 @@
     return wb;
   }
   window.MUTOS_BACKUP_XLSX = backupWorkbook; // used by tests/backup.test.mjs
+
+  // ---------- "Logs (Excel)": cards, drives and gear, read live and written in plain words (12 Nov 2026, Ravi:
+  // "I would actually need all the logs of cards, gears and drives. Those are most important to track data.") ----------
+  async function logsWorkbook(c) {
+    const all = async (t, order, asc) => { const out = []; for (let from = 0; from < 100000; from += 1000) { const { data, error } = await c.from(t).select('*').order(order, { ascending: !!asc }).range(from, from + 999); if (error) { if (from === 0) return { error: error.message }; break; } out.push(...(data || [])); if (!data || data.length < 1000) break; } return out; };
+    const [people, cards, cmoves, cuses, ccopies, clog, drives, ditems, dmoves, dlog, glog, hist] = await Promise.all([
+      all('people', 'code', true), all('cards', 'code', true), all('card_moves', 'given_at'), all('card_uses', 'at'), all('card_copies', 'at'), all('card_log', 'at'),
+      all('drives', 'name', true), all('drive_items', 'added_at'), all('drive_moves', 'given_at'), all('drive_log', 'at'), all('gear_log', 'at'), all('client_log', 'at')]);
+    const arr = x => Array.isArray(x) ? x : [];
+    const P = new Map(arr(people).map(p => [p.id, p.name])), K = new Map(arr(cards).map(k => [k.id, k.code])), D = new Map(arr(drives).map(d => [d.id, d.name]));
+    const who = id => id ? (P.get(id) || 'someone') : 'Office';
+    const t = ts => ts ? new Date(ts).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const DATA = { empty: 'Empty', hold: 'HOLD: not copied, do not format', single: 'Single copy (backup pending)', copied: 'Copied + backup' };
+    const wb = XLSX.utils.book_new(), skipped = [];
+    const add = (name, src, map) => { if (src && src.error) { skipped.push(name + ': ' + src.error); return; } const rows = arr(src).map(map); XLSX.utils.book_append_sheet(wb, rows.length ? XLSX.utils.json_to_sheet(rows) : XLSX.utils.aoa_to_sheet([['Nothing yet']]), name); };
+    add('Cards now', cards, k => ({ Card: k.code, Type: k.kind, Size: k.size_label || '', Brand: k.brand || '', Serial: k.serial || '', 'With': who(k.holder), Footage: DATA[k.data] || k.data, Condition: k.condition, Errors: k.errors, Round: k.cycle, Notes: k.notes || '' }));
+    add('Card handovers', cmoves, m => ({ 'Given at': t(m.given_at), Card: K.get(m.card) || '?', From: who(m.from_person), To: who(m.to_person), 'Given by': m.given_by, Status: m.status, 'Answered by': m.answered_by || '', 'Answered at': t(m.answered_at), Note: m.note || '' }));
+    add('Card notes (shoots)', cuses, u => ({ At: t(u.at), Card: K.get(u.card) || '?', Round: u.cycle, Used: u.used ? 'yes' : 'not used', Shoot: u.shoot || '', Wedding: u.wedding || '', 'Photo/video': u.media || '', Style: u.style || '', Camera: u.camera || '', Note: u.note || '', 'Written by': u.by_person ? who(u.by_person) : u.by_email }));
+    add('Card copies', ccopies, x => ({ At: t(x.at), Card: K.get(x.card) || '?', Round: x.cycle, Copy: x.backup ? 'Backup' : 'First copy', Drive: x.drive_name, Folder: x.folder || '', Files: x.files, Size: x.size_label || '', By: x.by_email }));
+    add('Card history', clog, l => ({ At: t(l.at), Card: K.get(l.card) || '?', What: l.what, By: l.by_email }));
+    add('Drives now', drives, d => ({ Drive: d.name, Type: d.kind, Size: d.size_label || '', Model: d.model || '', Owner: d.owner_type === 'client' ? 'Client: ' + (d.client_name || '') : 'Studio', Status: d.status, 'With': who(d.holder), Free: d.free_label || '', Cleaned: d.cleaned_on || '', Notes: d.notes || '' }));
+    add('Drive contents', ditems, i => ({ Drive: D.get(i.drive) || '?', Data: i.title, Kind: i.what, Client: i.wedding_key || '', Size: i.size_label || '', Note: i.note || '', 'Added at': t(i.added_at), 'Added by': i.added_by || '', Removed: t(i.removed_at), 'Removed why': i.removed_why || '' }));
+    add('Drive handovers', dmoves, m => ({ 'Given at': t(m.given_at), Drive: D.get(m.drive) || '?', From: who(m.from_person), To: who(m.to_person), 'Given by': m.given_by, Status: m.status, 'Answered by': m.answered_by || '', 'Answered at': t(m.answered_at), Note: m.note || '' }));
+    add('Drive history', dlog, l => ({ At: t(l.at), Drive: D.get(l.drive) || '?', What: l.what, By: l.by_email }));
+    add('Gear log', glog, g => ({ At: t(g.at), Gear: g.gear_name, 'Out/In': g.action === 'out' ? 'Out' : 'In', Qty: g.qty, Person: g.person_name, 'Shoot date': g.shoot_date || '', Condition: g.condition, Note: g.note || '', 'Entered by': g.by_email }));
+    add('Client history', hist, h => ({ At: t(h.at), Wedding: h.wedding || '', Shoot: h.shoot || '', Card: K.get(h.card) || '', What: h.what, By: h.by_email }));
+    const about = [{ 'Made at': t(new Date().toISOString()), Note: 'Live from the app. Newest first in the log tabs. "Office" = in the office.' }].concat(skipped.map(x => ({ 'Made at': 'Not read', Note: x })));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(about), 'About');
+    wb.SheetNames.unshift(wb.SheetNames.pop());   // About first
+    return wb;
+  }
+  async function downloadLogs() {
+    if (typeof XLSX === 'undefined') { if (api) api.toast('The spreadsheet tool is still loading. Try again in a moment.'); return; }
+    if (api) api.toast('Making the logs file…');
+    try {
+      const c = await app.client(), wb = await logsWorkbook(c);
+      XLSX.writeFile(wb, 'mutos-logs-' + new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10) + '.xlsx');
+      if (api) api.toast('Logs downloaded: cards, drives and gear.');
+    } catch (e) { if (api) api.toast('Could not make the logs file: ' + (e.message || e)); }
+  }
+  window.MUTOS_LOGS_XLSX = logsWorkbook; // used by tests
   async function openBackups() {
     if (!api) return;
     const esc = api.escapeHtml;
@@ -211,9 +252,10 @@
       '<div class="sb-modal-list">' + (err ? '<p class="sb-modal-sub" style="padding:8px;color:#9a5b00">' + esc(err) + '</p>' : '') +
       (list.length ? list.map(b => '<div class="sb-manage-row" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><b>' + esc(when(b)) + '</b><br><span class="sb-manage-sub">' + esc([label(b.name), b.shoots != null ? b.shoots + ' shoots' : '', b.rows != null ? b.rows + ' studio records' : 'board only (older copy)', kb(b.bytes)].filter(Boolean).join(' · ')) + '</span>' + (b.errors ? '<br><span class="sb-manage-sub" style="color:#9a5b00">' + b.errors + ' table(s) could not be read: see the file</span>' : '') + '</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="sb-btn-sm bk-xl" data-n="' + esc(b.name) + '">Excel</button><button type="button" class="sb-btn-sm secondary bk-dl" data-n="' + esc(b.name) + '">Download</button>' + (b.photos ? '<button type="button" class="sb-btn-sm secondary bk-dl" data-n="photos/' + esc(b.name) + '">Photos</button>' : '') + '</span></div>').join('')
         : (err ? '' : '<p class="sb-modal-empty">No backups yet. The first one is made tonight at 3 am, or tap "Back up now".</p>')) +
-      '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="bk-now">Back up now</button><button type="button" id="bk-done">Done</button></div>';
+      '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="bk-logs">Logs (Excel)</button><button type="button" class="secondary" id="bk-now">Back up now</button><button type="button" id="bk-done">Done</button></div>';
     const modal = api.makeModal(html, true);
     modal.querySelector('#bk-done').addEventListener('click', () => { api.closeModal(); api.renderBoard(); });
+    modal.querySelector('#bk-logs').addEventListener('click', downloadLogs);
     modal.querySelector('#bk-now').addEventListener('click', async e => {
       e.target.disabled = true; e.target.textContent = 'Backing up…';
       const r = await callApi('/api/backups/now', 'POST').catch(() => null); const j = r ? await r.json().catch(() => ({})) : {};
@@ -242,7 +284,7 @@
   window.MUTOS_APP = {
     attach(a) { const first = !api; api = a; window.__boardApi = a; if (first) { push(); setInterval(push, 10 * 60 * 1000); } if (window.MUTOS_UPDATES && window.__mutosRole !== 'supervisor') window.MUTOS_UPDATES.attach(a); /* day-off approvals are not his */ if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.attach(a); },
     changed() { clearTimeout(timer); timer = setTimeout(push, 3000); if (window.MUTOS_UPDATES && window.__mutosRole !== 'supervisor') window.MUTOS_UPDATES.changed(); if (window.MUTOS_CLIENTS) window.MUTOS_CLIENTS.changed(); },
-    openLogins, openBackups, keysFor, groupCrew, crewGroups: () => (api ? wanted() : new Map()),
+    openLogins, openBackups, downloadLogs, keysFor, groupCrew, crewGroups: () => (api ? wanted() : new Map()),
     _push: push, _last: () => last
   };
 })();

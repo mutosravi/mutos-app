@@ -304,6 +304,15 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   await o.click('#dw-back'); await o.waitForSelector('[data-cltab="past"]');
   ok(await o.isVisible('.cl-past'), 'back returns to the Past list');
 
+  // ── Settings → Logs (Excel): cards, drives and gear in plain words ──
+  await o.waitForFunction(() => window.MUTOS_LOGS_XLSX && window.XLSX, null, { timeout: 15000 });
+  const lx = await o.evaluate(async () => { const wb = await window.MUTOS_LOGS_XLSX(await window.mutosApp.client()); const j = n => window.XLSX.utils.sheet_to_json(wb.Sheets[n] || {}); return { names: wb.SheetNames, hand: j('Card handovers'), notes: j('Card notes (shoots)'), copies: j('Card copies'), now: j('Cards now'), dc: j('Drive contents') }; });
+  ok(['About', 'Cards now', 'Card handovers', 'Card notes (shoots)', 'Card copies', 'Card history', 'Drives now', 'Drive contents', 'Drive handovers', 'Drive history', 'Gear log', 'Client history'].every(n => lx.names.includes(n)), 'the logs file has a tab for each: ' + lx.names.join(', '));
+  ok(lx.hand.some(r => r.Card === 'C01' && r.From === 'Shrey' && r.To === 'Office' && r.Status === 'accepted'), 'handovers read in names: "C01 · Shrey → Office · accepted"');
+  ok(lx.notes.some(r => r.Card === 'C02' && /Sharma Haldi/.test(r.Shoot)) && lx.copies.some(r => r.Card === 'C01' && r.Drive === 'M 5' && r.Files === 812), 'card notes and copies with shoot, drive and files');
+  ok(lx.now.some(r => r.Card === 'C01' && r.With) && lx.dc.some(r => r.Drive === 'M 5' && /from card C01/.test(r.Note)), 'where every card is now, and what is on each drive');
+  ok(await o.evaluate(() => typeof window.MUTOS_APP.downloadLogs === 'function'), 'Settings → "Logs (Excel)" is wired');
+
   // ── the gear manager (Gear desk login, on People) is given a card: banner on his Gear desk + My cards door ──
   const free = [...T.cards.values()].find(k => !k.holder && k.condition === 'ok' && k.data !== 'hold');
   ok(!rpc('card_give', { p_cards: [free.id], p_to: P.Raju, p_note: 'for the Gupta shoot' }, OWNER).error, 'owner gives ' + free.code + ' to Raju (gear manager)');
