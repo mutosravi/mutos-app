@@ -344,7 +344,15 @@
       // the family's note may have several lines: one "From client:" line on the board (020), never piled up
       const famLines = String(x.notes || '').split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
       const note = 'From client: ' + [x.time ? 'starts ' + x.time : '', x.contact || x.phone ? 'contact ' + [x.contact, x.phone].filter(Boolean).join(' ') : '', x.guests ? x.guests + ' guests' : '', famLines.join(' · ')].filter(Boolean).join(' · ');
-      if (note.length > 13) { const own = String(ev.notes || '').split('\n').filter(l => l.trim() && !l.startsWith('From client:') && !famLines.includes(l.trim())); ev.notes = own.concat(note).join('\n'); } // replaces the previous family line
+      if (note.length > 13) { // replaces the previous family line; same rule as client_tidy (021): no repeats, no old copies of the family's note
+        const words = t => [...new Set(String(t).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean))], famW = new Set(words(note)), seen = new Set();
+        const own = String(ev.notes || '').split('\n').filter(l => {
+          if (!l.trim() || l.startsWith('From client:')) return false;
+          const k = l.trim().replace(/\s+/g, ' ').toLowerCase(); if (seen.has(k)) return false; seen.add(k);
+          const w = words(l); return !(w.length >= 4 && w.every(x => famW.has(x)));
+        });
+        ev.notes = own.concat(note).join('\n');
+      }
       api.save(); if (window.MUTOS_APP) window.MUTOS_APP.changed();
       b.textContent = '✓ Applied'; b.disabled = true; api.toast(ev.name + ': venue, map and notes updated on the board.');
     }));
