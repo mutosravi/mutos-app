@@ -168,6 +168,13 @@ function rpc(fn, a, e) {
     }
     if (fn === 'drive_cancel') { const m = T.drive_moves.get(a.p_move); if (!m || m.status !== 'pending') return no('no longer waiting'); if (!(m.given_by === e || staff(e))) return no('Only the giver can take it back.'); close(m, 'cancelled'); return { data: { ok: true }, error: null }; }
     if (fn === 'drive_set_holder') { if (!isOwner(e)) return no('Only the admin can correct this.'); const d = T.drives.get(a.p_drive); pend(d.id).forEach(m => close(m, 'cancelled')); d.holder = a.p_person || null; dlog(d.id, e, 'Corrected by the owner: now with ' + pname(d.holder)); return { data: { ok: true }, error: null }; }
+    if (fn === 'drive_item_restore') { // 023
+      if (!staff(e)) return no('Only the admin or the manager can bring back removed data.');
+      const it = T.drive_items.get(a.p_item); if (!it || !it.removed_at) return no('This line is already on the drive.');
+      if (it.moved_to) return no('This was moved to another drive, so it is listed there.');
+      if (!String(a.p_why || '').trim()) return no('Write why.');
+      it.removed_at = null; it.removed_why = null; dlog(it.drive, e, 'Data brought back: ' + it.title + ' (' + a.p_why + ')'); return { data: { ok: true }, error: null };
+    }
     if (fn === 'drive_move_item') {
       const it = T.drive_items.get(a.p_item); if (!it || it.removed_at) return no('That data is no longer on the drive.');
       const dst = T.drives.get(a.p_to_drive); if (!dst || dst.id === it.drive) return no('Pick another drive.');
@@ -486,7 +493,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const PP = n => [...T.people.values()].find(p => p.name === n);
   const PARTNER = 'partner.test@gmail.com', IMRAN = 'imran.album@gmail.com';
   T.members.set(PARTNER, { email: PARTNER, role: 'manager', display_name: 'Partner' });
-  owner.on('dialog', dg => dg.accept());
+  owner.on('dialog', dg => dg.accept().catch(() => {}));
   await owner.goto(B + '/desk.html?tab=people'); await owner.waitForSelector('[data-p]');
   await owner.waitForFunction(() => /Filled 1 Gmail/.test(document.getElementById('toast').textContent));
   ok(PP('Hamza').email === CREWE, 'People: Gmail filled from the crew login (Hamza)');
@@ -636,6 +643,13 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.click('#dclean'); await owner.waitForSelector('#cl-it input'); await owner.check('#cl-it input'); await owner.fill('#cl-f', '3.9 TB'); await owner.click('#clgo');
   await owner.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
   ok(DRV('Red').cleaned_on === istDay() && DRV('Red').free_label === '3.9 TB' && [...T.drive_items.values()].find(i => i.title === 'Old project').removed_why === 'cleaned', 'the owner cleaned Red: date, free space, and what was deleted (kept in history)');
+  // removed by mistake: the admin brings the line back from the drive's "Removed" list (023)
+  await owner.reload(); await owner.waitForSelector('.chip-b[data-dv="all"]'); await owner.click('.chip-b[data-dv="all"]'); await owner.click('[data-d="' + DRV('Red').id + '"]'); await owner.waitForSelector('#dremoved details');
+  await owner.click('#dremoved summary'); const oldP = [...T.drive_items.values()].find(i => i.title === 'Old project');
+  owner.nextPrompt = 'Removed by mistake'; await owner.click('[data-back="' + oldP.id + '"]'); await owner.waitForFunction(() => /Brought back/.test(document.getElementById('toast').textContent));
+  ok(!oldP.removed_at && [...T.drive_log.values()].some(l => /Data brought back: Old project \(Removed by mistake\)/.test(l.what)), 'Removed from this drive → Bring back: the same line is back on Red, with a line in the history');
+  ok(handle(KUL, { op: 'rpc', fn: 'drive_item_restore', args: { p_item: oldP.id, p_why: 'x' } }).data.error, 'a drive keeper cannot bring lines back');
+  await owner.click('#dclose').catch(() => {});
   { const r = handle(KUL, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }); ok((r.error || DRV('Red').holder !== PP('Kuldeep').id) && handle(OWNER, { table: 'drives', op: 'update', filters: [['eq', 'id', DRV('Red').id]], rows: [{ holder: PP('Kuldeep').id }] }).error, 'nobody can hand over a drive by editing it (not even the owner)'); }
   if (process.env.SHOTS) { await owner.click('.chip-b[data-dv="all"]').catch(() => {}); await owner.fill('#dq', ''); await owner.screenshot({ path: path.join(SHOTS, 'desk-drives.png'), fullPage: true }); await cr.screenshot({ path: path.join(SHOTS, 'mywork-drives.png'), fullPage: true }); }
 

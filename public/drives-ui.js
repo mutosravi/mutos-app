@@ -85,6 +85,7 @@
           '<label class="wide">Note<input class="in" id="it-n" maxlength="300" placeholder="optional"></label></div><button type="button" class="pillbtn light" id="it-add" style="width:100%">＋ Add to this drive</button></div>' : '') +
         (opts.staff && d.status === 'in_use' ? '<button type="button" class="pillbtn light" id="dclean" style="width:100%;margin-top:8px">Cleaned this drive</button>' : '') +
         (opts.owner ? '<p style="margin-top:10px"><button type="button" class="x" id="dfix">Correct where it is</button></p>' : '') +
+        (opts.staff ? '<div id="dremoved"></div>' : '') +
         '<h4>History</h4><div id="dhist" class="sub">Loading…</div>' +
         '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="dclose">Close</button></div>' +
         '<datalist id="dl-wed">' + (opts.weddings || []).map(w => '<option value="' + esc(w.title) + '">').join('') + '</datalist>');
@@ -105,6 +106,19 @@
       });
       bg.querySelectorAll('[data-mv]').forEach(b => b.addEventListener('click', () => moveItem(items.find(it => it.id === b.dataset.mv), d, bg)));
       bg.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => removeItem(items.find(it => it.id === b.dataset.rm), d, bg)));
+      // removed lines (admin / manager): bring back one removed by mistake (023_drive_restore.sql)
+      if (opts.staff) (async () => {
+        const { data: all } = await c.from('drive_items').select('*').eq('drive', d.id);
+        const gone = (all || []).filter(it => it.removed_at).sort((a, b) => String(b.removed_at).localeCompare(String(a.removed_at))).slice(0, 30), box = g('#dremoved');
+        if (!box || !gone.length) return;
+        box.innerHTML = '<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Removed from this drive (' + gone.length + ')</summary>' + gone.map(it => '<div class="rep" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) +
+          '<br><span class="meta" style="display:inline">removed ' + esc(when(it.removed_at)) + (it.removed_why ? ' · ' + esc(it.removed_why) : '') + '</span></span>' +
+          (it.moved_to ? '<span class="meta" style="flex:0 0 auto">moved</span>' : '<button type="button" class="chip" data-back="' + it.id + '" style="flex:0 0 auto">Bring back</button>') + '</div>').join('') + '</details>';
+        box.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', async () => {
+          const why = prompt('Why bring it back?', 'Removed by mistake'); if (!why) return;
+          if (await rpc('drive_item_restore', { p_item: b.dataset.back, p_why: why }, 'Brought back.')) { bg.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id)); }
+        }));
+      })();
       const { data: log } = await c.from('drive_log').select('*').eq('drive', d.id).order('at', { ascending: false }).limit(40);
       const h = g('#dhist'); if (h) h.innerHTML = (log || []).length ? log.map(l => '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + '</div>').join('') : 'Nothing yet.';
     }
