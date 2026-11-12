@@ -289,6 +289,21 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   ok(await s.$('[data-c="' + K('C04').id + '"].grey') && !(await s.$('[data-c="' + K('C04').id + '"] [data-sel]')), 'shown grey and cannot be given out');
   await shot(o, 'cards-all.png');
 
+  // ── Clients → Past: old clients with the data copied, history and payments ──
+  await o.goto(B + '/board.html'); await o.waitForSelector('#mh-desks .desk', { timeout: 20000 });
+  await o.click('[data-desk="clients"]'); await o.click('#mh-desk [data-tile="clients"]'); await o.waitForSelector('[data-cltab="past"]');
+  await o.click('[data-cltab="past"]'); await o.waitForSelector('.cl-past');
+  const pastTxt = await o.textContent('#cl-list');
+  ok(/Sharma/.test(pastTxt) && /Verma/.test(pastTxt) && !/Gupta/.test(pastTxt), 'Clients → Past lists the old clients (Sharma yesterday, Verma 40 days ago), not the coming ones');
+  await o.fill('#cl-q', 'verma'); await sleep(100);
+  ok((await o.$$eval('.cl-past', r => r.filter(x => x.style.display !== 'none').length)) === 1, 'search finds a past client');
+  await o.fill('#cl-q', 'sharma'); await sleep(100);
+  await o.click('.cl-past:not([style*="none"]) [data-data]'); await o.waitForSelector('#dw-sum');
+  ok(/M 5/.test(await o.textContent('#dw-body')), '"Data copied" shows where Sharma\'s footage was copied (M 5)');
+  await shot(o, 'clients-past.png');
+  await o.click('#dw-back'); await o.waitForSelector('[data-cltab="past"]');
+  ok(await o.isVisible('.cl-past'), 'back returns to the Past list');
+
   // ── the gear manager (Gear desk login, on People) is given a card: banner on his Gear desk + My cards door ──
   const free = [...T.cards.values()].find(k => !k.holder && k.condition === 'ok' && k.data !== 'hold');
   ok(!rpc('card_give', { p_cards: [free.id], p_to: P.Raju, p_note: 'for the Gupta shoot' }, OWNER).error, 'owner gives ' + free.code + ' to Raju (gear manager)');
