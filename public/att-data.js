@@ -50,7 +50,7 @@
   }
   const STATUS = {
     present: ['Present', '#dcebe6', '#1f4d43'], late: ['Late', '#f2dfa7', '#5c4410'], half: ['Half day', '#f0c9b8', '#6b2c1c'], short: ['Short day', '#efe4d6', '#2a1e22'],
-    shoot: ['On shoot', '#e6d8ec', '#3d2a4a'], shoot_paid: ['On shoot (paid)', '#e6d8ec', '#3d2a4a'], leave_paid: ['Paid leave', '#d9e6f2', '#1e3a5a'], leave: ['Unpaid leave', '#d9e6f2', '#1e3a5a'],
+    shoot: ['On shoot', '#e6d8ec', '#3d2a4a'], shoot_office: ['Office + shoot', '#d3e6df', '#2e3f5c'], shoot_paid: ['On shoot (paid)', '#e6d8ec', '#3d2a4a'], leave_paid: ['Paid leave', '#d9e6f2', '#1e3a5a'], leave: ['Unpaid leave', '#d9e6f2', '#1e3a5a'],
     holiday: ['Holiday', '#f4d9d0', '#5a2f3b'], holiday_work: ['Worked on holiday', '#9e4f62', '#ffffff'], off: ['Weekly off', '#ffffff', '#6f5f63'],
     absent: ['Absent', '#fbe2dc', '#7a2d1e'], before: ['Not joined', '#ffffff', '#b9aaae'], missing: ['No check-out', '#fbe2dc', '#7a2d1e'], open: ['In office', '#dcebe6', '#1f4d43'], today: ['Today', '#ffffff', '#2a1e22']
   };

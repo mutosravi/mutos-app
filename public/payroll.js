@@ -65,8 +65,17 @@
           else row.note = 'Came in without being asked: not paid extra';
         }
       } else if (sh) {
-        if (typeA) { row.status = 'shoot_paid'; row.pay = 1; row.label = 'On shoot (paid office day)'; }
-        else { row.status = 'shoot'; row.pay = officePart(1); row.label = 'On shoot (unpaid office day)' + (row.pay ? ' · ' + fmtH(od.worked) + ' office' : ''); }
+        // came to the office too (e.g. office in the morning, evening shoot): shown as "Office + shoot", never as absent from the office
+        // (12 Nov 2026, Ravi). Pay is unchanged: Type A = full paid day, Type B = office hours paid by the hour. No late mark on a shoot day.
+        if (od) {
+          row.status = 'shoot_office'; row.inAt = fmtT(od.inMin); if (od.outMin != null) row.outAt = fmtT(od.outMin);
+          if (od.kind === 'open') { row.pay = typeA ? 1 : 0; row.label = 'In office since ' + fmtT(od.inMin) + ' · shoot today'; }
+          else if (od.kind === 'missing') { row.pay = typeA ? 1 : 0; row.label = 'Office + shoot · no check-out'; if (!typeA) row.note = 'Office hours not paid until the check-out is fixed'; }
+          else { row.pay = typeA ? 1 : officePart(1); row.hours = od.hours; row.label = 'Office ' + fmtH(od.worked) + ' + shoot'; }
+          if (!typeA) row.note = row.note || 'Shoot day: office hours paid by the hour';
+        }
+        else if (typeA) { row.status = 'shoot_paid'; row.pay = 1; row.label = 'On shoot (paid office day)'; }
+        else { row.status = 'shoot'; row.pay = 0; row.label = 'On shoot (unpaid office day)'; }
       } else if (lv) {
         const want = lv.half ? 0.5 : 1, paid = Math.min(want, leaveLeft); leaveLeft -= paid;
         row.status = paid ? 'leave_paid' : 'leave'; row.pay = paid; row.label = (lv.half ? 'Half-day ' : '') + (paid ? 'paid leave' : 'unpaid leave');
@@ -107,7 +116,7 @@
     const pd = (label, st) => { const n = count(st); if (n) lines.push([label, n]); };
     pd('Present (full days)', 'present'); pd('Late days', 'late'); pd('Half days', 'half'); pd('Short days (paid by hours)', 'short');
     pd('Paid leave', 'leave_paid'); pd('Unpaid leave', 'leave'); pd('Holidays (paid)', 'holiday'); pd('Worked on holiday (holiday + day)', 'holiday_work');
-    pd('Shoot days, paid office days', 'shoot_paid'); pd('Shoot days, unpaid office days', 'shoot'); pd('Absent', 'absent'); pd('No check-out (not paid until fixed)', 'missing');
+    pd('Shoot days, paid office days', 'shoot_paid'); pd(typeA ? 'Office + shoot days (paid office days)' : 'Office + shoot days (office hours paid)', 'shoot_office'); pd('Shoot days, unpaid office days', 'shoot'); pd('Absent', 'absent'); pd('No check-out (not paid until fixed)', 'missing');
     if (lates) lines.push(['Late marks', lates + (lateCut ? ' → ' + lateCut + ' day cut' : ' (3 = ½ day cut)')]);
     lines.push(['Paid days', round2(paidDays)]);
     lines.push(['Salary for paid days', inr(gross)]);

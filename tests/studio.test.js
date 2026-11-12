@@ -425,6 +425,15 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await acc.click('.tab[data-tab="people"]'); await acc.click('#tab-people button.chip[data-prof="' + STAFF + '"]'); await acc.waitForSelector('#att-profile .ap-sum');
   ok((await acc.textContent('#att-profile')).includes('Neha Office'), 'accountant opens an employee\'s attendance from People'); await acc.click('#ap-close');
   await st.click('.tab[data-tab="month"]'); await st.waitForSelector('#m-late .ap-sum'); ok(true, 'the employee sees the same summary on their Month tab');
+  // the gear manager is also an employee: a "My attendance" card on the Gear desk opens the team home with Check in
+  const GEARE = 'gear.manager@gmail.com';
+  T.members.set(GEARE, { email: GEARE, role: 'gear', display_name: 'Gear Manager' });
+  T.employees.set(GEARE, Object.assign({}, T.employees.get(STAFF), { email: GEARE, name: 'Gear Manager', person_key: null, active: true }));
+  const gm = await as(GEARE);
+  await gm.goto(B + '/'); await gm.waitForURL('**/gear.html'); await gm.waitForSelector('#my-att', { timeout: 15000 });
+  ok((await gm.textContent('#my-att')).includes('Not checked in yet'), 'gear manager: "My attendance" card on the Gear desk Home');
+  await gm.click('#my-att'); await gm.waitForURL('**/me.html'); await gm.waitForSelector('#att [data-punch="in"]');
+  ok(await gm.isVisible('#to-gear'), 'it opens the team home with Check in, and a Gear desk link back');
   await st.click('.tab[data-tab="pay"]'); await st.waitForSelector('#slips [data-slip]');
   await st.click('#slips [data-slip]'); await st.waitForSelector('#slip .lines');
   ok((await st.textContent('#slip')).includes('Diwali bonus') && (await st.textContent('#slip')).includes('Advance recovery'), 'employee sees the payslip with every line');

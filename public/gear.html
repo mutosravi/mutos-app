@@ -75,6 +75,7 @@
   <button type="button" role="tab" class="tab" data-tab="log" aria-selected="false"><span data-ic="log"></span>Log</button>
 </nav>
   <section id="tab-home">
+    <div id="gear-myday"></div>
     <div class="hello" style="display:block"><h1>Gear today</h1><p class="sub" id="status">Loading…</p></div>
     <div id="sum"></div>
     <div style="margin-top:16px"><button type="button" class="pillbtn rose" id="free-out" style="width:100%"><span data-ic="add"></span>Hand out any gear</button>
@@ -134,6 +135,23 @@
   c = await app.client();
   $('who').textContent = me.email;
   if (me.role === 'owner' || me.role === 'manager') $('to-board').hidden = false;
+
+  // his own attendance (12 Nov 2026, Ravi: "Attendance option for gear manager"): a card that opens the team home to check in / out
+  async function loadMyDay() {
+    if (me.role !== 'gear') return;
+    try {
+      const e = await c.from('employees').select('email, active').eq('email', me.email).maybeSingle();
+      const box = $('gear-myday'); if (e.error || !e.data || !e.data.active) { box.innerHTML = ''; return; }
+      const day = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+      const p = await c.from('att_punch').select('kind, at').eq('email', me.email).eq('day', day);
+      const list = (p.data || []).sort((x, y) => String(x.at).localeCompare(String(y.at))), last = list[list.length - 1], inP = list.find(x => x.kind === 'in');
+      const tm = x => new Date(x.at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+      const st = !last ? ['Not checked in yet today', 'Check in'] : last.kind === 'out' ? ['Checked in ' + tm(inP || last) + ' · out ' + tm(last), 'Open'] : last.kind === 'lunch_out' ? ['On lunch break since ' + tm(last), 'Back'] : ['Checked in at ' + tm(inP || last), 'Check out'];
+      box.innerHTML = '<a id="my-att" href="/me.html" style="display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--rose);margin:14px 0 4px;background:var(--surface);border-radius:20px;padding:14px 16px;box-shadow:var(--shadow)">' + window.MUTOS_ICON('clock', 26) +
+        '<span style="flex:1;color:var(--ink)"><b style="display:block">My attendance</b><small class="sub">' + st[0] + '</small></span><span class="pillbtn" style="min-height:38px;padding:0 14px;display:inline-flex;align-items:center">' + st[1] + '</span></a>';
+    } catch (x) {}
+  }
+  loadMyDay(); setInterval(loadMyDay, 2 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadMyDay(); });
 
   // ---------- data ----------
   let feed = { items: [], people: [], shoots: [] }, logs = [], date = today();

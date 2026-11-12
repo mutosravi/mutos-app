@@ -18,7 +18,7 @@
     return [
       ['Present', n(['present', 'open']), 'ok'], ['Late', calc.lates, calc.lates >= 3 ? 'bad' : calc.lates ? 'wait' : 'ok'], ['Half days', n(['half']), n(['half']) ? 'wait' : 'ok'],
       ['Short days', n(['short']), 'mute'], ['Leave', leaveUsed, 'mute'], ['Paid leave left', pl ? Math.max(0, pl - paidUsed) + ' of ' + pl : 'none', 'mute'],
-      ['Shoot days', n(['shoot', 'shoot_paid']), 'mute'], ['Absent', n(['absent']), n(['absent']) ? 'bad' : 'ok'], ['No check-out', n(['missing']), n(['missing']) ? 'bad' : 'ok']
+      ['Office + shoot', n(['shoot_office']), 'ok'], ['Shoot days', n(['shoot', 'shoot_paid', 'shoot_office']), 'mute'], ['Absent', n(['absent']), n(['absent']) ? 'bad' : 'ok'], ['No check-out', n(['missing']), n(['missing']) ? 'bad' : 'ok']
     ].filter(x => x[0] === 'Present' || x[0] === 'Late' || x[0] === 'Absent' || x[0] === 'Paid leave left' || (typeof x[1] === 'number' ? x[1] > 0 : true));
   }
   const TONE = { ok: ['#dcebe6', '#1f4d43'], wait: ['#f2dfa7', '#5c4410'], bad: ['#fbe2dc', '#7a2d1e'], mute: ['#efe4d6', '#2a1e22'] };

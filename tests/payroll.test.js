@@ -49,7 +49,7 @@ ok(day(r, d1).status === 'holiday_work' && day(r, d1).pay === 2, 'asked to come 
 ok(day(r, d2).status === 'holiday' && day(r, d2).pay === 1 && /without being asked/.test(day(r, d2).note), 'came in on a holiday without being asked → holiday pay only, flagged');
 ok(day(r, sundays[1]).status === 'off', 'holiday on the weekly off → just the off day');
 ok(day(r, d3).status === 'present', 'holiday for other people only → normal day');
-ok(day(r, d4).status === 'shoot' && near(day(r, d4).pay, (3 * 60 + 45 - 45) / 480), 'Type B: office in the morning + shoot → office hours paid by the hour');
+ok(day(r, d4).status === 'shoot_office' && near(day(r, d4).pay, (3 * 60 + 45 - 45) / 480) && /Office .* \+ shoot/.test(day(r, d4).label) && day(r, d4).inAt, 'Type B: office in the morning + shoot → shown "Office + shoot" with the times, office hours paid by the hour');
 ok(day(r, d5).status === 'shoot' && day(r, d5).pay === 0, 'Type B: shoot day = unpaid office day');
 ok(day(r, d6).status === 'leave_paid' && day(r, d6).pay === 1 && day(r, d7).status === 'leave' && day(r, d7).pay === 0, 'paid leave used up (1 a month), then unpaid leave');
 ok(day(r, d8).status === 'absent', 'declined leave → absent');
@@ -62,6 +62,13 @@ r = P.monthCalc({
   punches: [...punches(d2, ['in', '11:50'], ['out', '20:35']), ...punches(d4, ['in', '10:40'], ['out', '19:30'])]
 });
 ok(day(r, d1).status === 'shoot_paid' && day(r, d1).pay === 1, 'Type A: shoot day = paid office day');
+{ // Type A who also came to the office on a shoot day: "Office + shoot", still a full paid day, no late mark even at 11:30
+  const ra = P.monthCalc({ emp: Object.assign({}, emp, { shoot_type: 'A' }), month, shoots: [{ date: d1, slot: 'Evening' }], punches: punches(d1, ['in', '11:30'], ['out', '15:00']) });
+  ok(day(ra, d1).status === 'shoot_office' && day(ra, d1).pay === 1 && ra.lates === 0 && day(ra, d1).inAt === '11:30 am', 'Type A: office in the morning + shoot → "Office + shoot", full paid day, no late mark');
+  const ro = P.monthCalc({ emp: Object.assign({}, emp, { shoot_type: 'B' }), month, today: d1, upto: d1, shoots: [{ date: d1, slot: 'Evening' }], punches: punches(d1, ['in', '10:00']) });
+  ok(day(ro, d1).status === 'shoot_office' && /In office since 10:00 am/.test(day(ro, d1).label), 'shoot day, checked in and not out yet → "In office since …", not "On shoot"');
+  ok(ra.lines.some(l => /Office \+ shoot days/.test(l[0])), 'the payslip lists the office + shoot days');
+}
 ok(day(r, d2).status === 'present' && /Late start allowed/.test(day(r, d2).note), 'Type A: after an evening shoot, starting at 11:50 is not late');
 ok(day(r, d4).status === 'late', 'Type A: after a morning shoot, normal start time');
 const rb = P.monthCalc({ emp: Object.assign({}, emp, { shoot_type: 'B' }), month, shoots: [{ date: d1, slot: 'Evening' }], punches: punches(d2, ['in', '11:50'], ['out', '20:35']) });
