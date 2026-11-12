@@ -156,12 +156,12 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
   }
   // the shoots a note can be for: EVERY shoot on the board, past, today and future, with the wedding / client name (12 Nov 2026, Ravi).
   // The studio reads the board; the team gets the same list from card_shoots() (022; no phone numbers). "Mine" = the shoots on my page.
-  let mine = new Set();
+  let mine = new Set(), shootsLimited = false;   // true until 022_card_history.sql is run: only my own coming shoots
   async function loadShoots() {
     let ev = [];
     try {
       if (desk) ev = await W.loadDocs(c, 'events');
-      else { const r = await c.rpc('card_shoots'); if (!r.error && Array.isArray(r.data)) ev = r.data; }
+      else { const r = await c.rpc('card_shoots'); if (!r.error && Array.isArray(r.data)) ev = r.data; else shootsLimited = true; }
     } catch (e) { ev = []; }
     if (!ev.length && !desk && me.personKey) { // before 022 is run: my own shoots only
       try { const f = await c.from('crew_feed').select('data').eq('person_key', me.personKey).maybeSingle(); ev = ((f.data && f.data.data && f.data.data.shoots) || []).map(x => ({ id: x.id, name: x.shoot, wedding: x.wedding || '', date: x.date, slot: x.slot, location: x.venue })); } catch (e) { ev = []; }
@@ -182,6 +182,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     let f = anyMine ? 'mine' : 'near', qq = '', picked = shoots.find(x => x.id === startId) || null;
     host.innerHTML = '<input class="in" type="search" id="pk-q" placeholder="Search client, function, venue or date (e.g. Sharma, haldi, 14 nov)" autocomplete="off">' +
       '<div class="chips" id="pk-f">' + (anyMine ? '<button type="button" class="chip-b" data-f="mine">My shoots</button>' : '') + '<button type="button" class="chip-b" data-f="near">Yesterday – tomorrow</button><button type="button" class="chip-b" data-f="past">Past</button><button type="button" class="chip-b" data-f="next">Coming up</button><button type="button" class="chip-b" data-f="all">All</button></div>' +
+      (shootsLimited ? '<div class="ans wait" style="margin:6px 0">Only your own coming shoots are shown here. Past shoots and other clients appear once the admin finishes the Cards update (022). Until then, use "Not on the list? Type the shoot".</div>' : '') +
       '<div id="pk-sel"></div><div class="pk-list" id="pk-list"></div>';
     const $$ = x => host.querySelector(x);
     const match = sh => { if (!qq) return true; const hay = [shootTitle(sh), sh.name, sh.client, sh.place, sh.slot, sh.date, dayWord(sh.date), W.dayShort(sh.date)].join(' ').toLowerCase(); return qq.split(/\s+/).every(w => hay.includes(w)); };
