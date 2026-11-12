@@ -111,7 +111,7 @@
 
     function give(d, parent) {
       const bg = W.sheet('<h3>Give ' + esc(d.name) + '</h3><p class="sub">They get a notice and must tap <b>I have it</b>. Until then it stays ' + esc(holderText(d).toLowerCase()) + '.</p><div class="form-grid">' +
-        '<label class="wide">To<select class="in" id="gto"><option value="">Pick a person</option>' + (d.holder ? '<option value="office">Back to the office (a drive keeper accepts)</option>' : '') + dir.filter(p => p.id !== d.holder).map(p => '<option value="' + p.id + '">' + esc(p.name) + (p.keeper ? ' · drive keeper' : '') + '</option>').join('') + '</select></label>' +
+        '<label class="wide">To<select class="in" id="gto"><option value="">Pick a person</option>' + (d.holder ? '<option value="office">Back to the office (a drive keeper accepts)</option>' : '') + dir.filter(p => p.id !== d.holder).map(p => '<option value="' + p.id + '">' + esc(p.name) + (p.keeper ? ' · drive keeper' : '') + '</option>').join('') + '</select><span class="hint">Someone missing? Only people on Home → People (with their Gmail) can receive drives, the admin and manager too.</span></label>' +
         '<label class="wide">Note (optional)<input class="in" id="gnote" maxlength="300" placeholder="e.g. for Jyoti & Amit reel"></label></div>' +
         '<div class="pillrow"><button type="button" class="pillbtn light" id="gcx">Cancel</button><button type="button" class="pillbtn" id="ggo">Give</button></div>');
       bg.querySelector('#gcx').addEventListener('click', () => bg.remove());
