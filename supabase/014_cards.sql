@@ -259,7 +259,7 @@ create or replace function public.card_copy(p_card uuid, p_drive uuid, p_folder 
   language plpgsql security definer set search_path = public as $$
 declare k public.cards; d public.drives; first_drive uuid; is_bk boolean; it jsonb; ids uuid[] := '{}'; nid uuid; label text;
 begin
-  if not public.is_staff() then return jsonb_build_object('error', 'Only the owner or the manager can mark a card copied.'); end if;
+  if not public.is_staff() then return jsonb_build_object('error', 'Only the admin or the manager can mark a card copied.'); end if;
   select * into k from public.cards where id = p_card; if not found then return jsonb_build_object('error', 'Unknown card.'); end if;
   if k.data not in ('hold', 'single') then return jsonb_build_object('error', k.code || ' has nothing waiting to be copied.'); end if;
   select * into d from public.drives where id = p_drive;
@@ -295,7 +295,7 @@ create or replace function public.card_mark_empty(p_card uuid, p_why text) retur
   language plpgsql security definer set search_path = public as $$
 declare k public.cards;
 begin
-  if not public.is_staff() then return jsonb_build_object('error', 'Only the owner or the manager can clear a hold.'); end if;
+  if not public.is_staff() then return jsonb_build_object('error', 'Only the admin or the manager can clear a hold.'); end if;
   select * into k from public.cards where id = p_card; if not found or k.data <> 'hold' then return jsonb_build_object('error', 'This card is not on hold.'); end if;
   if coalesce(trim(p_why), '') = '' then return jsonb_build_object('error', 'Write why (e.g. "checked: card is empty").'); end if;
   perform set_config('mutos.quiet', '1', true);
@@ -314,7 +314,7 @@ begin
   if p_kind in ('error', 'damaged', 'lost') then
     if not ((k.holder is not null and k.holder = me) or public.is_card_desk()) then return jsonb_build_object('error', 'Only whoever has ' || k.code || ' can report it.'); end if;
   elsif p_kind in ('found', 'ok', 'retired') then
-    if not public.is_staff() then return jsonb_build_object('error', 'Only the owner or the manager can change this.'); end if;
+    if not public.is_staff() then return jsonb_build_object('error', 'Only the admin or the manager can change this.'); end if;
   else return jsonb_build_object('error', 'Unknown problem.'); end if;
   perform set_config('mutos.quiet', '1', true);
   if p_kind = 'error' then
@@ -334,13 +334,13 @@ end $$;
 create or replace function public.card_set_holder(p_card uuid, p_person uuid, p_why text) returns jsonb
   language plpgsql security definer set search_path = public as $$
 begin
-  if not public.is_owner() then return jsonb_build_object('error', 'Only the owner can correct this.'); end if;
+  if not public.is_owner() then return jsonb_build_object('error', 'Only the admin can correct this.'); end if;
   if not exists (select 1 from public.cards where id = p_card) then return jsonb_build_object('error', 'Unknown card.'); end if;
   update public.card_moves set status = 'cancelled', answered_by = public.my_email(), answered_at = now() where card = p_card and status = 'pending';
   perform set_config('mutos.quiet', '1', true);
   update public.cards set holder = p_person where id = p_card;
   perform set_config('mutos.quiet', '', true);
-  perform public.card_note(p_card, 'Corrected by the owner: now with ' || public.person_name(p_person) || coalesce(' (' || nullif(trim(p_why), '') || ')', ''));
+  perform public.card_note(p_card, 'Corrected by the admin: now with ' || public.person_name(p_person) || coalesce(' (' || nullif(trim(p_why), '') || ')', ''));
   return jsonb_build_object('ok', true);
 end $$;
 

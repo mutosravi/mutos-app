@@ -198,13 +198,13 @@ create or replace function public.drive_set_holder(p_drive uuid, p_person uuid, 
   language plpgsql security definer set search_path = public as $$
 declare d public.drives;
 begin
-  if not public.is_owner() then return jsonb_build_object('error', 'Only the owner can correct this.'); end if;
+  if not public.is_owner() then return jsonb_build_object('error', 'Only the admin can correct this.'); end if;
   select * into d from public.drives where id = p_drive; if not found then return jsonb_build_object('error', 'Unknown drive.'); end if;
   update public.drive_moves set status = 'cancelled', answered_by = public.my_email(), answered_at = now() where drive = p_drive and status = 'pending';
   perform set_config('mutos.quiet', '1', true);
   update public.drives set holder = p_person where id = p_drive;
   perform set_config('mutos.quiet', '', true);
-  perform public.drive_note(p_drive, 'Corrected by the owner: now with ' || public.person_name(p_person) || coalesce(' (' || nullif(trim(p_why), '') || ')', ''));
+  perform public.drive_note(p_drive, 'Corrected by the admin: now with ' || public.person_name(p_person) || coalesce(' (' || nullif(trim(p_why), '') || ')', ''));
   return jsonb_build_object('ok', true);
 end $$;
 

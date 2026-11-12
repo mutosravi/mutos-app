@@ -47,7 +47,7 @@ begin
                where coalesce(a ->> 'memberId', '') <> '' or (jsonb_typeof(a -> 'gearIds') = 'array' and jsonb_array_length(a -> 'gearIds') > 0))
        or (jsonb_typeof(new.data -> 'equipmentIds') = 'array' and jsonb_array_length(new.data -> 'equipmentIds') > 0)
        or (jsonb_typeof(new.data -> 'assistantIds') = 'array' and jsonb_array_length(new.data -> 'assistantIds') > 0) then
-      raise exception 'A supervisor adds shoots without crew or gear: the owner or manager assigns them.';
+      raise exception 'A supervisor adds shoots without crew or gear: the admin or manager assigns them.';
     end if;
   else
     if (old.data - public.event_edit_fields()) is distinct from (new.data - public.event_edit_fields()) then

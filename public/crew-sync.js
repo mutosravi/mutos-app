@@ -128,7 +128,7 @@
       (removable ? '<button type="button" class="sb-btn-sm secondary lg-rm" data-e="' + esc(r.email) + '">Remove</button>' : '') + '</div>').join('') : '<p class="sb-modal-empty">None yet.</p>');
     const html = api.modalHead('Team logins', 'Who can sign in to the team app with Google. Crew logins come from the "Login Gmail" on each shooter or assistant (Manage shooters → edit); managers can edit the board but not logins or seasons.') +
       '<div class="sb-modal-list">' +
-      sect('Owner', rows.filter(r => r.role === 'owner'), false) +
+      sect('Admin', rows.filter(r => r.role === 'owner'), false) +
       sect('Managers · full board', rows.filter(r => r.role === 'manager'), true) +
       '<div class="sb-inline-form" style="padding:0 8px"><input class="sb-field" id="lg-name" placeholder="Manager name" style="flex:1 1 120px"><input class="sb-field" id="lg-email" type="email" placeholder="their Gmail" style="flex:1 1 180px"><button type="button" class="sb-zone-add" id="lg-add">Add manager</button></div>' +
       sect('Supervisors · add shoots, change itinerary & client contact, no crew/gear/money/deleting', rows.filter(r => r.role === 'supervisor'), true) +
@@ -146,7 +146,7 @@
       const email = modal.querySelector('#lg-email').value.trim().toLowerCase(), name = modal.querySelector('#lg-name').value.trim();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { api.toast('Type their Gmail address.'); return; }
       const ex = rows.find(r => r.email === email);
-      if (ex && ex.role === 'owner') { api.toast('That is the owner login.'); return; }
+      if (ex && ex.role === 'owner') { api.toast('That is the admin login.'); return; }
       const { error: e } = await c.from('members').upsert({ email, role: 'manager', display_name: name || (ex && ex.display_name) || email, person_key: null });
       if (e) { api.toast('Could not add: ' + e.message); return; }
       api.toast((name || email) + ' can now sign in and edit the board.'); openLogins();
@@ -155,7 +155,7 @@
       const email = modal.querySelector('#lg-gemail').value.trim().toLowerCase(), name = modal.querySelector('#lg-gname').value.trim();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { api.toast('Type their Gmail address.'); return; }
       const ex = rows.find(r => r.email === email);
-      if (ex && ex.role === 'owner') { api.toast('That is the owner login.'); return; }
+      if (ex && ex.role === 'owner') { api.toast('That is the admin login.'); return; }
       const { error: e } = await c.from('members').upsert({ email, role: 'gear', display_name: name || (ex && ex.display_name) || email, person_key: null });
       if (e) { api.toast('Could not add: ' + (/check constraint/.test(e.message) ? 'run supabase/003_gear_desk.sql in Supabase first.' : e.message)); return; }
       api.toast((name || email) + ' can now sign in to the Gear desk.'); openLogins();
@@ -164,7 +164,7 @@
       const email = modal.querySelector('#lg-semail').value.trim().toLowerCase(), name = modal.querySelector('#lg-sname').value.trim();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { api.toast('Type their Gmail address.'); return; }
       const ex = rows.find(r => r.email === email);
-      if (ex && ex.role === 'owner') { api.toast('That is the owner login.'); return; }
+      if (ex && ex.role === 'owner') { api.toast('That is the admin login.'); return; }
       const { error: e } = await c.from('members').upsert({ email, role: 'supervisor', display_name: name || (ex && ex.display_name) || email, person_key: null });
       if (e) { api.toast('Could not add: ' + (/check constraint/.test(e.message) ? 'run supabase/012_supervisor.sql in Supabase first.' : e.message)); return; }
       api.toast((name || email) + ' can now sign in as supervisor.'); openLogins();

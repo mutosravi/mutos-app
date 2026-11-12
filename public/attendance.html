@@ -85,7 +85,7 @@
   c = await app.client();
   const owner = me.role === 'owner';
   if (owner) $('to-home').hidden = false;
-  $('who').textContent = me.email + ' · ' + (owner ? 'owner' : 'accountant (prepares salaries; Ravi approves and locks)');
+  $('who').textContent = me.email + ' · ' + (owner ? 'admin' : 'accountant (prepares salaries; Ravi approves and locks)');
 
   let emps = [], people = [], feeds = [], shootsBy = new Map(), today = A.todayIST(), cur = null, payMonth = null, payData = null;
   async function loadBase() {

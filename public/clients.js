@@ -91,7 +91,7 @@
     const html = '<div class="sb-modal-list">' + (ws.length ? ws.map(w => {
       const s = stateOf(w);
       return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span></div>' +
-        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
+        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
         (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Open &amp; edit</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
           : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
         (s.l && !(s.l.emails || []).length ? '<div class="sb-manage-sub" style="color:#7a2d1e;margin-top:4px">No Gmail yet: the family cannot sign in. Tap Gmails.</div>' : s.l ? '<div class="sb-manage-sub" style="margin-top:4px">Signs in with: ' + esc(s.l.emails.join(', ')) + '</div>' : '') + '</div>';
@@ -108,6 +108,7 @@
     modal.querySelectorAll('[data-see]').forEach(b => b.addEventListener('click', () => answers(byKey(b.dataset.see))));
     modal.querySelectorAll('[data-book]').forEach(b => b.addEventListener('click', () => booking(byKey(b.dataset.book))));
     modal.querySelectorAll('[data-data]').forEach(b => b.addEventListener('click', () => dataWin(byKey(b.dataset.data), open)));
+    modal.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => histWin(byKey(b.dataset.hist), open)));
     modal.querySelector('#cl-find').addEventListener('click', () => findData(open));
     const pk = modal.querySelector('#cl-packages'); if (pk) pk.addEventListener('click', () => packagesWin());
     if (sup()) modal.querySelectorAll('[data-book], #cl-packages').forEach(x => x.remove());
@@ -142,7 +143,7 @@
       '<div class="sb-manage-sub" style="margin-top:14px"><b>Payments received</b></div>' + (pays.length ? pays.map(p2 => '<div class="sb-manage-sub" style="display:flex;justify-content:space-between;border-top:1px dashed #e8dccf;padding:5px 0"><span>' + esc(dayName(p2.paid_on)) + ' · ' + esc(p2.mode) + (p2.note ? ' · ' + esc(p2.note) : '') + '</span><b>' + inr(p2.amount) + '</b></div>').join('') : '<div class="sb-manage-sub">None yet.</div>') +
       (old ? '<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-top:6px"><input class="sb-field" id="py-amt" type="number" min="1" placeholder="Amount ₹"><input class="sb-field" id="py-date" type="date" value="' + todayIST() + '"><select class="sb-field" id="py-mode">' + ['UPI', 'Bank', 'Cash', 'Cheque', 'Other'].map(o => '<option>' + o + '</option>').join('') + '</select><button type="button" class="sb-btn-sm" id="py-add">Add</button></div><input class="sb-field" id="py-note" placeholder="Note (optional)" style="margin-top:4px">' : '<div class="sb-manage-sub">Save first, then add payments.</div>') +
       '</div>';
-    const modal = api.makeModal(api.modalHead('Package & payments · ' + w.title, 'Only the owner and partner see money. The family sees their package, what is paid and the next due date on their page.') + html +
+    const modal = api.makeModal(api.modalHead('Package & payments · ' + w.title, 'Only the admin and the manager see money. The family sees their package, what is paid and the next due date on their page.') + html +
       '<div class="sb-modal-foot"><button type="button" class="secondary" id="bk-back">← Clients</button>' + (m && m.pending > 0 ? '<a class="sb-btn-sm wa" id="bk-wa" href="#" style="align-self:center">Payment reminder</a>' : '') + '<button type="button" id="bk-save">Save</button></div>', true);
     const q = sel => modal.querySelector(sel);
     const readRows = () => {
@@ -253,9 +254,40 @@
     q.addEventListener('input', draw); draw(); setTimeout(() => q.focus(), 50);
     modal.querySelector('#fd-back').addEventListener('click', () => back ? back() : api.closeModal());
   }
+  // ---------- the client's history (12 Nov 2026, Ravi): admin and manager only ----------
+  // every card line while a card held this wedding's footage (used, given, received by whom, copied, backup, moved to / from
+  // another shoot: client_log, 022), the family's form going onto the board (client_apply_log) and payments, newest first
+  async function histWin(w, back) {
+    if (!w || sup()) return;
+    const modal = api.makeModal(api.modalHead('History · ' + w.title, 'Cards, the family\'s form and payments. Only the admin and the manager see this.') + '<div class="sb-modal-list" id="hw-body"><p class="sb-modal-empty">Loading…</p></div><div class="sb-modal-foot"><button type="button" class="secondary" id="hw-back">← Back</button><button type="button" class="secondary" id="hw-data">Data</button></div>', true);
+    modal.querySelector('#hw-back').addEventListener('click', () => back ? back() : api.closeModal());
+    modal.querySelector('#hw-data').addEventListener('click', () => dataWin(w, () => histWin(w, back)));
+    const c = await app.client(), q = async p => { try { const r = await p; return r && !r.error ? r.data || [] : []; } catch (e) { return []; } };
+    const evIds = w.events.map(e => e.id);
+    const [cl, ap, pays] = await Promise.all([
+      q(c.from('client_log').select('*').in('event_id', evIds).order('at', { ascending: false }).limit(500)),
+      q(c.from('client_apply_log').select('*').eq('wedding_key', w.key).order('at', { ascending: false }).limit(100)),
+      q(c.from('booking_payments').select('*').eq('wedding_key', w.key))
+    ]);
+    const fn = id => { const e = w.events.find(x => x.id === id); return e ? (window.MutosWork ? window.MutosWork.fnName(e, w) : e.name) : ''; };
+    const rows = []
+      .concat(cl.map(l => ({ at: l.at, tag: fn(l.event_id), kind: /moved/i.test(l.what) ? 'Moved' : /received|accepted/i.test(l.what) ? 'Received' : /copied/i.test(l.what) ? 'Copied' : /given/i.test(l.what) ? 'Given' : /Used:/.test(l.what) ? 'Card used' : 'Card', what: l.what, by: l.by_email })))
+      .concat(ap.map(l => ({ at: l.at, tag: fn(l.event_id), kind: 'Family form', what: 'Put on the board: ' + [l.after && l.after.location ? 'venue ' + l.after.location : '', l.before && l.before.location && l.after && l.before.location !== l.after.location ? '(was ' + l.before.location + ')' : '', l.after && l.after.notes && /From client:/.test(l.after.notes) ? 'notes updated' : ''].filter(Boolean).join(' '), by: l.by_email || 'the family' })))
+      .concat(pays.map(p => ({ at: p.at || p.paid_on, tag: '', kind: 'Payment', what: inr(p.amount) + ' received (' + p.mode + ')' + (p.note ? ' · ' + p.note : '') + ' · paid ' + dayName(p.paid_on), by: p.by_email })))
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    const day = ts => new Date(ts).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    const tm = ts => new Date(ts).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+    let last = '', h = '';
+    rows.forEach(r => { const d = day(r.at); if (d !== last) { h += '<div class="sb-manage-sub" style="padding:10px 8px 2px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:11px">' + esc(d) + '</div>'; last = d; }
+      h += '<div class="sb-manage-row hw-row" style="display:block;padding:8px"><span class="pill mute" style="font-size:11px;margin-right:6px">' + esc(r.kind) + '</span>' + (r.tag ? '<b>' + esc(r.tag) + '</b> · ' : '') + esc(r.what) + '<div class="sb-manage-sub">' + esc(tm(r.at) + (r.by ? ' · ' + r.by : '')) + '</div></div>'; });
+    const body = modal.querySelector('#hw-body'); if (!body) return;
+    body.innerHTML = rows.length ? h : '<p class="sb-modal-empty">Nothing yet. Card notes, handovers and copies for this wedding show here.</p>';
+  }
+
   async function dataWin(w, back) {
     if (!w) return;
-    const modal = api.makeModal(api.modalHead('Data · ' + w.title, 'Loading…') + '<div class="sb-modal-list" id="dw-body"><p class="sb-modal-empty">Loading…</p></div><div class="sb-modal-foot"><button type="button" class="secondary" id="dw-back">← Back</button><a class="sb-btn-sm secondary" href="/desk.html?tab=drives" style="align-self:center">Open Drives</a></div>', true);
+    const modal = api.makeModal(api.modalHead('Data · ' + w.title, 'Loading…') + '<div class="sb-modal-list" id="dw-body"><p class="sb-modal-empty">Loading…</p></div><div class="sb-modal-foot"><button type="button" class="secondary" id="dw-back">← Back</button>' + (sup() ? '' : '<button type="button" class="secondary" id="dw-hist">History</button>') + '<a class="sb-btn-sm secondary" href="/desk.html?tab=drives" style="align-self:center">Open Drives</a></div>', true);
+    { const hb = modal.querySelector('#dw-hist'); if (hb) hb.addEventListener('click', () => histWin(w, () => dataWin(w, back))); }
     modal.querySelector('#dw-back').addEventListener('click', () => back ? back() : api.closeModal());
     const c = await app.client(), q = async p => { try { const r = await p; return r && !r.error ? r.data || [] : []; } catch (e) { return []; } };
     const evIds = w.events.map(e => e.id), tl = w.title.toLowerCase();

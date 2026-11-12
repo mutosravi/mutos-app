@@ -69,10 +69,10 @@ function before(t, r, old, e) {
     if (r.kind === 'advance') { const open = [...T.att_requests.values()].filter(x => x.email === e && x.kind === 'advance' && x.status !== 'declined').reduce((s, x) => s + x.amount - x.recovered, 0); if (open + r.amount > emp.monthly_salary) return 'Advances can be up to one month\'s salary.'; }
   }
   if (t === 'att_requests' && old) {
-    if (!isOwner(e)) return 'Only the owner can decide requests.';
+    if (!isOwner(e)) return 'Only the admin can decide requests.';
     if (r.kind === 'fix' && r.status === 'approved' && old.status !== 'approved') T.att_punch.set('p' + seq, { id: 'p' + (seq++), email: r.email, day: r.day, kind: r.fix_kind, at: new Date(r.day + 'T' + r.fix_time + ':00+05:30').toISOString(), by_fix: true });
   }
-  if (t === 'payroll_runs') { if (old && old.status === 'locked') return 'This month is locked.'; if (r.status === 'locked' && !isOwner(e)) return 'Only the owner can lock a month.'; if (r.status === 'locked') r.locked_at = new Date().toISOString(); }
+  if (t === 'payroll_runs') { if (old && old.status === 'locked') return 'This month is locked.'; if (r.status === 'locked' && !isOwner(e)) return 'Only the admin can lock a month.'; if (r.status === 'locked') r.locked_at = new Date().toISOString(); }
   if (t === 'att_settings' && old && old.code_on !== r.code_on) T.att_log.set(newId(), { id: newId(), at: new Date().toISOString(), by_email: e, what: 'Office code check turned ' + (r.code_on ? 'ON' : 'OFF') });
   if (t === 'holidays') { r.id = r.id || newId(); r.ask_in = r.ask_in || []; }
   if (t === 'people') {
@@ -167,7 +167,7 @@ function rpc(fn, a, e) {
       dlog(d.id, e, pname(m.to_person) + (a.p_accept ? ' accepted ' : ' did not accept ') + d.name + ' from ' + pname(m.from_person)); return { data: { ok: true }, error: null };
     }
     if (fn === 'drive_cancel') { const m = T.drive_moves.get(a.p_move); if (!m || m.status !== 'pending') return no('no longer waiting'); if (!(m.given_by === e || staff(e))) return no('Only the giver can take it back.'); close(m, 'cancelled'); return { data: { ok: true }, error: null }; }
-    if (fn === 'drive_set_holder') { if (!isOwner(e)) return no('Only the owner can correct this.'); const d = T.drives.get(a.p_drive); pend(d.id).forEach(m => close(m, 'cancelled')); d.holder = a.p_person || null; dlog(d.id, e, 'Corrected by the owner: now with ' + pname(d.holder)); return { data: { ok: true }, error: null }; }
+    if (fn === 'drive_set_holder') { if (!isOwner(e)) return no('Only the admin can correct this.'); const d = T.drives.get(a.p_drive); pend(d.id).forEach(m => close(m, 'cancelled')); d.holder = a.p_person || null; dlog(d.id, e, 'Corrected by the owner: now with ' + pname(d.holder)); return { data: { ok: true }, error: null }; }
     if (fn === 'drive_move_item') {
       const it = T.drive_items.get(a.p_item); if (!it || it.removed_at) return no('That data is no longer on the drive.');
       const dst = T.drives.get(a.p_to_drive); if (!dst || dst.id === it.drive) return no('Pick another drive.');

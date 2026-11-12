@@ -26,7 +26,7 @@ export const STUDIO_TABLES = [
   ['payroll_runs', 'month'], ['payslips', 'month,email'], ['salary_history', 'person,month'],
   ['work_jobs', 'id'], ['work_reports', 'id'],
   ['drives', 'id'], ['drive_items', 'id'], ['drive_moves', 'id'], ['drive_log', 'id'],
-  ['cards', 'id'], ['card_moves', 'id'], ['card_uses', 'id'], ['card_copies', 'id'], ['card_log', 'id'],
+  ['cards', 'id'], ['card_moves', 'id'], ['card_uses', 'id'], ['card_copies', 'id'], ['card_log', 'id'], ['client_log', 'id'],
   ['client_links', 'token'], ['client_feed', 'wedding_key'], ['client_itinerary', 'wedding_key'], ['client_apply_log', 'id'],
   ['packages', 'id'], ['bookings', 'wedding_key'], ['booking_payments', 'id']
 ];

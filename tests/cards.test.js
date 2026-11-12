@@ -9,13 +9,17 @@ const uid = () => crypto.randomUUID(), now = () => new Date().toISOString();
 const istDay = (n = 0) => new Date(Date.now() + 330 * 60000 + n * 864e5).toISOString().slice(0, 10);
 
 // ── data ──
-const T = { members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map() };
+const T = { members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), client_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map() };
 const OWNER = 'o@x.com', SUP = 's@x.com', SHREY = 'shrey@x.com', SAIF = 'saif@x.com', GEARM = 'gearm@x.com';
 [[OWNER, 'owner', null], [SUP, 'supervisor', null], [SHREY, 'crew', 'shrey'], [SAIF, 'crew', 'saif'], [GEARM, 'gear', null]].forEach(([email, role, person_key]) => T.members.set(email, { email, role, person_key }));
 const P = {}; [['Ravi', OWNER], ['Vikas', SUP], ['Shrey', SHREY], ['Saif', SAIF], ['Hamza', 'hamza@x.com'], ['Raju', GEARM]].forEach(([name, email], i) => { const id = uid(); P[name] = id; T.people.set(id, { id, code: 'M00' + (i + 1), name, email, active: true, skills: [] }); });
 [['M 5', 'SSD'], ['Dibba 2', 'HDD']].forEach(([name, kind]) => { const id = uid(); T.drives.set(id, { id, name, kind, status: 'in_use' }); });
 const ev = { id: 'ev-haldi', name: 'Sharma Haldi', wedding: 'Sharma', date: istDay(-1), slot: 'Morning', status: 'confirmed', assignments: [], equipmentIds: [], assistantIds: [] };
 T.docs.set('events/' + ev.id, { collection: 'events', id: ev.id, data: ev });
+// other shoots on the board (not Shrey's): one far in the past, one in the future, one cancelled
+[{ id: 'ev-gupta', name: 'Gupta Mehndi', wedding: 'Gupta', date: istDay(20), slot: 'Evening', contactName: 'Neha Gupta', contactPhone: '9876511111', location: 'Taj Mahal Hotel' },
+ { id: 'ev-verma', name: 'Verma Wedding', wedding: 'Verma', date: istDay(-40), slot: 'Evening', contactName: 'Amit Verma' },
+ { id: 'ev-x', name: 'Cancelled shoot', date: istDay(2), status: 'cancelled' }].forEach(x => T.docs.set('events/' + x.id, { collection: 'events', id: x.id, data: Object.assign({ status: 'confirmed', assignments: [], equipmentIds: [], assistantIds: [] }, x) }));
 T.crew_feed.set('shrey', { person_key: 'shrey', name: 'Shrey', data: { shoots: [{ id: ev.id, date: ev.date, shoot: ev.name, wedding: 'Sharma' }] } });
 
 // ── rules (same as 014_cards.sql) ──
@@ -23,7 +27,11 @@ const role = e => (T.members.get(e) || {}).role, staff = e => ['owner', 'manager
 const personOf = e => { const p = [...T.people.values()].find(x => x.email === e && x.active); return p ? p.id : null; };
 const pname = id => id ? T.people.get(id).name : 'the office';
 const isDeskPerson = id => { const p = T.people.get(id); return !!(p && ['owner', 'manager', 'supervisor'].includes(role(p.email))); };
-const log = (card, by, what) => { const id = uid(); T.card_log.set(id, { id, card, at: now(), by_email: by, what }); };
+const log = (card, by, what) => { const id = uid(); T.card_log.set(id, { id, card, at: now(), by_email: by, what });
+  // 022: the line also goes to the client history of every shoot on the card this round
+  const k = T.cards.get(card); if (!k) return; const seen = new Set();
+  [...T.card_uses.values()].filter(u => u.card === card && u.cycle === k.cycle && u.used && u.event_id && !seen.has(u.event_id)).forEach(u => { seen.add(u.event_id); const j = uid(); T.client_log.set(j, { id: j, event_id: u.event_id, wedding: u.wedding, shoot: u.shoot, card, kind: 'card', at: now(), by_email: by, what: k.code + ': ' + what }); }); };
+const meLabel = e => { const p = [...T.people.values()].find(x => x.email === e); return (p ? p.name : e) + (role(e) === 'owner' ? ' (admin)' : role(e) === 'manager' ? ' (manager)' : ''); };
 const err = m => ({ error: m });
 function rpc(fn, a, e) {
   const me = personOf(e);
@@ -40,6 +48,21 @@ function rpc(fn, a, e) {
     ks.forEach(k => { [...T.card_moves.values()].filter(m => m.card === k.id && m.status === 'pending').forEach(m => { m.status = 'cancelled'; }); const id = uid(); T.card_moves.set(id, { id, card: k.id, batch, from_person: k.holder, to_person: a.p_to || null, status: 'pending', note: a.p_note, given_by: e, given_by_person: me, given_at: now() }); log(k.id, e, pname(k.holder) + ' → ' + pname(a.p_to) + ': given'); });
     return { ok: true, batch, count: ks.length, single_copy: single };
   }
+  if (fn === 'card_shoots') { // 022: every shoot, no phone
+    if (!(desk(e) || me)) return [];
+    return [...T.docs.values()].filter(d => d.collection === 'events' && d.data.status !== 'cancelled').map(d => ({ id: d.id, name: d.data.name, wedding: d.data.wedding, date: d.data.date, slot: d.data.slot, contactName: d.data.contactName, location: d.data.location }));
+  }
+  if (fn === 'card_use_edit') { // 022
+    if (!staff(e)) return err('Only the admin or the manager can move a card\'s note to another shoot.');
+    const u = T.card_uses.get(a.p_use); if (!String(a.p_why || '').trim()) return err('Write why.');
+    const k = T.cards.get(u.card), ids = [...T.card_copies.values()].filter(x => x.card === k.id && x.cycle === u.cycle).flatMap(x => x.items);
+    const nUsed = [...T.card_uses.values()].filter(x => x.card === k.id && x.cycle === u.cycle && x.used).length; let moved = 0;
+    ids.forEach(id => { const it = T.drive_items.get(id); if (it && (nUsed === 1 || it.title === a.p_old_title)) { it.title = a.p_new_title; it.wedding_key = a.p_wedding_key || null; moved++; } });
+    if (u.event_id) { const j = uid(); T.client_log.set(j, { id: j, event_id: u.event_id, card: k.id, kind: 'card', at: now(), by_email: e, what: k.code + ': moved from ' + u.shoot + ' to ' + a.p_shoot + ' by ' + meLabel(e) + ' (' + a.p_why + ')' }); }
+    Object.assign(u, { event_id: a.p_event, shoot: a.p_shoot, wedding: a.p_wedding });
+    if (u.cycle !== k.cycle && a.p_event) { const j = uid(); T.client_log.set(j, { id: j, event_id: a.p_event, card: k.id, kind: 'card', at: now(), by_email: e, what: k.code + ': footage of round ' + u.cycle + ' moved here' }); }
+    log(k.id, e, 'Note moved from ' + (u.shoot) + ' to ' + a.p_shoot + ' by ' + meLabel(e) + ' (' + a.p_why + ')'); return { ok: true, drive_lines: moved };
+  }
   if (fn === 'card_answer') {
     let n = 0;
     for (const id of a.p_moves) {
@@ -51,7 +74,7 @@ function rpc(fn, a, e) {
         k.holder = m.to_person; k.with_team = k.with_team || (m.to_person != null && !isDeskPerson(m.to_person));
         if (m.to_person == null && k.data === 'empty' && k.with_team && ![...T.card_uses.values()].some(u => u.card === k.id && u.cycle === k.cycle)) Object.assign(k, { data: 'hold', data_since: now() });
       }
-      log(k.id, e, pname(m.to_person) + (a.p_accept ? ' accepted ' : ' did not accept ') + k.code); n++;
+      log(k.id, e, (m.to_person ? pname(m.to_person) : meLabel(e)) + (a.p_accept ? ' received ' : ' did not accept ') + k.code + (m.to_person ? '' : ' for the office') + ' from ' + pname(m.from_person) + '.'); n++;
     }
     return n ? { ok: true, count: n } : err('These handovers are no longer waiting.');
   }
@@ -67,7 +90,7 @@ function rpc(fn, a, e) {
     log(k.id, e, a.p_used ? 'Used: ' + a.p_shoot : 'Marked not used'); return { ok: true, id };
   }
   if (fn === 'card_copy') {
-    if (!staff(e)) return err('Only the owner or the manager can mark a card copied.');
+    if (!staff(e)) return err('Only the admin or the manager can mark a card copied.');
     const k = T.cards.get(a.p_card), d = T.drives.get(a.p_drive);
     if (!['hold', 'single'].includes(k.data)) return err('nothing to copy');
     if (!(a.p_files >= 1)) return err('Write how many files were copied (count them on the drive).');
@@ -82,13 +105,13 @@ function rpc(fn, a, e) {
   if (fn === 'card_problem') {
     const k = T.cards.get(a.p_card);
     if (['error', 'damaged', 'lost'].includes(a.p_kind) && !((k.holder && k.holder === me) || desk(e))) return err('Only whoever has ' + k.code + ' can report it.');
-    if (['found', 'ok', 'retired'].includes(a.p_kind) && !staff(e)) return err('Only the owner or the manager can change this.');
+    if (['found', 'ok', 'retired'].includes(a.p_kind) && !staff(e)) return err('Only the admin or the manager can change this.');
     if (a.p_kind === 'error') { k.errors++; if (k.errors >= 2) k.condition = 'retired'; } else if (['damaged', 'lost', 'retired'].includes(a.p_kind)) k.condition = a.p_kind; else k.condition = 'ok';
     log(k.id, e, 'problem ' + a.p_kind); return { ok: true };
   }
   return err('unknown rpc ' + fn);
 }
-const readable = (t, e) => ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
+const readable = (t, e) => t === 'client_log' ? staff(e) : ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
 function handle(e, d) {
   if (d.op === 'session') return e ? { id: 'u-' + e, email: e, user_metadata: { full_name: e } } : null;
   if (d.op === 'rpc') { const r = rpc(d.fn, d.args, e); return { data: r, error: null }; }
@@ -114,6 +137,7 @@ function handle(e, d) {
   return { data: null, error: { message: 'not allowed in this test: ' + d.op + ' ' + d.table } };
 }
 
+const handleRead = (e, t) => handle(e, { op: 'select', table: t, filters: [], order: [] }).data || [];
 const notices = [];
 const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') { let b = ''; q.on('data', x => { b += x; }); q.on('end', () => { notices.push(JSON.parse(b)); s.writeHead(200, { 'content-type': 'application/json' }); s.end('{"sent":1}'); }); return; } let p = q.url.split('?')[0]; if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!fs.existsSync(f)) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': p.endsWith('.js') ? 'text/javascript' : p.endsWith('.css') ? 'text/css' : 'text/html' }); fs.createReadStream(f).pipe(s); });
 (async () => {
@@ -182,7 +206,15 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   await shot(sh, 'cards-leader.png');
   // notes: C01 and C02 together, then C03 not used
   await pick(sh, 'C01'); await pick(sh, 'C02'); await sh.click('#sel-note');
-  ok(/Sharma Haldi/.test(await sh.textContent('#n-shoot')), 'the shoot list has his shoots from the board');
+  await sh.waitForSelector('#n-pick .pk-row');
+  ok(/Sharma · Haldi/.test(await sh.textContent('#n-pick')) && /mine/.test(await sh.textContent('#n-pick')) && !/Gupta/.test(await sh.textContent('#pk-list')), 'the picker opens on his shoots (Sharma · Haldi, marked mine)');
+  await sh.click('#pk-f [data-f="all"]');
+  const allTxt = await sh.textContent('#pk-list');
+  ok(/Gupta · Mehndi/.test(allTxt) && /Client Neha Gupta/.test(allTxt) && /Verma/.test(allTxt) && !/Cancelled shoot/.test(allTxt) && !/98765/.test(allTxt), 'All: past and future shoots of every client, with the client name (no phone, no cancelled)');
+  await sh.fill('#pk-q', 'verma'); await sleep(100);
+  ok((await sh.$$('#pk-list .pk-row')).length === 1, 'search finds a shoot from 40 days ago by the client name');
+  await sh.fill('#pk-q', 'haldi'); await sleep(100); await sh.click('#pk-list .pk-row');
+  ok(/✓ Sharma · Haldi/.test(await sh.textContent('#pk-sel')), 'tap a shoot to pick it');
   await sh.click('#n-save'); ok(/Photo or video/.test(await sh.textContent('#toast')), 'Photo or video is asked');
   await sh.check('input[name="n-media"][value="photo"]'); await sh.check('input[name="n-style"][value="candid"]'); await sh.fill('#n-cam', 'Z9'); await sh.fill('#n-note', 'family portraits');
   await shot(sh, 'cards-note.png');
@@ -282,6 +314,27 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   ok(/Other data for Sharma/.test(dw) && /from the drive sheet/.test(dw), 'lines typed before the app (no wedding link) are found by the name');
   ok(/in the office/.test(dw), '… and it says where each drive is right now');
   await shot(o, 'client-data.png');
+  // ── who received it, and the client's history (admin / manager only) ──
+  ok([...T.card_log.values()].some(l => /^Ravi \(admin\) received C01 for the office from Shrey/.test(l.what)), 'the card log says Ravi (admin) received C01 for the office');
+  await o.click('#dw-hist'); await o.waitForSelector('.hw-row');
+  const hw = await o.textContent('#hw-body');
+  ok(/Card used/.test(hw) && /Received/.test(hw) && /Ravi \(admin\) received C01 for the office from Shrey/.test(hw) && /Copied to M 5/.test(hw) && /Haldi/.test(hw), 'Clients → Data → History: Sharma\'s card lines (used, received by Ravi (admin), copied)');
+  await shot(o, 'client-history.png');
+  ok(!handleRead(SHREY, 'client_log').length && !handleRead(SUP, 'client_log').length && handleRead(OWNER, 'client_log').length > 0, 'only the admin and the manager can read the client history');
+  // ── the admin moves C01's note to another client (Gupta Mehndi) ──
+  await open(o, 'all'); await o.click('[data-c="' + K('C01').id + '"]'); await o.waitForSelector('[data-mvu]');
+  await o.click('[data-mvu]'); await o.waitForSelector('#mv-pick .pk-row');
+  await o.fill('#pk-q', 'gupta'); await sleep(100); await o.click('#mv-pick .pk-row');
+  await o.click('#mv-go'); ok(/Write why/.test(await o.textContent('#toast')), 'moving needs a reason');
+  await o.fill('#mv-why', 'team wrote the wrong client'); await o.click('#mv-go'); await o.waitForSelector('.sheet [data-mvu]');
+  const u1 = [...T.card_uses.values()].find(u => u.card === K('C01').id && u.used);
+  ok(u1.event_id === 'ev-gupta' && u1.shoot === 'Gupta Mehndi', 'C01\'s note now says Gupta Mehndi');
+  ok([...T.drive_items.values()].filter(i => /from card C01/.test(i.note || '')).every(i => i.title === 'Gupta · Mehndi (Photo candid)' && i.wedding_key === 'w:gupta'), 'the M 5 and Dibba 2 lines follow (Gupta · Mehndi, w:gupta)');
+  ok([...T.client_log.values()].some(l => l.event_id === ev.id && /moved from Sharma Haldi to Gupta Mehndi by Ravi \(admin\)/.test(l.what)) && [...T.client_log.values()].some(l => l.event_id === 'ev-gupta'), 'both clients\' history get the move');
+  ok(rpc('card_use_edit', { p_use: u1.id, p_event: ev.id, p_shoot: 'Sharma Haldi', p_why: 'x' }, SUP).error && rpc('card_use_edit', { p_use: u1.id, p_event: ev.id, p_shoot: 'Sharma Haldi', p_why: 'x' }, SHREY).error, 'the supervisor and the team cannot move notes');
+  await shot(o, 'card-moved.png');
+  await o.click('#k-close');
+
   ok(errs.length === 0, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await b.close(); server.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

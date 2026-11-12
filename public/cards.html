@@ -64,6 +64,15 @@
 .ibox b { font-size: 14.5px; }
 .ibox .pillrow { margin-top: 8px; }
 .form-grid label { color: var(--muted); }
+.pk-list { max-height: 46vh; overflow: auto; margin: 8px 0 4px; border-radius: 14px; background: var(--bg); padding: 4px; }
+.pk-row { display: flex; gap: 10px; width: 100%; text-align: left; border: 0; background: var(--surface); border-radius: 12px; padding: 9px 11px; margin: 4px 0; font: inherit; color: var(--ink); cursor: pointer; align-items: center; }
+.pk-row .d { flex: none; width: 58px; font-size: 11.5px; font-weight: 700; color: var(--muted); line-height: 1.25; }
+.pk-row .d.now { color: var(--rose); }
+.pk-row b { display: block; font-size: 14px; line-height: 1.3; }
+.pk-row small { display: block; font-size: 12px; color: var(--muted); line-height: 1.35; }
+.pk-row.on { background: var(--ink); color: #fff; } .pk-row.on small, .pk-row.on .d { color: rgba(255,255,255,.8); }
+.pk-row .me { font-size: 10.5px; font-weight: 700; background: var(--honey); color: var(--warn-ink); border-radius: 999px; padding: 2px 7px; margin-left: 6px; vertical-align: 1px; }
+.pk-pick { background: var(--ok-bg); color: var(--ok-ink); border-radius: 14px; padding: 9px 12px; font-size: 13.5px; margin: 6px 0; }
 textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 </style>
 <script src="/config.js"></script>
@@ -145,21 +154,58 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     cards = k.data || []; moves = m.data || []; uses = u.data || []; copies = cp.data || []; dir = p.data || []; drives = d.data || [];
     cards.sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
   }
-  // the shoots a note can be for: the board (studio) or my own shoots (team), last 30 days to tomorrow
+  // the shoots a note can be for: EVERY shoot on the board, past, today and future, with the wedding / client name (12 Nov 2026, Ravi).
+  // The studio reads the board; the team gets the same list from card_shoots() (022; no phone numbers). "Mine" = the shoots on my page.
+  let mine = new Set();
   async function loadShoots() {
-    const from = W.addDays(today, -30), to = W.addDays(today, 1);
+    let ev = [];
     try {
-      if (desk) {
-        const ev = await W.loadDocs(c, 'events');
-        W.weddingsFrom(ev).forEach(w => w.events.forEach(e => evWed.set(e.id, w)));
-        shoots = ev.filter(e => e.status !== 'cancelled' && e.date >= from && e.date <= to).map(e => ({ id: e.id, name: e.name, wedding: e.wedding || '', date: e.date }));
-      } else if (me.personKey) {
-        const f = await c.from('crew_feed').select('data').eq('person_key', me.personKey).maybeSingle();
-        shoots = ((f.data && f.data.data && f.data.data.shoots) || []).filter(s => s.date >= from && s.date <= to).map(s => ({ id: s.id, name: s.shoot, wedding: s.wedding || '', date: s.date }));
-      }
-    } catch (e) { shoots = []; }
-    shoots.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+      if (desk) ev = await W.loadDocs(c, 'events');
+      else { const r = await c.rpc('card_shoots'); if (!r.error && Array.isArray(r.data)) ev = r.data; }
+    } catch (e) { ev = []; }
+    if (!ev.length && !desk && me.personKey) { // before 022 is run: my own shoots only
+      try { const f = await c.from('crew_feed').select('data').eq('person_key', me.personKey).maybeSingle(); ev = ((f.data && f.data.data && f.data.data.shoots) || []).map(x => ({ id: x.id, name: x.shoot, wedding: x.wedding || '', date: x.date, slot: x.slot, location: x.venue })); } catch (e) { ev = []; }
+    }
+    try { if (me.personKey) { const f = await c.from('crew_feed').select('data').eq('person_key', me.personKey).maybeSingle(); mine = new Set(((f.data && f.data.data && f.data.data.shoots) || []).map(x => x.id)); } } catch (e) {}
+    evWed = new Map(); W.weddingsFrom(ev).forEach(w => w.events.forEach(e => evWed.set(e.id, w)));
+    shoots = ev.filter(e => e.status !== 'cancelled' && e.date).map(e => { const w = evWed.get(e.id);
+      return { id: e.id, name: e.name, wedding: (w && w.title) || e.wedding || '', key: w ? w.key : '', fn: w ? W.fnName(e, w) : e.name, date: e.date, slot: e.slot || '', client: e.contactName || '', place: e.location || '', mine: mine.has(e.id) }; });
+    const dist = d => Math.abs((new Date(d + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5);
+    shoots.sort((a, b) => dist(a.date) - dist(b.date) || b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
   }
+  // "Sharma · Haldi" for a shoot
+  const shootTitle = sh => sh.wedding && sh.fn && sh.fn.toLowerCase() !== sh.wedding.toLowerCase() ? sh.wedding + ' · ' + sh.fn : (sh.name || sh.wedding);
+  const dayWord = d => { const n = Math.round((new Date(d + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5); return n === 0 ? 'Today' : n === -1 ? 'Yesterday' : n === 1 ? 'Tomorrow' : new Date(d + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  // a searchable list of every shoot; onPick(shoot | null). Filters: my shoots, around today, this month, all; search by client, function, venue, date
+  function shootPicker(host, onPick, startId) {
+    const anyMine = shoots.some(x => x.mine);
+    let f = anyMine ? 'mine' : 'near', qq = '', picked = shoots.find(x => x.id === startId) || null;
+    host.innerHTML = '<input class="in" type="search" id="pk-q" placeholder="Search client, function, venue or date (e.g. Sharma, haldi, 14 nov)" autocomplete="off">' +
+      '<div class="chips" id="pk-f">' + (anyMine ? '<button type="button" class="chip-b" data-f="mine">My shoots</button>' : '') + '<button type="button" class="chip-b" data-f="near">Yesterday – tomorrow</button><button type="button" class="chip-b" data-f="past">Past</button><button type="button" class="chip-b" data-f="next">Coming up</button><button type="button" class="chip-b" data-f="all">All</button></div>' +
+      '<div id="pk-sel"></div><div class="pk-list" id="pk-list"></div>';
+    const $$ = x => host.querySelector(x);
+    const match = sh => { if (!qq) return true; const hay = [shootTitle(sh), sh.name, sh.client, sh.place, sh.slot, sh.date, dayWord(sh.date), W.dayShort(sh.date)].join(' ').toLowerCase(); return qq.split(/\s+/).every(w => hay.includes(w)); };
+    const inF = sh => qq ? true : f === 'mine' ? sh.mine : f === 'near' ? sh.date >= W.addDays(today, -1) && sh.date <= W.addDays(today, 1) : f === 'past' ? sh.date <= today : f === 'next' ? sh.date >= today : true;
+    function draw() {
+      host.querySelectorAll('#pk-f [data-f]').forEach(b => b.classList.toggle('on', !qq && b.dataset.f === f));
+      let list = shoots.filter(sh => inF(sh) && match(sh));
+      if (f === 'next' && !qq) list = list.slice().sort((a, b) => a.date.localeCompare(b.date));
+      if (f === 'past' && !qq) list = list.slice().sort((a, b) => b.date.localeCompare(a.date));
+      const total = list.length; list = list.slice(0, 80);
+      $$('#pk-sel').innerHTML = picked ? '<div class="pk-pick">✓ <b>' + esc(shootTitle(picked)) + '</b> · ' + esc(dayWord(picked.date) + (picked.slot ? ' · ' + picked.slot : '')) + '</div>' : '';
+      $$('#pk-list').innerHTML = list.length ? list.map(sh => '<button type="button" class="pk-row' + (picked && picked.id === sh.id ? ' on' : '') + '" data-id="' + esc(sh.id) + '"><span class="d' + (sh.date === today ? ' now' : '') + '">' + esc(dayWord(sh.date)) + (sh.slot ? '<br>' + esc(sh.slot) : '') + '</span><span style="flex:1;min-width:0"><b>' + esc(shootTitle(sh)) + (sh.mine ? '<span class="me">mine</span>' : '') + '</b><small>' + esc([sh.client ? 'Client ' + sh.client : '', sh.place].filter(Boolean).join(' · ')) + '</small></span></button>').join('') +
+        (total > list.length ? '<p class="sub" style="text-align:center;margin:6px">' + (total - list.length) + ' more: type to search</p>' : '')
+        : '<p class="sub" style="padding:10px">' + (qq ? 'No shoot matches "' + esc(qq) + '".' : f === 'mine' ? 'None of your shoots here. Try All.' : 'No shoots here. Try All or search.') + '</p>';
+      host.querySelectorAll('.pk-row').forEach(b => b.addEventListener('click', () => { picked = shoots.find(x => x.id === b.dataset.id) || null; onPick(picked); draw(); }));
+    }
+    $$('#pk-q').addEventListener('input', e => { qq = e.target.value.trim().toLowerCase(); draw(); });
+    host.querySelectorAll('#pk-f [data-f]').forEach(b => b.addEventListener('click', () => { f = b.dataset.f; qq = ''; $$('#pk-q').value = ''; draw(); }));
+    if (!shoots.some(inF) && f !== 'all') f = 'all';
+    draw(); if (picked) onPick(picked);
+  }
+  // the drive-line title for a note (same words as when copying): "Sharma · Haldi (Photo candid)"
+  const lineTitle = (u, media, style) => { const w = u.event_id ? evWed.get(u.event_id) : null;
+    return ((w ? w.title + ' · ' + W.fnName(w.events.find(e => e.id === u.event_id) || { name: u.shoot }, w) : (u.wedding && u.shoot && !u.shoot.toLowerCase().startsWith(u.wedding.toLowerCase()) ? u.wedding + ' · ' + u.shoot : u.shoot)) + ' (' + [lbl(MEDIA, media), style ? lbl(STYLE, style).toLowerCase() : ''].filter(Boolean).join(' ') + ')').slice(0, 160); };
 
   // ---------- list ----------
   function row(k, selectable) {
@@ -241,7 +287,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
 
   function renderCopy() {
     const hold = cards.filter(k => k.data === 'hold'), single = cards.filter(k => k.data === 'single');
-    $('tab-copy').innerHTML = '<p class="sub" style="margin:10px 2px 0">Only the owner and the manager mark cards copied. The drive\'s contents update by themselves.</p>' +
+    $('tab-copy').innerHTML = '<p class="sub" style="margin:10px 2px 0">Only the admin and the manager mark cards copied. The drive\'s contents update by themselves.</p>' +
       '<div class="sechead"><h2>Not copied yet (' + hold.length + ')</h2></div>' + (hold.length ? hold.sort((a, b) => hoursOn(b) - hoursOn(a)).map(k => row(k, false)).join('') : '<div class="empty">Nothing waiting. 🎉</div>') +
       '<div class="sechead"><h2>Backup pending (' + single.length + ')</h2></div>' + (single.length ? single.map(k => row(k, false)).join('') : '<div class="empty">Every copied card has a backup.</div>');
     wire($('tab-copy'));
@@ -289,7 +335,8 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
         (staff && (k.data === 'hold' || k.data === 'single') ? '<button type="button" class="pillbtn wide" id="k-copy">' + (k.data === 'hold' ? 'Mark copied' : 'Mark backup copied') + '</button>' : '') +
         (staff && k.data === 'hold' && !now.some(u => u.used) ? '<button type="button" class="pillbtn light wide" id="k-clear">Checked: nothing on it</button>' : '') +
       '</div>' +
-      '<h4>This round' + (k.cycle > 1 ? ' (round ' + k.cycle + ')' : '') + '</h4>' + (now.length ? now.map(u => '<div class="rep"><b>' + esc(useText(u)) + '</b><br><span class="meta" style="display:inline">by ' + esc(u.by_person ? nameOf(u.by_person) : u.by_email) + ' · ' + esc(when(u.at)) + '</span>' + ((u.by_email === me.email || staff) && !copies.some(x => x.card === k.id && x.cycle === k.cycle) ? ' <button type="button" class="x" data-rmu="' + u.id + '">remove</button>' : '') + '</div>').join('') : '<p class="sub">No notes yet.</p>') +
+      '<h4>This round' + (k.cycle > 1 ? ' (round ' + k.cycle + ')' : '') + '</h4>' + (now.length ? now.map(u => '<div class="rep"><b>' + esc(useText(u)) + '</b><br><span class="meta" style="display:inline">by ' + esc(u.by_person ? nameOf(u.by_person) : u.by_email) + ' · ' + esc(when(u.at)) + '</span>' + ((u.by_email === me.email || staff) && !copies.some(x => x.card === k.id && x.cycle === k.cycle) ? ' <button type="button" class="x" data-rmu="' + u.id + '">remove</button>' : '') + (staff && u.used ? ' <button type="button" class="x" data-mvu="' + u.id + '">change shoot</button>' : '') + '</div>').join('') : '<p class="sub">No notes yet.</p>') +
+      (staff && uses.some(u => u.card === k.id && u.cycle < k.cycle && u.used) ? '<h4>Earlier rounds</h4>' + uses.filter(u => u.card === k.id && u.cycle < k.cycle && u.used).slice(0, 12).map(u => '<div class="rep"><b>' + esc(useText(u)) + '</b><br><span class="meta" style="display:inline">round ' + u.cycle + ' · by ' + esc(u.by_person ? nameOf(u.by_person) : u.by_email) + ' · ' + esc(when(u.at)) + '</span> <button type="button" class="x" data-mvu="' + u.id + '">change shoot</button></div>').join('') : '') +
       '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + x.files + ' files' + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span></div>').join('') : '<p class="sub">Not copied yet.</p>') +
       '<h4>History</h4><div id="k-hist" class="sub">Loading…</div>' +
       '<div class="acts" style="margin-top:14px">' +
@@ -308,6 +355,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     on('#k-ok', async () => { if (await rpc('card_problem', { p_card: k.id, p_kind: k.condition === 'lost' ? 'found' : 'ok', p_note: null }, 'Back in use.')) { bg.remove(); await refresh(); } });
     on('#k-edit', () => { bg.remove(); editCard(k); });
     on('#k-fix', () => { bg.remove(); fix(k); });
+    bg.querySelectorAll('[data-mvu]').forEach(b => b.addEventListener('click', () => { const u = uses.find(x => x.id === b.dataset.mvu); bg.remove(); moveForm(k, u); }));
     bg.querySelectorAll('[data-rmu]').forEach(b => b.addEventListener('click', async () => { if (await rpc('card_use_remove', { p_use: b.dataset.rmu }, 'Note removed.')) { bg.remove(); await refresh(); openCard(cards.find(x => x.id === k.id)); } }));
     const { data: log } = await c.from('card_log').select('*').eq('card', k.id).order('at', { ascending: false }).limit(40);
     const hh = g('#k-hist'); if (hh) hh.innerHTML = (log || []).length ? log.map(l => '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + '</div>').join('') : 'Nothing yet.';
@@ -321,7 +369,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     const people = dir.filter(p => !(holders.size === 1 && p.id === list[0].holder));
     const bg = W.sheet('<h3>Give ' + list.length + ' card' + (list.length > 1 ? 's' : '') + '</h3><p class="sub"><b>' + esc(list.map(k => k.code).join(', ')) + '</b>. They tap <b>I have it</b> in the app; until then the cards stay with ' + esc(holders.size === 1 ? nameOf(list[0].holder) : 'their holders') + '.</p>' +
       (amber.length ? '<div class="ans wait" style="margin:0 0 10px">' + esc(amber.map(k => k.code).join(', ')) + ': only one copy, backup not done yet. Giving it out means it will be formatted.</div>' : '') +
-      '<div class="form-grid"><label class="wide">To<select class="in" id="g-to"><option value="">Pick a person</option>' + (anyOut ? '<option value="office">The office (owner or manager accepts)</option>' : '') + people.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select></label>' +
+      '<div class="form-grid"><label class="wide">To<select class="in" id="g-to"><option value="">Pick a person</option>' + (anyOut ? '<option value="office">The office (admin or manager accepts)</option>' : '') + people.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select></label>' +
       '<label class="wide">Note (optional)<input class="in" id="g-note" maxlength="300" placeholder="e.g. Sharma wedding, 14–16 Nov"></label></div>' +
       '<div class="pillrow"><button type="button" class="pillbtn light" id="g-cx">Cancel</button><button type="button" class="pillbtn" id="g-go">Give</button></div>');
     bg.querySelector('#g-cx').addEventListener('click', () => bg.remove());
@@ -331,38 +379,62 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       if (!r) return;
       notify({ kind: 'give', batch: r.batch });
       sel.clear(); bg.remove(); await refresh();
-      toast('Given. Waiting for ' + (v === 'office' ? 'the owner or manager' : nameOf(v)) + ' to accept.');
+      toast('Given. Waiting for ' + (v === 'office' ? 'the admin or manager' : nameOf(v)) + ' to accept.');
     });
   }
 
   // ---------- the team leader's notes ----------
+  const LAST = 'mutos-card-last-' + me.email;
+  const lastPick = () => { try { return JSON.parse(localStorage.getItem(LAST) || '{}'); } catch (e) { return {}; } };
   function noteForm(list) {
     if (!list.length) return;
-    const opts = shoots.map((s, i) => '<option value="' + i + '">' + esc(W.dayShort(s.date) + ' · ' + s.name) + '</option>').join('');
+    const L = lastPick(), recent = L.at && Date.now() - L.at < 12 * 3600e3 ? L : {};   // same shoot as the last card, within 12 hours
     const radios = (name, items, v) => '<div class="seg">' + items.map(([k, l]) => '<label><input type="radio" name="' + name + '" value="' + k + '"' + (k === v ? ' checked' : '') + '>' + esc(l) + '</label>').join('') + '</div>';
     const bg = W.sheet('<h3>What is on ' + esc(list.map(k => k.code).join(', ')) + '</h3><p class="sub">' + (list.length > 1 ? 'The same note goes on each card. Write separately if they hold different things.' : 'One note per use. Write another if the card was used at two shoots.') + '</p>' +
-      '<div class="form-grid"><label class="wide">Shoot<select class="in" id="n-shoot">' + opts + '<option value="other">Another shoot (type it)</option></select></label>' +
-      '<label class="wide" id="n-other-l"' + (shoots.length ? ' hidden' : '') + '>Shoot name<input class="in" id="n-other" maxlength="160" placeholder="e.g. Sharma Haldi"></label></div>' +
-      '<h4>Photo or video</h4>' + radios('n-media', MEDIA, null) + '<h4>Style</h4>' + radios('n-style', STYLE, null) +
-      '<div class="form-grid" style="margin-top:12px"><label>Camera / shooter<input class="in" id="n-cam" maxlength="60" placeholder="e.g. Z9, Saif"></label><label>Notes<input class="in" id="n-note" maxlength="300" placeholder="e.g. vidaai, card nearly full"></label></div>' +
+      '<h4>Shoot</h4><div id="n-pick"></div><p style="margin:2px 0 0"><button type="button" class="x" id="n-type">Not on the list? Type the shoot</button></p>' +
+      '<label class="wide" id="n-other-l" hidden style="display:block;margin-top:6px;color:var(--muted)">Shoot name<input class="in" id="n-other" maxlength="160" placeholder="e.g. Sharma Haldi"></label>' +
+      '<h4>Photo or video</h4>' + radios('n-media', MEDIA, recent.media || null) + '<h4>Style</h4>' + radios('n-style', STYLE, recent.style || null) +
+      '<div class="form-grid" style="margin-top:12px"><label>Camera / shooter<input class="in" id="n-cam" maxlength="60" value="' + esc(L.cam || '') + '" placeholder="e.g. Z9, Saif"></label><label>Notes<input class="in" id="n-note" maxlength="300" placeholder="e.g. vidaai, card nearly full"></label></div>' +
       '<div class="pillrow"><button type="button" class="pillbtn light" id="n-unused">Not used</button><button type="button" class="pillbtn" id="n-save">Save</button></div><p style="margin-top:10px"><button type="button" class="x" id="n-cx">Cancel</button></p>');
     const g = s2 => bg.querySelector(s2);
-    if (!shoots.length) g('#n-shoot').value = 'other';
-    g('#n-shoot').addEventListener('change', () => { g('#n-other-l').hidden = g('#n-shoot').value !== 'other'; });
+    let sh = null, typed = !shoots.length;
+    shootPicker(g('#n-pick'), x => { sh = x; typed = false; g('#n-other-l').hidden = true; }, recent.shoot);
+    if (typed) { g('#n-other-l').hidden = false; g('#n-pick').hidden = true; }
+    g('#n-type').addEventListener('click', () => { typed = true; sh = null; g('#n-other-l').hidden = false; g('#n-other').focus(); });
     g('#n-cx').addEventListener('click', () => bg.remove());
     const save = async used => {
-      const v = g('#n-shoot').value, sh = v === 'other' ? { id: '', name: g('#n-other').value.trim(), wedding: '' } : shoots[Number(v)];
+      const pick = typed ? { id: '', name: g('#n-other').value.trim(), wedding: '' } : sh ? { id: sh.id, name: sh.name, wedding: sh.wedding } : null;
       const media = (bg.querySelector('input[name="n-media"]:checked') || {}).value || null, style = (bg.querySelector('input[name="n-style"]:checked') || {}).value || null;
-      if (used && !sh.name) { toast('Pick or type the shoot.', true); return; }
+      if (used && !(pick && pick.name)) { toast('Pick the shoot (or type it).', true); return; }
       if (used && !media) { toast('Photo or video?', true); return; }
       for (const k of list) {
-        const r = await rpc('card_use', { p_card: k.id, p_used: used, p_event: used ? sh.id : null, p_shoot: used ? sh.name : null, p_wedding: used ? sh.wedding : null, p_media: media, p_style: style, p_camera: g('#n-cam').value.trim() || null, p_note: g('#n-note').value.trim() || null });
+        const r = await rpc('card_use', { p_card: k.id, p_used: used, p_event: used ? pick.id : null, p_shoot: used ? pick.name : null, p_wedding: used ? pick.wedding : null, p_media: media, p_style: style, p_camera: g('#n-cam').value.trim() || null, p_note: g('#n-note').value.trim() || null });
         if (!r) return;
       }
+      try { localStorage.setItem(LAST, JSON.stringify({ at: Date.now(), shoot: used && pick.id ? pick.id : recent.shoot || null, media: media || recent.media, style: style || recent.style, cam: g('#n-cam').value.trim() })); } catch (e) {}
       sel.clear(); bg.remove(); await refresh(); toast(used ? 'Saved. ' + (list.length > 1 ? 'These cards are' : 'The card is') + ' on hold until the office copies ' + (list.length > 1 ? 'them' : 'it') + '.' : 'Marked not used.');
     };
     g('#n-save').addEventListener('click', () => save(true));
     g('#n-unused').addEventListener('click', () => save(false));
+  }
+
+  // ---------- admin / manager: this footage belongs to another shoot or client ----------
+  function moveForm(k, u) {
+    const bg = W.sheet('<h3>Change the shoot of ' + esc(k.code) + '</h3><p class="sub">Now: <b>' + esc(useText(u)) + '</b>. Pick the right shoot. The drive lines made from this card follow, and both clients\' history gets a line.</p>' +
+      '<div id="mv-pick"></div><div class="form-grid" style="margin-top:8px"><label class="wide">Why<input class="in" id="mv-why" maxlength="200" placeholder="e.g. team wrote the wrong function"></label></div>' +
+      '<div class="pillrow"><button type="button" class="pillbtn light" id="mv-cx">Cancel</button><button type="button" class="pillbtn" id="mv-go">Move</button></div>');
+    const g = s2 => bg.querySelector(s2); let sh = null;
+    shootPicker(g('#mv-pick'), x => { sh = x; }, null);
+    g('#mv-cx').addEventListener('click', () => bg.remove());
+    g('#mv-go').addEventListener('click', async () => {
+      if (!sh) { toast('Pick the shoot.', true); return; }
+      const why = g('#mv-why').value.trim(); if (!why) { toast('Write why.', true); return; }
+      const nu = { event_id: sh.id, shoot: sh.name, wedding: sh.wedding };
+      const r = await rpc('card_use_edit', { p_use: u.id, p_event: sh.id, p_shoot: sh.name, p_wedding: sh.wedding, p_new_title: lineTitle(nu, u.media, u.style), p_old_title: lineTitle(u, u.media, u.style), p_wedding_key: sh.key || '', p_why: why });
+      if (!r) return;
+      bg.remove(); await refresh(); toast('Moved to ' + shootTitle(sh) + (r.drive_lines ? ' · ' + r.drive_lines + ' drive line' + (r.drive_lines > 1 ? 's' : '') + ' renamed' : '') + '.');
+      openCard(cards.find(x => x.id === k.id));
+    });
   }
 
   // ---------- copying (owner, manager) ----------
@@ -370,8 +442,8 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     const backup = k.data === 'single', first = copies.find(x => x.card === k.id && x.cycle === k.cycle && !x.backup);
     const used = usesNow(k).filter(u => u.used), seen = new Set(), lines = [];
     used.forEach(u => {
-      const w = u.event_id ? evWed.get(u.event_id) : null, t = (w ? w.title + ' · ' + W.fnName(w.events.find(e => e.id === u.event_id) || { name: u.shoot }, w) : (u.wedding && u.shoot && !u.shoot.toLowerCase().startsWith(u.wedding.toLowerCase()) ? u.wedding + ' · ' + u.shoot : u.shoot)) + ' (' + [lbl(MEDIA, u.media), u.style ? lbl(STYLE, u.style).toLowerCase() : ''].filter(Boolean).join(' ') + ')';
-      if (seen.has(t)) return; seen.add(t); lines.push({ title: t.slice(0, 160), wedding_key: w ? w.key : '' });
+      const w = u.event_id ? evWed.get(u.event_id) : null, t = lineTitle(u, u.media, u.style);
+      if (seen.has(t)) return; seen.add(t); lines.push({ title: t, wedding_key: w ? w.key : '' });
     });
     const others = drives.filter(d => !first || d.id !== first.drive);
     const bg = W.sheet('<h3>' + (backup ? 'Backup of ' : 'Copied ') + esc(k.code) + '</h3><p class="sub">' + (backup ? 'First copy: ' + esc(first ? first.drive_name + ' / ' + (first.folder || '') + ' (' + first.files + ' files)' : '?') + '. The backup must go on a different drive.' : 'Count the files on the drive after copying and write the number: it is the proof that everything came across.') + '</p>' +

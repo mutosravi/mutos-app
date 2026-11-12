@@ -4442,7 +4442,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     h += '<a href="' + folder + '" target="_blank" rel="noopener">Open crew folder ↗</a>';
     { const noPh = [...new Set(reminderRows().filter(r => !r.phone).map(r => r.name))]; if (noPh.length) h += '<span style="color:var(--danger-on-board)" title="WhatsApp reminders cannot reach them">No WhatsApp number: ' + escapeHtml(noPh.join(', ')) + '</span>'; }
     if (canPushCrew()) h += '<button type="button" class="sb-add-btn" id="sb-crew-now">Update crew sheet now</button>';
-    else if (!amOwner) h += '<span>Updates come from the board owner\'s edits.</span>';
+    else if (!amOwner) h += '<span>Updates come from the admin\'s edits.</span>';
     else h += '<span>Google Drive is not available in this view.</span>';
     el.innerHTML = h; el.hidden = false;
     const b = document.getElementById('sb-crew-now'); if (b) b.addEventListener('click', () => { clearTimeout(crewTimer); pushCrewSheet(true); });
@@ -4742,7 +4742,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const waiting = inboxCount();
     if (waiting) h += '<button type="button" class="sb-add-btn solid" id="sb-team-inbox" style="border-color:var(--gold);color:var(--gold)">' + waiting + ' to confirm</button>';
     if (canSyncTeam()) h += '<button type="button" class="sb-add-btn" id="sb-team-now">' + (teamBusy ? 'Syncing…' : 'Sync now') + '</button>';
-    else if (!amOwner) h += '<span>New projects come in when the board owner opens it.</span>';
+    else if (!amOwner) h += '<span>New projects come in when the admin opens it.</span>';
     el.innerHTML = h; el.hidden = false;
     const b = document.getElementById('sb-team-now'); if (b) b.addEventListener('click', () => syncTeamSheet(true));
     const ib = document.getElementById('sb-team-inbox'); if (ib) ib.addEventListener('click', openInbox);

@@ -204,7 +204,7 @@ begin
     if new.kind in ('leave', 'fix') and public.month_locked(new.day) then raise exception 'That month''s salary is already locked.'; end if;
   end if;
   if tg_op = 'UPDATE' then
-    if not public.is_owner() then raise exception 'Only the owner can decide requests.'; end if;
+    if not public.is_owner() then raise exception 'Only the admin can decide requests.'; end if;
     if new.status <> old.status then new.decided_at := now(); end if;
     -- an approved correction becomes a check-in entry
     if new.kind = 'fix' and new.status = 'approved' and old.status <> 'approved' then
@@ -230,7 +230,7 @@ create or replace function public.payroll_rules() returns trigger language plpgs
 begin
   if tg_op = 'UPDATE' and old.status = 'locked' then raise exception 'This month is locked.'; end if;
   if tg_op = 'DELETE' then if old.status = 'locked' then raise exception 'This month is locked.'; end if; return old; end if;
-  if new.status = 'locked' and not public.is_owner() then raise exception 'Only the owner can lock a month.'; end if;
+  if new.status = 'locked' and not public.is_owner() then raise exception 'Only the admin can lock a month.'; end if;
   if new.status = 'locked' then new.locked_at := now(); end if;
   new.updated_at := now();
   return new;

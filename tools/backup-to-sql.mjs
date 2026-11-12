@@ -29,7 +29,7 @@ for (const [t] of STUDIO_TABLES) {
   }
 }
 // identity / serial counters continue after the restored ids
-for (const [t, seqTable] of [['att_punch', 'att_punch'], ['att_log', 'att_log'], ['drive_log', 'drive_log'], ['card_log', 'card_log'], ['client_apply_log', 'client_apply_log']]) {
+for (const [t, seqTable] of [['att_punch', 'att_punch'], ['att_log', 'att_log'], ['drive_log', 'drive_log'], ['card_log', 'card_log'], ['client_log', 'client_log'], ['client_apply_log', 'client_apply_log']]) {
   if ((b.studio[t] || []).length) out.push("select setval(pg_get_serial_sequence('public." + seqTable + "', 'id'), (select coalesce(max(id), 1) from public." + seqTable + '));');
 }
 out.push('commit;');
