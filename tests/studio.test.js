@@ -188,7 +188,7 @@ function rpc(fn, a, e) {
     if (!e) return err('permission denied');
     const fd = T.crew_feed.get(pkOf(e)); if (!staff(e) && !(fd && (fd.data.shoots || []).some(s => s.id === a.p_event))) return { data: { error: 'Only the crew on this shoot can see the family\'s details.' }, error: null };
     const cf = [...T.client_feed.values()].find(f => (f.data.functions || []).some(x => x.id === a.p_event)); const d = cf && (T.client_itinerary.get(cf.wedding_key) || {}).data || {};
-    return { data: { vip: d.vip || [], contacts: (d.contacts || []).filter(c => !c.fn || c.fn === a.p_event), couple: { bride: (d.couple || {}).bride || '', groom: (d.couple || {}).groom || '' } }, error: null }; // 025
+    return { data: { vip: d.vip || [], contacts: (d.contacts || []).filter(c => !c.fn || c.fn === a.p_event), couple: { bride: (d.couple || {}).bride || '', groom: (d.couple || {}).groom || '' }, refs: (d.refs || []).filter(r => !r.fn || r.fn === a.p_event) }, error: null }; // 025, 026
   }
   if (fn === 'att_office_code') return ['owner', 'kiosk'].includes(role(e)) ? { data: { code: CODE, seconds_left: 25 }, error: null } : err('Only the office screen can show the code.');
   if (fn === 'att_undo') { // same as 013_undo_punch.sql
@@ -250,7 +250,24 @@ function handle(e, d) {
 }
 function seed(dir, coll) { const p = path.join(DATA, dir); if (!fs.existsSync(p)) return 0; let n = 0; fs.readdirSync(p).forEach(f => { const data = JSON.parse(fs.readFileSync(path.join(p, f))); const id = data.id || f.replace(/\.json$/, ''); delete data.id; T.docs.set(coll + '/' + id, { collection: coll, id, data }); n++; }); return n; }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
-const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(s); });
+// the Worker's photo routes (worker/photos.js), faked: off until driveOn (then a family's photos "go to Drive" = kept in uploads)
+let driveOn = false; const uploads = new Map();
+const TINY = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+function photoApi(q, s) {
+  const send = (o, st = 200) => { s.writeHead(st, { 'content-type': 'application/json' }); s.end(JSON.stringify(o)); };
+  const u = new URL(q.url, 'http://x'), chunks = []; q.on('data', x => chunks.push(x));
+  q.on('end', () => {
+    if (u.pathname === '/api/photos/status') return send({ configured: true, connected: driveOn });
+    if (!driveOn) return send({ error: 'Google Drive is not connected yet.' }, 503);
+    if (u.pathname === '/api/photos/upload' && u.searchParams.get('thumb')) return send({ ok: true });
+    if (u.pathname === '/api/photos/upload') { const info = JSON.parse(decodeURIComponent(q.headers['x-mutos-photo'] || '{}')), id = crypto.randomUUID(); uploads.set(id, Object.assign({ id, size: Buffer.concat(chunks).length, mime: q.headers['content-type'] }, info)); return send({ id }); }
+    const m = u.pathname.match(/^\/api\/photos\/file\/(.+)$/);
+    if (m) { if (!uploads.has(m[1])) return send({ error: 'Not found.' }, 404); s.writeHead(200, { 'content-type': 'image/png' }); return s.end(TINY); }
+    if (u.pathname === '/api/photos/remove') { const r = uploads.get(JSON.parse(Buffer.concat(chunks).toString() || '{}').id); if (r) r.removed = true; return send({ ok: true }); }
+    send({ error: 'Not found' }, 404);
+  });
+}
+const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/')) return photoApi(q, s); let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(s); });
 const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
 (async () => {
@@ -702,7 +719,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok((await owner.textContent('.sb-modal')).includes('Rohit') && (await owner.textContent('.sb-modal')).includes('Dadi'), 'See answers shows the people to call and the important people with photos');
   ok(/Bride: Akriti Sharma · Groom: Rohan Verma/.test(await owner.textContent('.sb-modal .cl-couple')), 'See answers shows the couple');
   await owner.click('.sb-modal .ca-ph'); await owner.waitForFunction(() => [...document.querySelectorAll('body > div')].some(d => d.style.zIndex === '99999' && d.textContent.includes('Dadi')));
-  ok(true, 'the owner can tap a family photo to see it big'); await owner.click('text=tap to close');
+  ok(true, 'the owner can tap a family photo to see it big'); await owner.click('#photo-view [data-x="close"]');
   const evId = T.client_feed.get(wed.key).data.functions[0].id;
   T.crew_feed.set('hamza', { person_key: 'hamza', name: 'Hamza', data: { name: 'Hamza', shoots: [{ id: evId, date: istDay(1), day: 'Tomorrow', slot: 'Evening', shoot: 'Akriti Haldi', wedding: '', venue: 'Taj', role: 'Photo', gear: [], shared: [], team: [], notes: 'Bring the drone\nFrom client: starts 7:30 pm · Couple entry 8 pm' }] } });
   T.members.set(CREWE, { email: CREWE, role: 'crew', person_key: 'hamza', display_name: 'Hamza' }); // the owner's board removed this test login (Hamza has no Login Gmail on the test board)
@@ -714,6 +731,30 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok((await cr.textContent('#photo-view')).includes('Dadi') && (await cr.textContent('#photo-view')).includes('Grandmother'), 'tapping a family photo opens it big, with the name and relation');
   await cr.click('#photo-view [data-x="close"]'); ok(!(await cr.$('#photo-view')), 'the photo closes with ✕');
   ok(rpc('crew_vip', { p_event: 'not-my-shoot' }, CREWE).data.error, 'but not for shoots they are not on');
+  // ── photos on the studio's Google Drive (026 + worker/photos.js): reference photos and important people in full quality ──
+  ok(!(await fam.$('[data-open="refs"]')), 'before Google Drive is connected there is no "Reference photos" card');
+  driveOn = true;
+  await fam.goto(B + '/client.html'); await fam.waitForSelector('[data-open="refs"]');
+  await fam.click('[data-open="refs"]'); await fam.setInputFiles('#add-r', [{ name: 'stage.png', mimeType: 'image/png', buffer: png }, { name: 'dress.png', mimeType: 'image/png', buffer: png }]);
+  await fam.waitForFunction(() => document.querySelectorAll('#sec-refs [data-rfi]').length === 2);
+  ok([...uploads.values()].filter(x => x.kind === 'client' && x.purpose === 'ref' && x.ref === link.token && x.mime === 'image/jpeg').length === 2, 'the family adds two reference photos: they go to Drive (not into the form)');
+  await fam.fill('[data-k="r0"][data-f="note"]', 'Stage like this'); await fam.selectOption('[data-k="r0"][data-f="fn"]', evId);
+  await fam.click('[data-open="vip"]'); await fam.click('#add-v'); await fam.fill('#sec-vip .vip:last-of-type [data-f="name"]', 'Nana');
+  await fam.setInputFiles('#sec-vip .vip:last-of-type input[type=file]', { name: 'nana.png', mimeType: 'image/png', buffer: png }); await fam.waitForSelector('#sec-vip .ph[data-pid]');
+  await fam.click('#save'); await fam.waitForFunction(() => /Saved/.test(document.getElementById('saved').textContent));
+  const it3 = T.client_itinerary.get(wed.key).data, nana = it3.vip.find(v => v.name === 'Nana');
+  ok(it3.refs.length === 2 && it3.refs[0].note === 'Stage like this' && it3.refs[0].fn === evId && it3.refs.every(r => uploads.has(r.pid)), 'the form keeps only which photo is which (a note and the function for each)');
+  ok(nana && nana.pid && !nana.photo && uploads.get(nana.pid).purpose === 'vip' && JSON.stringify(it3).length < 4000, 'Nana\'s photo is on Drive too: the form stays tiny (' + JSON.stringify(it3).length + ' characters)');
+  await fam.screenshot({ path: path.join(SHOTS, 'client-refs.png'), fullPage: false });
+  await cr.goto(B + '/crew.html'); await cr.click('.bnav .tab[data-tab="shoots"]'); await cr.waitForSelector('.shoot [data-act="vip"]'); await cr.click('.shoot [data-act="vip"]'); await cr.waitForSelector('.vipbox .ref-ph img.pid-ok');
+  ok((await cr.$$('.vipbox .ref-ph')).length === 2 && /Ideas from the family \(2\)/.test(await cr.textContent('.vipbox')) && /Stage like this/.test(await cr.textContent('.vipbox')), 'the crew on that function see the reference photos with the family\'s line');
+  await cr.click('.vipbox .ref-ph'); await cr.waitForSelector('#photo-view #pv-img[src^="blob:"]');
+  ok(/Stage like this/.test(await cr.textContent('#photo-view')), 'tap → the full photo from Drive'); await cr.click('#photo-view [data-x="close"]');
+  await cr.waitForSelector('.vipbox .vip-ph img[data-pid].pid-ok'); ok(true, 'Nana\'s photo shows for the crew (from Drive) next to Dadi\'s older one');
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.evaluate(() => window.MUTOS_CLIENTS.open()); await owner.waitForSelector('.sb-modal [data-see="' + wed.key + '"]');
+  await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal .cl-refs img.pid-ok');
+  ok(/Reference photos from the family \(2\)/.test(await owner.textContent('.sb-modal .cl-refs')) && /Stage like this/.test(await owner.textContent('.sb-modal .cl-refs')), 'Clients → See answers shows the reference photos');
+  driveOn = false;
 
   // the work desk adds every deliverable of the package
   await owner.goto(B + '/desk.html'); await owner.waitForSelector('#add'); await owner.click('#add'); await owner.selectOption('#aw', wed.key); await owner.waitForSelector('#apk-go');

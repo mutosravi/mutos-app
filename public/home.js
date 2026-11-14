@@ -85,6 +85,7 @@
     const rows = sup() ? [['#out', 'logout', 'Sign out', who.email]] : [
       owner && ['#logins', 'key', 'Team logins', 'Managers, gear desk, who can sign in'],
       owner && ['#backups', 'cloud', 'Backups', 'Nightly copies, download or back up now'],
+      owner && ['#gdrive', 'cloud', 'Photos on Google Drive', 'Where card and family photos are kept'],
       ['#logs', 'table', 'Logs (Excel)', 'Cards, drives and gear: every handover, note and copy'],
       ['#save', 'download', 'Save backup file', 'Download everything to this device'],
       ['#load', 'upload', 'Load backup file', 'Bring back a saved backup'],
@@ -100,6 +101,7 @@
     ov.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
       const a = b.dataset.act; closeMore();
       if (a === 'logins') { if (window.MUTOS_APP) window.MUTOS_APP.openLogins(); } else if (a === 'backups') { if (window.MUTOS_APP) window.MUTOS_APP.openBackups(); }
+      else if (a === 'gdrive') { if (window.MutosPhotos) app.client().then(c => window.MutosPhotos.settings(c)); }
       else if (a === 'logs') { if (window.MUTOS_APP && window.MUTOS_APP.downloadLogs) window.MUTOS_APP.downloadLogs(); }
       else if (a === 'save') click('sb-backup'); else if (a === 'load') click('sb-restore'); else if (a === 'excel') click('sb-export');
       else if (a === 'out') app.signOut();

@@ -27,6 +27,11 @@
 .crow .sel { grid-row: 1 / span 2; display: flex; align-items: center; }
 .crow .sel input { width: 22px; height: 22px; accent-color: var(--rose); }
 .crow .nm { font-weight: 700; font-size: 15px; }
+.phs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+.phs .ph { position: relative; width: 84px; text-align: center; font-size: 11px; color: var(--muted); }
+.phs .ph button.open { border: 0; padding: 0; background: none; cursor: zoom-in; display: block; }
+.phs .ph img { width: 84px; height: 84px; object-fit: cover; border-radius: 14px; display: block; background: var(--blush, #f1e2dc); }
+.phs .ph.old img { opacity: .6; }
 .crow .nm small { font-weight: 400; color: var(--muted); font-size: 12.5px; margin-left: 6px; }
 .crow .meta { grid-column: 2 / -1; margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .crow.nosel .meta { grid-column: 1 / -1; }
@@ -80,6 +85,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
 <script src="/icons.js"></script>
 <script src="/work-core.js"></script>
 <script src="/push-client.js"></script>
+<script src="/photos.js"></script>
 </head>
 <body>
 <main class="wrap" style="padding-bottom:120px">
@@ -153,6 +159,28 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     if (k.error) throw k.error;
     cards = k.data || []; moves = m.data || []; uses = u.data || []; copies = cp.data || []; dir = p.data || []; drives = d.data || [];
     cards.sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
+    await loadPhotos();
+  }
+  // photos of the cards on the studio's Google Drive (026_photos.sql + worker/photos.js); quiet until 026 is run
+  let photos = [], drive = null;
+  async function loadPhotos() {
+    const r = await c.from('uploads').select('id, cards, cycles, event_id, note, by_email, by_person, at').eq('kind', 'card').order('at', { ascending: false }).limit(3000);
+    photos = r.error ? [] : (r.data || []);
+    if (drive === null && window.MutosPhotos && !r.error) drive = await window.MutosPhotos.status(c).catch(() => ({}));
+  }
+  const canPhoto = () => !!(drive && drive.connected) && (desk || !!person);
+  const photosOf = k => photos.filter(x => (x.cards || []).includes(k.id));
+  async function addPhotos(files, list, event, note) {
+    files = [...(files || [])]; if (!files.length) return 0;
+    let n = 0;
+    for (const f of files) {
+      toast('Uploading photo ' + (n + 1) + ' of ' + files.length + '…');
+      try { await window.MutosPhotos.upload(c, { kind: 'card', cards: list.map(k => k.id), event: event || null, note: note || null }, f, { max: 2400, quality: 0.85, onProgress: x => { const t = $('toast'); if (t && !t.hidden) t.textContent = 'Uploading photo ' + (n + 1) + ' of ' + files.length + '… ' + Math.round(x * 100) + '%'; } }); n++; }
+      catch (e) { toast('Photo ' + (n + 1) + ' not added: ' + e.message, true); break; }
+    }
+    await loadPhotos();
+    if (n) toast(n + ' photo' + (n > 1 ? 's' : '') + ' added (on Google Drive).');
+    return n;
   }
   // the shoots a note can be for: EVERY shoot on the board, past, today and future, with the wedding / client name (12 Nov 2026, Ravi).
   // The studio reads the board; the team gets the same list from card_shoots() (022; no phone numbers). "Mine" = the shoots on my page.
@@ -338,6 +366,11 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       '</div>' +
       '<h4>This round' + (k.cycle > 1 ? ' (round ' + k.cycle + ')' : '') + '</h4>' + (now.length ? now.map(u => '<div class="rep"><b>' + esc(useText(u)) + '</b><br><span class="meta" style="display:inline">by ' + esc(u.by_person ? nameOf(u.by_person) : u.by_email) + ' · ' + esc(when(u.at)) + '</span>' + ((u.by_email === me.email || staff) && !copies.some(x => x.card === k.id && x.cycle === k.cycle) ? ' <button type="button" class="x" data-rmu="' + u.id + '">remove</button>' : '') + (staff && u.used ? ' <button type="button" class="x" data-mvu="' + u.id + '">change shoot</button>' : '') + '</div>').join('') : '<p class="sub">No notes yet.</p>') +
       (staff && uses.some(u => u.card === k.id && u.cycle < k.cycle && u.used) ? '<h4>Earlier rounds</h4>' + uses.filter(u => u.card === k.id && u.cycle < k.cycle && u.used).slice(0, 12).map(u => '<div class="rep"><b>' + esc(useText(u)) + '</b><br><span class="meta" style="display:inline">round ' + u.cycle + ' · by ' + esc(u.by_person ? nameOf(u.by_person) : u.by_email) + ' · ' + esc(when(u.at)) + '</span> <button type="button" class="x" data-mvu="' + u.id + '">change shoot</button></div>').join('') : '') +
+      (photosOf(k).length || canPhoto() ? '<h4>Photos</h4><div class="phs" id="k-phs">' + photosOf(k).map((x, i) => { const old = (x.cycles || [])[(x.cards || []).indexOf(k.id)] !== k.cycle;
+        return '<div class="ph' + (old ? ' old' : '') + '"><button type="button" class="open" data-phi="' + i + '" aria-label="See the photo"><img data-pid="' + x.id + '" alt=""></button>' + esc(old ? 'earlier round' : when(x.at)) +
+          (x.by_email === me.email || staff ? ' <button type="button" class="x" data-phx="' + x.id + '">remove</button>' : '') + '</div>'; }).join('') + '</div>' +
+        (canPhoto() ? '<label class="pillbtn light" style="display:inline-flex;cursor:pointer;margin:0 0 6px">📷 Add photos<input type="file" accept="image/*" multiple id="k-phin" hidden></label>' : '') : '') +
+      (!canPhoto() && drive && !drive.connected && staff ? '<p class="sub">Card photos: connect Google Drive first (Home → Settings → Photos on Google Drive).</p>' : '') +
       '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + x.files + ' files' + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span></div>').join('') : '<p class="sub">Not copied yet.</p>') +
       '<h4>History</h4><div id="k-hist" class="sub">Loading…</div>' +
       '<div class="acts" style="margin-top:14px">' +
@@ -356,6 +389,11 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     on('#k-ok', async () => { if (await rpc('card_problem', { p_card: k.id, p_kind: k.condition === 'lost' ? 'found' : 'ok', p_note: null }, 'Back in use.')) { bg.remove(); await refresh(); } });
     on('#k-edit', () => { bg.remove(); editCard(k); });
     on('#k-fix', () => { bg.remove(); fix(k); });
+    if (window.MutosPhotos) window.MutosPhotos.fill(bg, c);
+    const plist = photosOf(k).map(x => ({ pid: x.id, title: x.note || 'Card ' + k.code, sub: when(x.at) + ' · ' + (x.by_person ? nameOf(x.by_person) : x.by_email) }));
+    bg.querySelectorAll('[data-phi]').forEach(b => b.addEventListener('click', () => window.MutosPhotos.view(c, plist, +b.dataset.phi)));
+    bg.querySelectorAll('[data-phx]').forEach(b => b.addEventListener('click', async () => { if (!confirm('Take this photo off the card? (It stays in the studio\'s Google Drive.)')) return; const r = await window.MutosPhotos.remove(c, b.dataset.phx); if (r.error) { toast(r.error, true); return; } await loadPhotos(); bg.remove(); openCard(cards.find(x => x.id === k.id)); }));
+    const phin = g('#k-phin'); if (phin) phin.addEventListener('change', async () => { const fs = [...phin.files]; phin.value = ''; if (await addPhotos(fs, [k], null, null)) { bg.remove(); openCard(cards.find(x => x.id === k.id)); } });
     bg.querySelectorAll('[data-mvu]').forEach(b => b.addEventListener('click', () => { const u = uses.find(x => x.id === b.dataset.mvu); bg.remove(); moveForm(k, u); }));
     bg.querySelectorAll('[data-rmu]').forEach(b => b.addEventListener('click', async () => { if (await rpc('card_use_remove', { p_use: b.dataset.rmu }, 'Note removed.')) { bg.remove(); await refresh(); openCard(cards.find(x => x.id === k.id)); } }));
     const { data: log } = await c.from('card_log').select('*').eq('card', k.id).order('at', { ascending: false }).limit(40);
@@ -396,6 +434,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       '<label class="wide" id="n-other-l" hidden style="display:block;margin-top:6px;color:var(--muted)">Shoot name<input class="in" id="n-other" maxlength="160" placeholder="e.g. Sharma Haldi"></label>' +
       '<h4>Photo or video</h4>' + radios('n-media', MEDIA, recent.media || null) + '<h4>Style</h4>' + radios('n-style', STYLE, recent.style || null) +
       '<div class="form-grid" style="margin-top:12px"><label>Camera / shooter<input class="in" id="n-cam" maxlength="60" value="' + esc(L.cam || '') + '" placeholder="e.g. Z9, Saif"></label><label>Notes<input class="in" id="n-note" maxlength="300" placeholder="e.g. vidaai, card nearly full"></label></div>' +
+      (canPhoto() ? '<h4>Photos (optional)</h4><label class="pillbtn light" style="display:inline-flex;cursor:pointer">📷 Add photos of the cards<input type="file" accept="image/*" multiple id="n-photos" hidden></label> <span class="sub" id="n-phn"></span>' : '') +
       '<div class="pillrow"><button type="button" class="pillbtn light" id="n-unused">Not used</button><button type="button" class="pillbtn" id="n-save">Save</button></div><p style="margin-top:10px"><button type="button" class="x" id="n-cx">Cancel</button></p>');
     const g = s2 => bg.querySelector(s2);
     let sh = null, typed = !shoots.length;
@@ -403,6 +442,8 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     if (typed) { g('#n-other-l').hidden = false; g('#n-pick').hidden = true; }
     g('#n-type').addEventListener('click', () => { typed = true; sh = null; g('#n-other-l').hidden = false; g('#n-other').focus(); });
     g('#n-cx').addEventListener('click', () => bg.remove());
+    let nPhotos = [];
+    const nIn = g('#n-photos'); if (nIn) nIn.addEventListener('change', () => { nPhotos = nPhotos.concat([...nIn.files]).slice(0, 20); nIn.value = ''; g('#n-phn').textContent = nPhotos.length + ' photo' + (nPhotos.length > 1 ? 's' : '') + ' picked'; });
     const save = async used => {
       const pick = typed ? { id: '', name: g('#n-other').value.trim(), wedding: '' } : sh ? { id: sh.id, name: sh.name, wedding: sh.wedding } : null;
       const media = (bg.querySelector('input[name="n-media"]:checked') || {}).value || null, style = (bg.querySelector('input[name="n-style"]:checked') || {}).value || null;
@@ -413,7 +454,9 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
         if (!r) return;
       }
       try { localStorage.setItem(LAST, JSON.stringify({ at: Date.now(), shoot: used && pick.id ? pick.id : recent.shoot || null, media: media || recent.media, style: style || recent.style, cam: g('#n-cam').value.trim() })); } catch (e) {}
-      sel.clear(); bg.remove(); await refresh(); toast(used ? 'Saved. ' + (list.length > 1 ? 'These cards are' : 'The card is') + ' on hold until the office copies ' + (list.length > 1 ? 'them' : 'it') + '.' : 'Marked not used.');
+      sel.clear(); bg.remove();
+      if (nPhotos.length) await addPhotos(nPhotos, list, used ? pick.id : null, used ? pick.name : 'Not used');
+      await refresh(); if (!nPhotos.length) toast(used ? 'Saved. ' + (list.length > 1 ? 'These cards are' : 'The card is') + ' on hold until the office copies ' + (list.length > 1 ? 'them' : 'it') + '.' : 'Marked not used.');
     };
     g('#n-save').addEventListener('click', () => save(true));
     g('#n-unused').addEventListener('click', () => save(false));

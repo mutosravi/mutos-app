@@ -56,6 +56,14 @@
 .vip .ph { width: 72px; height: 72px; border-radius: 16px; background: var(--blush) center/cover no-repeat; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); text-align: center; cursor: pointer; position: relative; overflow: hidden; }
 .vip .ph input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .vip .f { display: grid; gap: 6px; }
+.vip .ph.busy { opacity: .55; }
+/* reference photos (14 Nov 2026): kept on the studio's Google Drive, ~3000px */
+.refs { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+.refs .rf { display: grid; gap: 6px; }
+.refs .rf button.open { border: 0; padding: 0; background: var(--blush) center/cover no-repeat; border-radius: 14px; aspect-ratio: 1; cursor: zoom-in; width: 100%; }
+.refs .rf .in { font-size: 13px; padding: 8px 10px; }
+.upbar { height: 6px; border-radius: 3px; background: var(--sand); overflow: hidden; margin-top: 8px; }
+.upbar i { display: block; height: 100%; background: var(--rose); width: 0; transition: width .2s; }
 .addrow { background: none; border: 1.5px dashed var(--line); border-radius: 14px; padding: 10px; width: 100%; margin-top: 10px; font: 600 13px var(--font-body); color: var(--ink); cursor: pointer; }
 .progress i { display: block; height: 100%; background: var(--rose); border-radius: 4px; transition: width .3s; }
 @media (max-width: 380px) { .fn .grid { grid-template-columns: 1fr; } }
@@ -63,6 +71,7 @@
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
 <script src="/icons.js"></script>
+<script src="/photos.js"></script>
 </head>
 <body>
 <main class="wrap" style="padding-bottom:24px">
@@ -132,6 +141,8 @@
   if (!Array.isArray(ans.extra)) ans.extra = [];
   if (!Array.isArray(ans.contacts)) ans.contacts = [];
   if (!Array.isArray(ans.vip)) ans.vip = [];
+  if (!Array.isArray(ans.refs)) ans.refs = [];   // reference photos { pid, note, fn } (14 Nov 2026)
+  const P = window.MutosPhotos, drv = P ? await P.status(c).catch(() => ({})) : {}, onDrive = !!drv.connected;   // photos go to the studio's Google Drive
   if (!ans.couple || typeof ans.couple !== 'object') ans.couple = {};   // { bride, groom } (12 Nov 2026, Ravi)
   // a photo from the phone, shrunk to a small JPEG (about 20–40 KB) so it saves quickly
   const shrink = file => new Promise((res, rej) => {
@@ -201,16 +212,22 @@
     if (!fns.length && !ans.extra.length) h += '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
     h += '<div id="more-slot"></div><div class="sechead2">For our team on the day</div>';
     const fnOpts = sel => '<option value="">All functions</option>' + fns.map(f => '<option value="' + esc(f.id) + '"' + (sel === f.id ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('');
-    const nC = ans.contacts.filter(p => p.name || p.phone).length, nV = ans.vip.filter(p => p.name || p.photo).length;
+    const nC = ans.contacts.filter(p => p.name || p.phone).length, nV = ans.vip.filter(p => p.name || p.photo || p.pid).length, nR = ans.refs.filter(r => r.pid).length;
     h += fcard('contacts', ' sec', '<span class="txt"><h2>People to call</h2><span class="meta">' + (nC ? nC + ' added' : 'Family members our team can call at the venue') + '</span></span><span class="go' + (nC ? ' ok' : '') + '">' + (nC ? 'Edit' : 'Add') + '</span>',
       '<div id="sec-contacts">' + ans.contacts.map((p, i) => '<div class="ppl"><label>Name<input class="in" data-k="c' + i + '" data-f="name" maxlength="80" value="' + esc(p.name || '') + '"></label><label>Relation<input class="in" data-k="c' + i + '" data-f="rel" maxlength="60" value="' + esc(p.rel || '') + '" placeholder="e.g. Bride\'s brother"></label>' +
         '<label>Phone<input class="in" type="tel" inputmode="tel" data-k="c' + i + '" data-f="phone" maxlength="20" value="' + esc(p.phone || '') + '"></label><label>For<select class="in" data-k="c' + i + '" data-f="fn">' + fnOpts(p.fn) + '</select></label>' +
         '<button type="button" class="x" data-rmc="' + i + '" style="justify-self:start">Remove</button></div>').join('') +
       (ans.contacts.length < 12 ? '<button type="button" class="addrow" id="add-c">＋ Add a person to call</button>' : '') + '</div>' + doneBtn);
     h += fcard('vip', ' sec', '<span class="txt"><h2>Important people</h2><span class="meta">' + (nV ? nV + ' added' : 'Family members who must be in the photos') + '</span></span><span class="go' + (nV ? ' ok' : '') + '">' + (nV ? 'Edit' : 'Add') + '</span>',
-      '<div id="sec-vip"><p class="meta" style="margin:0">Add a photo and name of grandparents and close relatives. Our team sees them before the shoot.</p>' + ans.vip.map((p, i) => '<div class="vip"><label class="ph" style="' + (p.photo ? 'background-image:url(' + esc(p.photo) + ')' : '') + '">' + (p.photo ? '' : 'Add photo') + '<input type="file" accept="image/*" data-vph="' + i + '" aria-label="Photo"></label>' +
+      '<div id="sec-vip"><p class="meta" style="margin:0">Add a photo and name of grandparents and close relatives. Our team sees them before the shoot.</p>' + ans.vip.map((p, i) => '<div class="vip"><label class="ph"' + (p.pid ? ' data-pid="' + esc(p.pid) + '"' : '') + ' style="' + (p.photo && !p.pid ? 'background-image:url(' + esc(p.photo) + ')' : '') + '">' + (p.photo || p.pid ? '' : 'Add photo') + '<input type="file" accept="image/*" data-vph="' + i + '" aria-label="Photo"></label>' +
         '<div class="f"><input class="in" data-k="v' + i + '" data-f="name" maxlength="80" placeholder="Name" value="' + esc(p.name || '') + '"><input class="in" data-k="v' + i + '" data-f="rel" maxlength="60" placeholder="Relation, e.g. Groom\'s grandmother" value="' + esc(p.rel || '') + '"><button type="button" class="x" data-rmv="' + i + '" style="justify-self:start">Remove</button></div></div>').join('') +
       (ans.vip.length < 15 ? '<button type="button" class="addrow" id="add-v">＋ Add an important person</button>' : '') + '</div>' + doneBtn);
+    if (onDrive || nR) h += fcard('refs', ' sec', '<span class="txt"><h2>Reference photos</h2><span class="meta">' + (nR ? nR + ' added' : 'Poses, decor, outfits you like') + '</span></span><span class="go' + (nR ? ' ok' : '') + '">' + (nR ? 'Edit' : 'Add') + '</span>',
+      '<div id="sec-refs"><p class="meta" style="margin:0">Photos you would like our team to see: poses, decor, outfits, ideas. Add a line about each and pick the function. Saved in full quality for our team.</p>' +
+      '<div class="refs">' + ans.refs.map((r, i) => r.pid ? '<div class="rf"><button type="button" class="open" data-pid="' + esc(r.pid) + '" data-rfi="' + i + '" aria-label="See the photo"></button>' +
+        '<input class="in" data-k="r' + i + '" data-f="note" maxlength="120" placeholder="What about it?" value="' + esc(r.note || '') + '"><select class="in" data-k="r' + i + '" data-f="fn">' + fnOpts(r.fn) + '</select>' +
+        '<button type="button" class="x" data-rmr="' + i + '" style="justify-self:start">Remove</button></div>' : '').join('') + '</div>' +
+      (onDrive && ans.refs.length < 40 ? '<label class="addrow" style="display:block;text-align:center;cursor:pointer">＋ Add photos<input type="file" accept="image/*" multiple id="add-r" hidden></label><div class="upbar" id="r-bar" hidden><i></i></div>' : '') + '</div>' + doneBtn);
     if (bk) h += '<div class="sechead2">Your package</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>' + (bk.package && bk.package !== 'Custom' ? esc(bk.package) : 'Package') + '</h2><span class="meta">Paid ' + inr(bk.paid) + ' of ' + inr(bk.total) + (bk.pending > 0 ? ' · ' + inr(bk.pending) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
       ((bk.items || []).length ? '<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +
       '<div class="grid" style="margin-top:12px"><div><div class="meta">Paid</div><b>' + inr(bk.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(bk.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(bk.pending) + '</b></div>' +
@@ -224,7 +241,7 @@
     $('list').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.open; openKey = openKey === k ? null : k; render(); if (openKey) { const el = $('list').querySelector('[data-card="' + k + '"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }));
     $('list').querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { const k = openKey; openKey = null; render(); if (dirty) save(false); const el = k && $('list').querySelector('[data-card="' + k + '"]'); if (el) el.scrollIntoView({ block: 'nearest' }); }));
     $('list').querySelectorAll('[data-f]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' || inp.tagName === 'SELECT' ? 'change' : 'input', () => {
-      const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcv]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});
+      const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcvr]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip, r: ans.refs }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
       dirty = true; $('saved').textContent = 'Not saved yet'; scheduleSave();
       if (k === 'couple') { const h2 = document.querySelector('#top .hero h2'); if (h2) h2.textContent = coupleTitle() || got.title; const m = document.querySelector('[data-card="couple"] .fn-sum .meta'); if (m) m.textContent = ans.couple.bride && ans.couple.groom ? ans.couple.bride + ' & ' + ans.couple.groom : 'Bride\'s and groom\'s names'; }
@@ -238,9 +255,30 @@
     $('list').querySelectorAll('[data-rmv]').forEach(b => b.addEventListener('click', () => { ans.vip.splice(Number(b.dataset.rmv), 1); dirty = true; render(); scheduleSave(); }));
     $('list').querySelectorAll('[data-vph]').forEach(inp => inp.addEventListener('change', async () => {
       const file = inp.files && inp.files[0]; if (!file) return;
-      try { ans.vip[Number(inp.dataset.vph)].photo = await shrink(file); dirty = true; render(); scheduleSave(); } catch (e) { toast(e.message, true); }
+      const v = ans.vip[Number(inp.dataset.vph)];
+      try {
+        if (onDrive) {   // the studio's Google Drive, ~3000px (Ravi, 14 Nov 2026)
+          inp.closest('.ph').classList.add('busy'); inp.closest('.ph').firstChild.textContent = 'Uploading…';
+          const r = await P.upload(c, { kind: 'client', ref: token, purpose: 'vip', note: v.name || '' }, file, { max: 3000, quality: 0.9 });
+          v.pid = r.id; delete v.photo;
+        } else v.photo = await shrink(file);   // until the admin connects Google Drive: a small copy in the form, as before
+        dirty = true; render(); scheduleSave();
+      } catch (e) { toast(e.message, true); render(); }
     }));
-    if (preview) $('list').querySelectorAll('.addrow, [data-rmc], [data-rmv]').forEach(x => { x.hidden = true; });
+    const addR = $('add-r');
+    if (addR) addR.addEventListener('change', async () => {
+      const files = [...addR.files].slice(0, 40 - ans.refs.length); addR.value = '';
+      const bar = $('r-bar'); bar.hidden = false; let n = 0;
+      for (const f of files) {
+        try { const r = await P.upload(c, { kind: 'client', ref: token, purpose: 'ref', note: '' }, f, { max: 3000, quality: 0.9, onProgress: x => { bar.firstChild.style.width = Math.round((n + x) / files.length * 100) + '%'; } }); ans.refs.push({ pid: r.id, note: '', fn: '' }); n++; dirty = true; }
+        catch (e) { toast('Photo ' + (n + 1) + ' not added: ' + e.message, true); break; }
+      }
+      openKey = 'refs'; render(); if (n) { scheduleSave(); toast(n + ' photo' + (n > 1 ? 's' : '') + ' added. Write a line about each if you like.'); }
+    });
+    $('list').querySelectorAll('[data-rmr]').forEach(b => b.addEventListener('click', () => { const r = ans.refs.splice(Number(b.dataset.rmr), 1)[0]; if (r && r.pid) P.remove(c, r.pid).catch(() => {}); dirty = true; render(); scheduleSave(); }));
+    $('list').querySelectorAll('[data-rfi]').forEach(b => b.addEventListener('click', () => { const list = ans.refs.filter(r => r.pid); P.view(c, list.map(r => ({ pid: r.pid, title: r.note || 'Reference photo', sub: r.fn ? (fns.find(f => f.id === r.fn) || {}).name || '' : 'All functions' })), list.indexOf(ans.refs[+b.dataset.rfi])); }));
+    if (P) P.fill($('list'), c);
+    if (preview) $('list').querySelectorAll('.addrow, [data-rmc], [data-rmv], [data-rmr], [data-vph]').forEach(x => { x.hidden = true; });
     $('list').querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { ans.extra.splice(Number(b.dataset.rm), 1); openKey = null; dirty = true; render(); scheduleSave(); }));
   }
   let saveT = null, saving = false;
@@ -249,7 +287,8 @@
     clearTimeout(saveT);
     if (saving) { setTimeout(() => save(submit), 400); return false; }
     saving = true; $('saved').textContent = 'Saving…';
-    const clean = { extra: ans.extra.filter(a => Object.values(a).some(Boolean)), contacts: ans.contacts.filter(a => a.name || a.phone), vip: ans.vip.filter(a => a.name || a.photo) };
+    const clean = { extra: ans.extra.filter(a => Object.values(a).some(Boolean)), contacts: ans.contacts.filter(a => a.name || a.phone), vip: ans.vip.filter(a => a.name || a.photo || a.pid) };
+    if (ans.refs.some(r => r.pid)) clean.refs = ans.refs.filter(r => r.pid).map(r => ({ pid: r.pid, note: String(r.note || '').trim().slice(0, 120), fn: r.fn || '' }));
     if (ans.couple && (ans.couple.bride || ans.couple.groom)) clean.couple = { bride: String(ans.couple.bride || '').trim().slice(0, 80), groom: String(ans.couple.groom || '').trim().slice(0, 80) };
     fns.forEach(f => { if (ans[f.id] && Object.values(ans[f.id]).some(Boolean)) clean[f.id] = ans[f.id]; });
     try {

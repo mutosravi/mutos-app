@@ -4,6 +4,7 @@
 import { sendPush } from './push.js';
 import { runBackup, listAll } from './backup.js';
 import { parseServiceAccount, exportSheetXlsx } from './google.js';
+import { photosApi } from './photos.js';
 
 const pad = n => String(n).padStart(2, '0');
 function istDate(offsetDays) { const d = new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 864e5); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
@@ -313,6 +314,9 @@ export default {
     }
     if (url.pathname === '/api/notify-shoots' && request.method === 'POST') {
       try { return await notifyShootsApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
+    }
+    if (url.pathname.startsWith('/api/photos/')) {   // photos on the studio's Google Drive (worker/photos.js)
+      try { return await photosApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
     if (url.pathname.startsWith('/api/backups')) {
       try { return await backupApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }

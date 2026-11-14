@@ -1,5 +1,5 @@
 // Cloudflare settings for the Muto's app (read automatically when you push to GitHub).
-// Secrets are NOT here: add SUPABASE_SECRET_KEY and VAPID_PRIVATE_KEY in Cloudflare → this Worker → Settings → Variables and Secrets.
+// Secrets are NOT here: add SUPABASE_SECRET_KEY, VAPID_PRIVATE_KEY (and for photos on Google Drive GDRIVE_CLIENT_ID + GDRIVE_CLIENT_SECRET) in Cloudflare → this Worker → Settings → Variables and Secrets.
 {
   "name": "mutos-app",
   "main": "worker/index.js",

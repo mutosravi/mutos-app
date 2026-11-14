@@ -20,6 +20,7 @@
 <script src="/app-core.js"></script>
 <script src="/push-client.js"></script>
 <script src="/icons.js"></script>
+<script src="/photos.js"></script>
 </head>
 <body>
 <main class="wrap">
@@ -374,12 +375,17 @@
         box.dataset.open = '1'; box.textContent = 'Loading…';
         const { data, error } = await c.rpc('crew_vip', { p_event: s.id });
         if (error || !data || data.error) { box.textContent = (data && data.error) || 'Not available yet.'; return; }
-        const v = data.vip || [], k = data.contacts || [], cp = data.couple || {};
+        const v = data.vip || [], k = data.contacts || [], cp = data.couple || {}, rf = (data.refs || []).filter(x => x.pid), P = window.MutosPhotos;
+        const hasPh = x => x.photo || x.pid, thumb = x => P ? P.img(x, 'width:76px;height:76px;object-fit:cover;border-radius:16px;display:block', '') : (x.photo ? '<img src="' + esc(x.photo) + '" alt="" style="width:76px;height:76px;object-fit:cover;border-radius:16px;display:block">' : '');
         box.innerHTML = (cp.bride || cp.groom ? '<div class="couple" style="margin-top:8px"><span class="meta" style="display:inline">Couple:</span> <b>' + esc([cp.bride ? cp.bride + ' (bride)' : '', cp.groom ? cp.groom + ' (groom)' : ''].filter(Boolean).join(' · ')) + '</b></div>' : '') +
-          (!v.length && !k.length && !(cp.bride || cp.groom) ? '<div class="meta">The family has not added anyone yet.</div>' : '') +
-          (v.length ? '<div class="meta" style="margin-top:8px">Must be in the photos</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">' + v.map(x => '<div style="width:84px;text-align:center;font-size:12px;line-height:1.3">' + (x.photo ? '<button type="button" class="vip-ph" data-i="' + v.indexOf(x) + '" aria-label="See the photo of ' + esc(x.name || '') + '" style="border:0;padding:0;background:none;display:block;margin:0 auto 4px;cursor:zoom-in"><img src="' + esc(x.photo) + '" alt="" style="width:76px;height:76px;object-fit:cover;border-radius:16px;display:block"></button>' : '') + '<b>' + esc(x.name || '') + '</b><br><span class="meta" style="display:inline">' + esc(x.rel || '') + '</span></div>').join('') + '</div>' : '') +
+          (!v.length && !k.length && !rf.length && !(cp.bride || cp.groom) ? '<div class="meta">The family has not added anyone yet.</div>' : '') +
+          (v.length ? '<div class="meta" style="margin-top:8px">Must be in the photos</div><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px">' + v.map(x => '<div style="width:84px;text-align:center;font-size:12px;line-height:1.3">' + (hasPh(x) ? '<button type="button" class="vip-ph" data-i="' + v.indexOf(x) + '" aria-label="See the photo of ' + esc(x.name || '') + '" style="border:0;padding:0;background:none;display:block;margin:0 auto 4px;cursor:zoom-in">' + thumb(x) + '</button>' : '') + '<b>' + esc(x.name || '') + '</b><br><span class="meta" style="display:inline">' + esc(x.rel || '') + '</span></div>').join('') + '</div>' : '') +
+          (rf.length ? '<div class="meta" style="margin-top:10px">Ideas from the family (' + rf.length + ')</div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">' + rf.map((x, i) => '<button type="button" class="ref-ph" data-i="' + i + '" aria-label="See the photo" style="border:0;padding:0;background:none;cursor:zoom-in;width:76px;text-align:center;font-size:11.5px;line-height:1.25;color:inherit">' + thumb(x) + (x.note ? '<span style="display:block;margin-top:3px">' + esc(x.note) + '</span>' : '') + '</button>').join('') + '</div>' : '') +
           (k.length ? '<div class="meta" style="margin-top:10px">Family to call</div>' + k.map(x => '<div style="margin-top:4px">' + esc(x.name || '') + (x.rel ? ' <span class="meta" style="display:inline">' + esc(x.rel) + '</span>' : '') + (x.phone ? ' <a class="chip" href="' + tel(x.phone) + '">Call</a>' : '') + '</div>').join('') : '');
-        box.querySelectorAll('.vip-ph').forEach(b => b.addEventListener('click', () => showPhoto(v.filter(x => x.photo), v.filter(x => x.photo).indexOf(v[+b.dataset.i]))));
+        const vp = v.filter(hasPh);
+        box.querySelectorAll('.vip-ph').forEach(b => b.addEventListener('click', () => P ? P.view(c, vp.map(x => ({ pid: x.pid, photo: x.photo, title: x.name, sub: x.rel })), vp.indexOf(v[+b.dataset.i])) : showPhoto(vp, vp.indexOf(v[+b.dataset.i]))));
+        box.querySelectorAll('.ref-ph').forEach(b => b.addEventListener('click', () => P.view(c, rf.map(x => ({ pid: x.pid, title: x.note || 'Idea from the family' })), +b.dataset.i)));
+        if (P) P.fill(box, c);
       });
       on('data', () => { const n = el.querySelector('[data-role="data-note"]'); saveStatus(s, { data_at: new Date().toISOString(), data_note: n && n.value.trim() || null }, 'Marked: data handed over.'); });
     });

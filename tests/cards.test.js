@@ -9,7 +9,7 @@ const uid = () => crypto.randomUUID(), now = () => new Date().toISOString();
 const istDay = (n = 0) => new Date(Date.now() + 330 * 60000 + n * 864e5).toISOString().slice(0, 10);
 
 // ── data ──
-const T = { members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), client_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map() };
+const T = { uploads: new Map(), members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), client_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map() };
 const OWNER = 'o@x.com', SUP = 's@x.com', SHREY = 'shrey@x.com', SAIF = 'saif@x.com', GEARM = 'gearm@x.com';
 [[OWNER, 'owner', null], [SUP, 'supervisor', null], [SHREY, 'crew', 'shrey'], [SAIF, 'crew', 'saif'], [GEARM, 'gear', null]].forEach(([email, role, person_key]) => T.members.set(email, { email, role, person_key }));
 const P = {}; [['Ravi', OWNER], ['Vikas', SUP], ['Shrey', SHREY], ['Saif', SAIF], ['Hamza', 'hamza@x.com'], ['Raju', GEARM]].forEach(([name, email], i) => { const id = uid(); P[name] = id; T.people.set(id, { id, code: 'M00' + (i + 1), name, email, active: true, skills: [] }); });
@@ -111,7 +111,7 @@ function rpc(fn, a, e) {
   }
   return err('unknown rpc ' + fn);
 }
-const readable = (t, e) => t === 'client_log' ? staff(e) : ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
+const readable = (t, e) => t === 'client_log' ? staff(e) : t === 'uploads' ? desk(e) || !!personOf(e) : ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
 function handle(e, d) {
   if (d.op === 'session') return e ? { id: 'u-' + e, email: e, user_metadata: { full_name: e } } : null;
   if (d.op === 'rpc') { const r = rpc(d.fn, d.args, e); return { data: r, error: null }; }
@@ -124,6 +124,7 @@ function handle(e, d) {
     if (d.table === 'members' && !staff(e)) rows = rows.filter(r => r.email === e);
     if (d.table === 'crew_feed' && !staff(e)) rows = rows.filter(r => r.person_key === (T.members.get(e) || {}).person_key);
     if (d.table === 'docs') rows = rows.map(r => ({ collection: r.collection, id: r.id, data: r.data }));
+    if (d.table === 'uploads') rows = rows.filter(r => r.status === 'ok' && !r.removed_at);
     if (d.range) rows = rows.slice(d.range[0], d.range[1] + 1);
     return { data: d.single ? rows[0] || null : JSON.parse(JSON.stringify(rows)), error: null };
   }
@@ -139,7 +140,29 @@ function handle(e, d) {
 
 const handleRead = (e, t) => handle(e, { op: 'select', table: t, filters: [], order: [] }).data || [];
 const notices = [];
-const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') { let b = ''; q.on('data', x => { b += x; }); q.on('end', () => { notices.push(JSON.parse(b)); s.writeHead(200, { 'content-type': 'application/json' }); s.end('{"sent":1}'); }); return; } let p = q.url.split('?')[0]; if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!fs.existsSync(f)) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': p.endsWith('.js') ? 'text/javascript' : p.endsWith('.css') ? 'text/css' : 'text/html' }); fs.createReadStream(f).pipe(s); });
+// the Worker's photo routes (worker/photos.js), faked: the photo "goes to Drive" = kept here; who = photoUser (the fake token is the same for all)
+let photoUser = OWNER; const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+function photoApi(q, s) {
+  const send = (o, st = 200) => { s.writeHead(st, { 'content-type': 'application/json' }); s.end(JSON.stringify(o)); };
+  const u = new URL(q.url, 'http://x'); const chunks = []; q.on('data', x => chunks.push(x));
+  q.on('end', () => {
+    if (u.pathname === '/api/photos/status') return send({ configured: true, connected: true, account: 'mutos.media@gmail.com' });
+    if (u.pathname === '/api/photos/upload' && u.searchParams.get('thumb')) { const r = T.uploads.get(u.searchParams.get('thumb')); if (r) r.thumb_id = 'drv-small'; return send({ ok: true }); }
+    if (u.pathname === '/api/photos/upload') {
+      const info = JSON.parse(decodeURIComponent(q.headers['x-mutos-photo'] || '{}')), id = uid();
+      if (info.kind !== 'card' || !(desk(photoUser) || personOf(photoUser))) return send({ error: 'Only the team on Muto\'s People list can add card photos.' }, 400);
+      T.uploads.set(id, { id, kind: 'card', purpose: 'card', cards: info.cards, cycles: info.cards.map(c => T.cards.get(c).cycle), event_id: info.event || null, note: info.note || null, mime: q.headers['content-type'], size: Buffer.concat(chunks).length,
+        drive_id: 'drv-' + id, status: 'ok', by_email: photoUser, by_person: personOf(photoUser), at: now() });
+      info.cards.forEach(c => log(c, photoUser, 'Photo added'));
+      return send({ id });
+    }
+    const m = u.pathname.match(/^\/api\/photos\/file\/(.+)$/);
+    if (m) { if (!T.uploads.has(m[1])) return send({ error: 'Not found.' }, 404); s.writeHead(200, { 'content-type': 'image/png' }); return s.end(PNG); }
+    if (u.pathname === '/api/photos/remove') { const r = T.uploads.get(JSON.parse(Buffer.concat(chunks).toString() || '{}').id); if (!r || !(r.by_email === photoUser || staff(photoUser))) return send({ error: 'no' }, 400); r.removed_at = now(); return send({ ok: true }); }
+    send({ error: 'Not found' }, 404);
+  });
+}
+const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/')) return photoApi(q, s); if (q.url === '/api/notify-card') { let b = ''; q.on('data', x => { b += x; }); q.on('end', () => { notices.push(JSON.parse(b)); s.writeHead(200, { 'content-type': 'application/json' }); s.end('{"sent":1}'); }); return; } let p = q.url.split('?')[0]; if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!fs.existsSync(f)) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': p.endsWith('.js') ? 'text/javascript' : p.endsWith('.css') ? 'text/css' : 'text/html' }); fs.createReadStream(f).pipe(s); });
 (async () => {
   await new Promise(r => server.listen(8847, r));
   const B = 'http://localhost:8847', b = await chromium.launch(), errs = [];
@@ -220,6 +243,7 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   await shot(sh, 'cards-note.png');
   await sh.click('#n-save'); await sh.waitForFunction(() => !document.querySelector('.sheet-bg'));
   ok(K('C01').data === 'hold' && K('C02').data === 'hold' && [...T.card_uses.values()].filter(u => u.shoot === 'Sharma Haldi' && u.media === 'photo').length === 2, 'notes saved on both; they turn red (hold)');
+  await sh.waitForFunction(() => document.querySelectorAll('#tab-mine .crow.red').length === 2, null, { timeout: 5000 }).catch(() => {});
   ok((await sh.$$('#tab-mine .crow.red')).length === 2, 'red on his screen too');
   await sh.click('[data-c="' + K('C03').id + '"]'); await sh.click('#k-note'); await sh.click('#n-unused'); await sh.waitForFunction(() => !document.querySelector('.sheet-bg'));
   ok(K('C03').data === 'empty' && [...T.card_uses.values()].some(u => u.card === K('C03').id && !u.used), 'C03 marked not used: stays empty');
@@ -358,6 +382,33 @@ const server = http.createServer((q, s) => { if (q.url === '/api/notify-card') {
   ok(rpc('card_use_edit', { p_use: u1.id, p_event: ev.id, p_shoot: 'Sharma Haldi', p_why: 'x' }, SUP).error && rpc('card_use_edit', { p_use: u1.id, p_event: ev.id, p_shoot: 'Sharma Haldi', p_why: 'x' }, SHREY).error, 'the supervisor and the team cannot move notes');
   await shot(o, 'card-moved.png');
   await o.click('#k-close');
+
+  // ── photos of the cards (026 + worker/photos.js: on the studio's Google Drive) ──
+  photoUser = OWNER;
+  await open(o, 'all'); await o.click('[data-c="' + K('C03').id + '"]'); await o.waitForSelector('#k-phin', { state: 'attached' });
+  await o.setInputFiles('#k-phin', [{ name: 'c03.png', mimeType: 'image/png', buffer: PNG }, { name: 'c03b.png', mimeType: 'image/png', buffer: PNG }]);
+  for (let i = 0; i < 40 && [...T.uploads.values()].filter(x => x.cards.includes(K('C03').id)).length < 2; i++) await sleep(150);
+  const up3 = [...T.uploads.values()].filter(x => x.cards.includes(K('C03').id));
+  ok(up3.length === 2 && up3.every(x => x.mime === 'image/jpeg' && x.thumb_id), 'card sheet → Add photos: two photos of C03 go to Drive (as JPEG, each with a small copy)');
+  await o.waitForSelector('#k-phs img[data-pid].pid-ok');
+  ok((await o.$$('#k-phs img[data-pid]')).length === 2 && /^blob:/.test(await o.getAttribute('#k-phs img[data-pid]', 'src')), 'the card shows them (loaded through the app, not a public link)');
+  await o.click('#k-phs [data-phi="0"]'); await o.waitForSelector('#photo-view #pv-img[src^="blob:"]');
+  ok(/1 of 2/.test(await o.textContent('#photo-view')), 'tap → full-screen, ‹ › between the photos');
+  await shot(o, 'card-photos.png');
+  await o.click('#photo-view [data-x="close"]');
+  await o.click('#k-phs [data-phx]'); await o.waitForFunction(() => document.querySelectorAll('#k-phs img[data-pid]').length === 1);
+  ok([...T.uploads.values()].filter(x => x.cards.includes(K('C03').id) && !x.removed_at).length === 1, 'the admin can take a photo off the card');
+  await o.click('#k-close');
+  // notes with photos (the admin writes for a card in the office)
+  const sk = [...T.cards.values()].find(k => k.condition === 'ok' && k.code !== 'C03' && !k.holder && ![...T.card_moves.values()].some(m => m.card === k.id && m.status === 'pending'));
+  await open(o, 'all'); await o.click('[data-c="' + sk.id + '"]'); await o.waitForSelector('#k-note'); await o.click('#k-note'); await o.waitForSelector('#n-photos', { state: 'attached' });
+  await o.setInputFiles('#n-photos', [{ name: 'a.png', mimeType: 'image/png', buffer: PNG }]);
+  ok(/1 photo picked/.test(await o.textContent('#n-phn')), 'notes form: "1 photo picked"');
+  await o.click('#n-unused');
+  for (let i = 0; i < 40 && ![...T.uploads.values()].some(x => x.cards[0] === sk.id); i++) await sleep(150);
+  const su = [...T.uploads.values()].find(x => x.cards[0] === sk.id);
+  ok(su && su.note === 'Not used' && su.by_person === P.Ravi, 'saving the notes uploads the photo for ' + sk.code + ' too');
+  ok(!handleRead(GEARM, 'uploads').length || !!personOf(GEARM), 'card photos are only for the card desk and people on People');
 
   ok(errs.length === 0, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await b.close(); server.close();
