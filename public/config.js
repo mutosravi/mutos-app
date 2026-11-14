@@ -13,3 +13,11 @@ window.MUTOS_CONFIG = {
 // Otherwise a Home Screen app on iPhone shows it in a browser overlay. (localhost tests are not affected.)
 window.MUTOS_CONFIG.home = 'https://app.mutosstudio.com';
 if (/\.workers\.dev$/i.test(location.hostname)) location.replace(window.MUTOS_CONFIG.home + location.pathname + location.search + location.hash);
+
+// No browser suggestions (old entries, saved addresses) under the boxes (14 Nov 2026, Ravi: they covered the page on phones).
+// Boxes that ask for one on purpose (autocomplete="…" set in the page) keep it. New boxes (forms drawn later) are covered too.
+(function () {
+  const off = root => { if (!root || !root.querySelectorAll) return; root.querySelectorAll('input:not([autocomplete]), textarea:not([autocomplete])').forEach(el => { el.setAttribute('autocomplete', 'off'); }); };
+  const start = () => { off(document); new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType !== 1) return; if (/^(INPUT|TEXTAREA)$/.test(n.tagName) && !n.hasAttribute('autocomplete')) n.setAttribute('autocomplete', 'off'); else off(n); }))).observe(document.documentElement, { childList: true, subtree: true }); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
