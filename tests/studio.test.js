@@ -788,6 +788,14 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     ok(/Your birthday/.test(await fam.textContent('#top')) && !(await fam.$('[data-card="couple"]')), 'a birthday client: "Your birthday", no couple card');
     fd.functions = JSON.parse(before); }
 
+  // a backdated client (a year ago) added while the desk is open is offered in Add jobs, and found by typing (17 Nov 2026)
+  await owner.goto(B + '/desk.html'); await owner.waitForSelector('#add');
+  { const id = 'old-' + crypto.randomUUID().slice(0, 8), d = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    T.docs.set('events/' + id, { collection: 'events', id, data: { id, name: 'Oldclient Wedding', wedding: 'Oldclient', date: d, slot: 'Evening', status: 'confirmed', assignments: [], equipmentIds: [], assistantIds: [] } }); }
+  await owner.click('#add'); await owner.waitForSelector('#awq');
+  await owner.fill('#awq', 'oldcl'); await owner.waitForSelector('#afn input');
+  ok(await owner.$eval('#aw', el => el.value) === 'w:oldclient' && /Wedding/.test(await owner.textContent('#afn')), 'Add jobs: a client from a year ago (added after the page opened) is found by typing its name');
+  await owner.click('#cx');
   // the work desk adds every deliverable of the package
   await owner.goto(B + '/desk.html'); await owner.waitForSelector('#add'); await owner.click('#add'); await owner.selectOption('#aw', wed.key); await owner.waitForSelector('#apk-go');
   const before = T.work_jobs.size; await owner.click('#apk-go'); await owner.waitForFunction(() => /from the package/.test(document.getElementById('toast').textContent));

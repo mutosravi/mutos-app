@@ -151,18 +151,29 @@
     $('tab-jobs').querySelectorAll('[data-job]').forEach(b => b.addEventListener('click', () => editJob(jobs.find(j => j.id === b.dataset.job))));
   }
 
-  function addJobs() {
-    const ws = weddings.filter(w => w.last >= W.addDays(today, -200) && w.first <= W.addDays(today, 60))
-      .sort((a, b) => (a.first > today) - (b.first > today) || (a.first > today ? a.first.localeCompare(b.first) : b.first.localeCompare(a.first)));
+  // every client on the board (17 Nov 2026, Ravi: "Just added a backdated client but cannot find it in jobs"): the list used to stop
+  // 200 days back and was read once when the page opened. Now it is read again each time, recent ones first, then the older ones.
+  async function addJobs() {
+    try { weddings = W.weddingsFrom(await W.loadDocs(c, 'events')); } catch (e) { /* keep the list read when the page opened */ }
+    const order = (a, b) => (a.first > today) - (b.first > today) || (a.first > today ? a.first.localeCompare(b.first) : b.first.localeCompare(a.first));
+    const recent = w => w.last >= W.addDays(today, -200) && w.first <= W.addDays(today, 60);
+    const ws = weddings.filter(recent).sort(order), older = weddings.filter(w => !recent(w)).sort(order);
+    const opt = w => '<option value="' + esc(w.key) + '">' + esc(w.title) + ' · ' + esc(W.dayShort(w.first)) + (w.last !== w.first ? '–' + esc(W.dayShort(w.last)) : '') + '</option>';
     const bg = W.sheet('<h3>Add jobs</h3><div class="form-grid">' +
-      '<label class="wide">Wedding<select class="in" id="aw"><option value="">Pick a wedding (already shot first)</option>' + ws.map(w => '<option value="' + esc(w.key) + '">' + esc(w.title) + ' · ' + esc(W.dayShort(w.first)) + (w.last !== w.first ? '–' + esc(W.dayShort(w.last)) : '') + '</option>').join('') + '</select></label></div>' +
+      '<label class="wide">Client<input class="in" id="awq" type="search" placeholder="Type to find a client (also old ones)" style="margin-bottom:6px"><select class="in" id="aw"><option value="">Pick a client (already shot first)</option>' + ws.map(opt).join('') + (older.length ? '<optgroup label="Older or later">' + older.map(opt).join('') + '</optgroup>' : '') + '</select></label></div>' +
       '<div id="afn"></div><div id="apk"></div><h4>What has to be delivered</h4><div class="checks" id="ak">' + W.KINDS.map(([k, l]) => '<label><input type="checkbox" value="' + k + '">' + esc(l) + '</label>').join('') + '</div>' +
       '<div class="form-grid" style="margin-top:12px"><label>Who does it<select class="in" id="ap">' + personOptions('') + '</select></label>' +
       '<label>Due date<input class="in" id="ad" type="date"></label>' +
       '<label class="wide">Note (optional)<input class="in" id="an" maxlength="500" placeholder="e.g. client wants the reel by the reception"></label>' +
       '<label class="wide" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)"><input type="checkbox" id="aper" style="width:20px;height:20px;accent-color:var(--rose)">One job for each function (e.g. a reel per function)</label></div>' +
       '<div class="pillrow"><button type="button" class="pillbtn light" id="cx">Cancel</button><button type="button" class="pillbtn" id="go">Add</button></div>');
-    const w = () => ws.find(x => x.key === bg.querySelector('#aw').value);
+    const all = ws.concat(older), w = () => all.find(x => x.key === bg.querySelector('#aw').value);
+    bg.querySelector('#awq').addEventListener('input', e => {   // narrow the list; one match is picked straight away
+      const q = e.target.value.trim().toLowerCase(), sel = bg.querySelector('#aw');
+      sel.querySelectorAll('option[value]:not([value=""])').forEach(o => { o.hidden = !!q && !o.textContent.toLowerCase().includes(q); });
+      const hits = [...sel.querySelectorAll('option[value]:not([value=""])')].filter(o => !o.hidden);
+      if (q && hits.length === 1 && sel.value !== hits[0].value) { sel.value = hits[0].value; sel.dispatchEvent(new Event('change')); }
+    });
     bg.querySelector('#aw').addEventListener('change', () => {
       const x = w(); if (!x) { bg.querySelector('#afn').innerHTML = ''; return; }
       bg.querySelector('#afn').innerHTML = '<h4>Functions</h4><div class="checks">' + x.events.map(ev => '<label><input type="checkbox" value="' + esc(ev.id) + '" checked>' + esc(W.fnName(ev, x)) + ' · ' + esc(W.dayShort(ev.date)) + '</label>').join('') + '</div>';
