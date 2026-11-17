@@ -85,10 +85,14 @@ function before(t, r, old, e) {
   if (t === 'work_jobs') {
     const now = new Date().toISOString();
     if (!old) Object.assign(r, Object.assign({ id: r.id || crypto.randomUUID(), status: 'todo', progress: 0, count_done: 0, count_total: null, round: 1, event_ids: [], created_by: e, created_at: now }, r));
+    let undo = false;   // 027: undo your own last status change within 24 h
     if (old && !staff(e)) {
+      undo = r.status !== old.status && r.status === old.prev_status && old.status_by === e && Date.now() - Date.parse(old.status_at || 0) < 864e5 && ['todo', 'editing', 'changes'].includes(old.prev_status) && ['editing', 'rendered'].includes(old.status);
       for (const k of ['wedding_key', 'wedding_title', 'wedding_date', 'fn_label', 'kind', 'title', 'assignee', 'due', 'round', 'count_total', 'created_by']) if ((r[k] ?? null) !== (old[k] ?? null)) return 'Only the studio can change who does a job, its due date or what it is.';
-      if (r.status !== old.status && !(['editing', 'rendered'].includes(r.status) && ['todo', 'editing', 'rendered', 'changes'].includes(old.status))) return 'You can mark a job as Editing or Rendered.';
+      if (r.status !== old.status && !undo && !(['editing', 'rendered'].includes(r.status) && ['todo', 'editing', 'rendered', 'changes'].includes(old.status))) return 'You can mark a job as Editing or Rendered.';
     } else if (old && r.status === 'changes' && old.status !== 'changes' && r.round === old.round) r.round = old.round + 1;
+    if (old && r.status !== old.status) { if (undo) { r.prev_status = null; r.status_by = null; r.status_at = null; if (r.status === 'todo') r.started_at = null; } else { r.prev_status = old.status; r.status_by = e; r.status_at = now; } }
+    else if (old) { r.prev_status = old.prev_status; r.status_by = old.status_by; r.status_at = old.status_at; }
     if (r.status === 'rendered' && !['top', 'lr', 'album_sel'].includes(r.kind)) r.progress = 100;
     if (['editing', 'rendered'].includes(r.status) && !r.started_at) r.started_at = now;
     if (r.status === 'final' && (!old || old.status !== 'final')) r.done_at = now;
@@ -183,6 +187,13 @@ function rpc(fn, a, e) {
       if (!a.p_copy) Object.assign(it, { removed_at: new Date().toISOString(), removed_why: 'moved', moved_to: id });
       dlog(it.drive, e, (a.p_copy ? 'Copied ' : 'Moved ') + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + (a.p_copy ? ' copied' : ' moved') + ' here'); return { data: { ok: true, id }, error: null };
     }
+  }
+  if (fn === 'job_data') {   // 027
+    const j = T.work_jobs.get(a.p_job); if (!j) return { data: { error: 'Unknown job.' }, error: null };
+    if (!(staff(e) || role(e) === 'supervisor' || (j.assignee && j.assignee === myPerson(e)))) return { data: { error: 'Only the person this job is assigned to can see where its data is.' }, error: null };
+    const lines = [...T.drive_items.values()].filter(i => !i.removed_at && (i.wedding_key === j.wedding_key || (!i.wedding_key && j.wedding_title && i.title.toLowerCase().includes(j.wedding_title.toLowerCase())))).map(i => { const d = T.drives.get(i.drive), h = d.holder && T.people.get(d.holder);
+      return { title: i.title, what: i.what, size: i.size_label || null, note: i.note || null, drive: d.name, drive_kind: d.kind, where: d.holder ? 'With ' + (h ? h.name : 'someone') : 'In the office', mine: !!d.holder && d.holder === myPerson(e) }; });
+    return { data: { wedding: j.wedding_title, lines }, error: null };
   }
   if (fn === 'crew_vip') {
     if (!e) return err('permission denied');
@@ -547,6 +558,21 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await cr.fill('.job[data-j="' + reel.id + '"] [data-f="progress"]', '40'); await cr.fill('.job[data-j="' + reel.id + '"] [data-f="drive"]', 'M 5');
   await cr.click('.job[data-j="' + reel.id + '"] [data-st="editing"]'); await cr.waitForFunction(() => /Started/.test(document.getElementById('toast').textContent));
   ok(reel.status === 'editing' && reel.progress === 40 && reel.drive === 'M 5' && reel.started_at, 'editor starts the reel with progress and drive');
+  // 027: Start tapped by mistake → put back; then start again
+  await cr.waitForSelector('.job[data-j="' + reel.id + '"] [data-undo]');
+  ok(/Back to Not started/.test(await cr.textContent('.job[data-j="' + reel.id + '"] [data-undo]')), 'after Start: "Tapped by mistake? Back to Not started"');
+  await cr.click('.job[data-j="' + reel.id + '"] [data-undo]'); await cr.waitForFunction(() => /Put back to/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'todo' && !reel.started_at && !(await cr.$('.job[data-j="' + reel.id + '"] [data-undo]')), 'put back to To do (started time cleared, no more undo)');
+  await cr.click('.job[data-j="' + reel.id + '"] [data-st="editing"]'); await cr.waitForFunction(() => /Started/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'editing', 'and started again');
+  // 027: where the client's data is
+  { const d1 = crypto.randomUUID(); T.drives.set(d1, { id: d1, name: 'Z 9', kind: 'SSD', status: 'in_use', owner_type: 'studio', holder: null });
+    const i1 = crypto.randomUUID(); T.drive_items.set(i1, { id: i1, drive: d1, wedding_key: reel.wedding_key, title: reel.wedding_title + ' · Haldi', what: 'raw', added_at: new Date().toISOString() }); }
+  await cr.click('.job[data-j="' + reel.id + '"] [data-data]'); await cr.waitForFunction(() => /Z 9/.test((document.getElementById('jd-body') || {}).textContent || ''));
+  ok(/Raw/.test(await cr.textContent('#jd-body')) && /In the office/.test(await cr.textContent('#jd-body')), '"Where is the data?" on his job: the raw footage is on Z 9, in the office');
+  await cr.screenshot({ path: path.join(SHOTS, 'job-data.png') });
+  await cr.click('#jd-x');
+  [...T.drive_items.values()].filter(i => T.drives.get(i.drive).name === 'Z 9').forEach(i => T.drive_items.delete(i.id)); [...T.drives.values()].filter(d => d.name === 'Z 9').forEach(d => T.drives.delete(d.id));   // leave the register as the later checks expect
   if (process.env.SHOTS) await cr.screenshot({ path: path.join(SHOTS, 'mywork-jobs.png'), fullPage: true });
   ok(rpc('x', {}, CREWE) && handle(CREWE, { table: 'work_jobs', op: 'update', filters: [['eq', 'id', reel.id]], rows: [{ status: 'final' }] }).error && handle(CREWE, { table: 'work_jobs', op: 'update', filters: [['eq', 'id', reel.id]], rows: [{ due: '2030-01-01' }] }).error, 'editor cannot mark final or move the due date');
   await cr.click('.bnav .tab[data-tab="rep"]'); await cr.waitForSelector('.rline');

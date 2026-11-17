@@ -116,6 +116,20 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
   const myOpen = () => jobs.filter(x => W.OPEN.includes(x.status) || x.status === 'paused').sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || String(a.due || '9').localeCompare(String(b.due || '9')));
 
   // ---------- my jobs ----------
+  // 027: undo your own last status change (Start / Rendered tapped by mistake), within 24 hours
+  const canUndo = j => !!j.prev_status && j.status_by === me.email && ['editing', 'rendered'].includes(j.status) && ['todo', 'editing', 'changes'].includes(j.prev_status) && j.status_at && Date.now() - Date.parse(j.status_at) < 24 * 3600e3;
+  // 027: where this client's footage and files are (every drive line of the wedding, and where each drive is now)
+  async function dataSheet(j) {
+    const bg = W.sheet('<h3>Data · ' + esc(j.wedding_title) + '</h3><div id="jd-body" class="meta">Loading…</div><div class="pillrow" style="margin-top:14px"><button type="button" class="pillbtn light" id="jd-x">Close</button></div>');
+    bg.querySelector('#jd-x').addEventListener('click', () => bg.remove());
+    const { data, error } = await c.rpc('job_data', { p_job: j.id });
+    const box = bg.querySelector('#jd-body');
+    if (error || !data || data.error) { box.textContent = (data && data.error) || (error && /job_data/.test(error.message) ? 'Not switched on yet (the studio has to run update 027).' : 'Could not load. Check your internet.'); return; }
+    const WH = { raw: 'Raw', backup: 'Backup', project: 'Project', render: 'Render', final: 'Final', other: 'Other' };
+    const groups = new Map(); data.lines.forEach(l => { if (!groups.has(l.title)) groups.set(l.title, []); groups.get(l.title).push(l); });
+    box.innerHTML = groups.size ? [...groups.entries()].map(([t, ls]) => '<div class="card" style="margin:8px 0;padding:10px 12px"><b>' + esc(t) + '</b>' + ls.map(l => '<div style="margin-top:4px;font-size:14px;color:var(--ink)"><span class="pill mute" style="margin-right:6px">' + esc(WH[l.what] || l.what) + '</span><b>' + esc(l.drive) + '</b> <span class="meta" style="display:inline">' + esc([l.drive_kind, l.size, l.mine ? 'with you' : l.where].filter(Boolean).join(' · ')) + '</span>' + (l.note ? '<div class="meta">' + esc(l.note) + '</div>' : '') + '</div>').join('') + '</div>').join('')
+      : 'Nothing listed on the drives for this wedding yet. Ask the office where the data is.';
+  }
   function renderJobs() {
     const list = myOpen(), done = jobs.filter(x => x.status === 'final').sort((a, b) => String(b.done_at).localeCompare(String(a.done_at))).slice(0, 5);
     $('tab-jobs').innerHTML = (list.length ? list.map(j => {
@@ -129,8 +143,10 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
           '<details' + (j.drive ? '' : ' open') + '><summary>Drives and link</summary><div class="mini"><label>Project on drive<input class="in" data-f="drive" maxlength="80" value="' + esc(j.drive || '') + '" placeholder="e.g. M 5"></label><label>Rendered to drive<input class="in" data-f="render_drive" maxlength="80" value="' + esc(j.render_drive || '') + '"></label>' +
           '<label class="wide">Link<input class="in" type="url" data-f="link" maxlength="500" value="' + esc(j.link || '') + '" placeholder="Drive / YouTube link"></label></div></details>' +
           '<div class="acts">' + (j.status === 'todo' || j.status === 'changes' ? '<button type="button" class="pillbtn light" data-st="editing">' + (j.status === 'changes' ? 'Start the changes' : 'Start') + '</button>' : '') +
-          (j.status === 'editing' ? '<button type="button" class="pillbtn light" data-st="rendered">Rendered ✓</button>' : '') + '<button type="button" class="pillbtn" data-save>Save</button></div>'
-          : '<p class="meta" style="margin-top:8px">' + (j.status === 'sent' ? 'With the client. The studio marks it Final or Changes asked.' : 'Paused by the studio.') + '</p>') + '</article>';
+          (j.status === 'editing' ? '<button type="button" class="pillbtn light" data-st="rendered">Rendered ✓</button>' : '') + '<button type="button" class="pillbtn" data-save>Save</button></div>' +
+          (canUndo(j) ? '<p style="margin:8px 0 0"><button type="button" class="x" data-undo="' + esc(j.prev_status) + '">Tapped by mistake? Back to ' + esc((W.STATUS[j.prev_status] || [j.prev_status])[0]) + '</button></p>' : '')
+          : '<p class="meta" style="margin-top:8px">' + (j.status === 'sent' ? 'With the client. The studio marks it Final or Changes asked.' : 'Paused by the studio.') + '</p>') +
+        '<p style="margin:8px 0 0"><button type="button" class="x" data-data>📁 Where is the data?</button></p></article>';
     }).join('') : '<div class="empty" style="margin-top:12px">No jobs right now. New jobs from the studio show up here.</div>') +
       (done.length ? '<h2 style="font-size:15px;margin:22px 0 4px">Recently finished</h2>' + done.map(j => '<div class="sent"><span>' + esc(j.wedding_title) + ' · ' + esc(W.jobName(j)) + '</span>' + W.pill('final') + '</div>').join('') : '');
     $('tab-jobs').querySelectorAll('.job').forEach(card => {
@@ -144,6 +160,12 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
         await load(); renderJobs(); toast(st === 'rendered' ? 'Marked rendered. The studio will send it to the client.' : st ? 'Started.' : 'Saved.');
       };
       card.querySelectorAll('[data-st]').forEach(b => b.addEventListener('click', () => save(b.dataset.st)));
+      const u = card.querySelector('[data-undo]'); if (u) u.addEventListener('click', async () => {
+        const { error } = await c.from('work_jobs').update({ status: u.dataset.undo }).eq('id', j.id);
+        if (error) { toast('Could not put it back: ' + error.message, true); return; }
+        await load(); renderJobs(); toast('Put back to ' + (W.STATUS[u.dataset.undo] || [u.dataset.undo])[0] + '.');
+      });
+      const dd = card.querySelector('[data-data]'); if (dd) dd.addEventListener('click', () => dataSheet(j));
       const s = card.querySelector('[data-save]'); if (s) s.addEventListener('click', () => save(null));
     });
   }
