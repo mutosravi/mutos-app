@@ -2187,8 +2187,8 @@ body.mh-view-board #mutos-home { display: none; }
     const myAsst = new Set(ev.assistantIds.map(id => { const p = findAssistantPerson(id); return p ? normalizeName(p.name) : null; }).filter(Boolean));
     const day = dayBookings(ev);
     const items = state.shooters.filter(p => mine.has(p.id) || (!p.left && !myAsst.has(normalizeName(p.name))))
-      .map(p => { const k = normalizeName(p.name), b = day.get(k), clash = !mine.has(p.id) && busy.has(k), movable = clash && sameTimeShoots(ev, p.id).length > 0;
-        return { id: p.id, name: p.name, sub: movable ? 'tick to move here' : personSub(p, season), group: p.role || 'Other', dot: colorFor(p.id, MEMBER_DOTS), note: dayNote(b), noteBusy: clash, rank: dayRank(b),
+      .map(p => { const k = normalizeName(p.name), b = day.get(k), out = mine.has(p.id) ? [] : outOnlyShoots(ev, p.id), clash = !mine.has(p.id) && busy.has(k) && !out.length, movable = clash && sameTimeShoots(ev, p.id).length > 0;
+        return { id: p.id, name: p.name, sub: out.length ? outText(ev, out) + ' · tick if the places are close' : movable ? 'tick to move here' : personSub(p, season), group: p.role || 'Other', dot: colorFor(p.id, MEMBER_DOTS), note: dayNote(b), noteBusy: clash, rank: dayRank(b),
           disabledReason: mine.has(p.id) ? null : away.has(k) ? 'Away · ' + away.get(k) : clash && !movable ? 'Busy at this time' : null }; })
       .sort((a, b) => (a.group || '').localeCompare(b.group || '') || a.rank - b.rank || a.name.localeCompare(b.name));
     openPicker({
@@ -2198,6 +2198,8 @@ body.mh-view-board #mutos-home { display: none; }
       onToggle: id => {
         const i = ev.assignments.findIndex(a => a.memberId === id);
         if (i >= 0) { ev.assignments.splice(i, 1); return; }
+        const out = outOnlyShoots(ev, id);
+        if (out.length) { linkTravel(ev, out); const open0 = ev.assignments.find(x => !x.memberId && !x.slot); if (open0) setPerson(open0, id); else ev.assignments.push(newAssignment(id)); return; }
         const moved = pullFromSameTime(ev, id);
         if (moved.length) toast((findShooter(id) || {}).name + ' moved here from ' + moved.join(', ') + '. Their slot there is open with the gear kept.', true);
         const open = ev.assignments.find(x => !x.memberId && !x.slot);
@@ -2206,6 +2208,25 @@ body.mh-view-board #mutos-home { display: none; }
     });
   }
   function sameTimeShoots(ev, pid) { if (isQuick(ev)) return []; return state.events.filter(o => o.id !== ev.id && !isQuick(o) && isActive(o) && sameTime(o, ev) && o.assignments.some(x => x.memberId === pid)); }
+  // Outstation (17 Nov 2026, Ravi: "should be showed in list with mentioning him outstation … two places can be nearby"):
+  // shoots that block this person for ev ONLY because one of them is outstation (same day, another slot) or a far shoot's travel
+  // day, not because the times overlap. Such a person stays pickable; picking links the shoots with "team travels".
+  function outOnlyShoots(ev, pid) {
+    if (isQuick(ev)) return [];
+    const all = sameTimeShoots(ev, pid);
+    if (!all.length || all.some(o => o.date === ev.date && slotsOverlap(o.slot, ev.slot))) return [];
+    return all;
+  }
+  function outText(ev, list) { return list.map(o => (isOutstation(o) ? '✈ Outstation · ' : '') + placeName(o) + ' (' + o.name + ', ' + (o.date !== ev.date ? formatDay(o.date) + ' ' : '') + o.slot + (o.date !== ev.date ? ', travel day' : '') + ')').join(' · '); }
+  // pick someone who is only "outstation-busy": keep him on the other shoot(s) and link them with this one (team travels)
+  function linkTravel(ev, list) {
+    list.forEach(o => {
+      if (travelLinked(o, ev)) return;
+      const later = o.date > ev.date || (o.date === ev.date && SLOT_ORDER[o.slot] > SLOT_ORDER[ev.slot]) ? o : ev, earlier = later === o ? ev : o;
+      later.travelFrom = (later.travelFrom || []).concat(earlier.id);
+    });
+    return list.map(o => o.name).join(', ');
+  }
   function pullFromSameTime(ev, pid) {
     const names = [];
     sameTimeShoots(ev, pid).forEach(o => {
@@ -2224,19 +2245,20 @@ body.mh-view-board #mutos-home { display: none; }
     const onKeys = peopleKeysUsedInEvent(ev);
     const day = dayBookings(ev);
     const items = state.shooters.filter(p => !p.left && fits(p.role, type) && !onKeys.has(normalizeName(p.name)))
-      .map(p => { const k = normalizeName(p.name), r = away.get(k), b = day.get(k), from = sameTimeShoots(ev, p.id), clash = busy.has(k), stuck = clash && !from.length;
-        return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
-          detail: clash && !stuck ? 'Leaves ' + from.map(o => o.name + ' (' + o.slot + ')').join(', ') + '; their gear stays there as an open slot' : b ? (clash ? '⛔ ' : '✓ Also ') + dayNote(b) : '', search: dayNote(b) }; })
+      .map(p => { const k = normalizeName(p.name), r = away.get(k), b = day.get(k), out = outOnlyShoots(ev, p.id), from = out.length ? [] : sameTimeShoots(ev, p.id), clash = busy.has(k) && !out.length, stuck = clash && !from.length;
+        return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : out.length ? outText(ev, out) : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
+          detail: out.length && !r ? 'Stays on ' + out.map(o => o.name).join(', ') + ' too: pick if the places are close (linked as team travels)' : clash && !stuck ? 'Leaves ' + from.map(o => o.name + ' (' + o.slot + ')').join(', ') + '; their gear stays there as an open slot' : b ? (clash ? '⛔ ' : '✓ Also ') + dayNote(b) : '', search: dayNote(b) }; })
       .sort((a, b) => a.rank - b.rank || a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
-    const mk = p => { const k = normalizeName(p.name), r = away.get(k), b = day.get(k), from = sameTimeShoots(ev, p.id), clash = busy.has(k), stuck = clash && !from.length;
-      return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
-        detail: clash && !stuck ? 'Leaves ' + from.map(o => o.name + ' (' + o.slot + ')').join(', ') + '; their gear stays there as an open slot' : b ? (clash ? '⛔ ' : '✓ Also ') + dayNote(b) : '', search: dayNote(b) }; };
+    const mk = p => { const k = normalizeName(p.name), r = away.get(k), b = day.get(k), out = outOnlyShoots(ev, p.id), from = out.length ? [] : sameTimeShoots(ev, p.id), clash = busy.has(k) && !out.length, stuck = clash && !from.length;
+      return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : out.length ? outText(ev, out) : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
+        detail: out.length && !r ? 'Stays on ' + out.map(o => o.name).join(', ') + ' too: pick if the places are close (linked as team travels)' : clash && !stuck ? 'Leaves ' + from.map(o => o.name + ' (' + o.slot + ')').join(', ') + '; their gear stays there as an open slot' : b ? (clash ? '⛔ ' : '✓ Also ') + dayNote(b) : '', search: dayNote(b) }; };
     // people whose usual role is something else: offered below the main list, for the days you need them to switch
     const inMain = new Set(state.shooters.filter(p => !p.left && fits(p.role, type)).map(p => normalizeName(p.name))), seenO = new Set(); // one row per person, and not those already in the main list under another role
     const others = type === 'any' ? [] : state.shooters.filter(p => { const k = normalizeName(p.name); if (p.left || fits(p.role, type) || onKeys.has(k) || inMain.has(k) || seenO.has(k)) return false; seenO.add(k); return true; }).map(mk)
       .sort((a, b) => a.rank - b.rank || a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
     const pickInto = (id, pin) => {
-      const moved = pullFromSameTime(ev, id);
+      const out = outOnlyShoots(ev, id); if (out.length) { const names = linkTravel(ev, out); setTimeout(() => toast((findShooter(id) || {}).name + ' stays on ' + names + ' too (linked as team travels).', true), 0); }
+      const moved = out.length ? [] : pullFromSameTime(ev, id);
       if (moved.length) setTimeout(() => toast((findShooter(id) || {}).name + ' moved here from ' + moved.join(', ') + '. Their slot there is open with the gear kept.', true), 0);
       const open = target || ev.assignments.find(x => !x.memberId && x.slot === type);
       if (open) { setPerson(open, id); if (pin) open.slot = type; }
@@ -2245,7 +2267,8 @@ body.mh-view-board #mutos-home { display: none; }
     openSwitchModal((type === 'any' ? 'Fill the open spot' : 'Fill a ' + SLOT_LABEL[type] + ' slot') + (target && target.gearIds.length ? ' (gear: ' + target.gearIds.map(gName).join(', ') + ')' : ''), ev.name + ' · ' + formatDate(ev.date) + ' ' + ev.slot + ' · free people first; people on another shoot at this time can be moved here', [
       { label: 'Pick one', items, emptyText: 'No one who fits this slot is free at this time.',
         onPick: id => {
-          const moved = pullFromSameTime(ev, id);
+          const out = outOnlyShoots(ev, id); if (out.length) { const names = linkTravel(ev, out); setTimeout(() => toast((findShooter(id) || {}).name + ' stays on ' + names + ' too (linked as team travels).', true), 0); }
+          const moved = out.length ? [] : pullFromSameTime(ev, id);
           if (moved.length) setTimeout(() => toast((findShooter(id) || {}).name + ' moved here from ' + moved.join(', ') + '. Their slot there is open with the gear kept.', true), 0);
           const open = target || ev.assignments.find(x => !x.memberId && x.slot === type);
           if (open) { setPerson(open, id); if (type === 'any') delete open.slot; }
@@ -2369,9 +2392,10 @@ body.mh-view-board #mutos-home { display: none; }
     const sameTimeSpots = pid => isQuick(ev) ? [] : state.events.filter(o => o.id !== ev.id && !isQuick(o) && isActive(o) && sameTime(o, ev)).flatMap(o => o.assignments.filter(x => x.memberId === pid).map(x => ({ ev: o, a: x })));
     const replace = state.shooters.filter(p => p.id !== memberId && (mine.has(p.id) || (!p.left && !myAsst.has(normalizeName(p.name)))) && (!assignment.slot || fits(p.role, assignment.slot)))
       .map(p => {
-        const k = normalizeName(p.name), b = day.get(k), spots = mine.has(p.id) ? [] : sameTimeSpots(p.id), clash = !mine.has(p.id) && busy.has(k);
+        const k = normalizeName(p.name), b = day.get(k), out = mine.has(p.id) ? [] : outOnlyShoots(ev, p.id), spots = mine.has(p.id) || out.length ? [] : sameTimeSpots(p.id), clash = !mine.has(p.id) && busy.has(k) && !out.length;
         if (clash && !spots.length) return null; // busy as an assistant somewhere; leave out
         const aw = !mine.has(p.id) && away.get(k);
+        if (out.length && !aw) return { id: p.id, name: p.name, sub: outText(ev, out), detail: pname + ' is taken off this shoot; ' + p.name + ' stays on ' + out.map(o => o.name).join(', ') + ' too (pick if the places are close: linked as team travels)', rank: 2 };
         return { id: p.id, name: p.name, disabled: !!aw,
           sub: aw ? 'Away · ' + aw : mine.has(p.id) ? 'on this shoot · swap places' : clash ? 'moves here from ' + spots.map(x => x.ev.name).join(', ') : personSub(p, season),
           detail: clash ? pname + ' is taken off this shoot; ' + p.name + ' leaves ' + spots.map(x => x.ev.name + ' (' + x.ev.slot + ')').join(', ') + ', where the gear stays as an open slot' : b ? '✓ Also ' + dayNote(b) : '',
@@ -2405,7 +2429,8 @@ body.mh-view-board #mutos-home { display: none; }
         onPick: newId => {
           const other = ev.assignments.find(a => a.memberId === newId);
           if (other) { const ko = !!other.ownKit, ka = !!assignment.ownKit; other.memberId = assignment.memberId; assignment.memberId = newId; if (ka) other.ownKit = true; else delete other.ownKit; if (ko) assignment.ownKit = true; else delete assignment.ownKit; return; }
-          const moved = pullFromSameTime(ev, newId);
+          const out = outOnlyShoots(ev, newId); if (out.length) { const names = linkTravel(ev, out); setTimeout(() => toast((findShooter(newId) || {}).name + ' stays on ' + names + ' too (linked as team travels). ' + pname + ' is off this shoot.', true), 0); }
+          const moved = out.length ? [] : pullFromSameTime(ev, newId);
           setPerson(assignment, newId);
           if (moved.length) setTimeout(() => toast((findShooter(newId) || {}).name + ' moved here from ' + moved.join(', ') + ' (their slot there is open with the gear kept). ' + pname + ' is off this shoot.', true), 0);
         } },
@@ -3248,8 +3273,8 @@ body.mh-view-board #mutos-home { display: none; }
     const othersFor = type => { const s2 = new Set(groups.flatMap(g => g[1]).map(p => normalizeName(p.name))), s3 = new Set(); return pool.filter(p => { const k = normalizeName(p.name); if (s2.has(k) || s3.has(k) || !fits(p.role, type)) return false; s3.add(k); return true; }); };
     const sel = (r, i) => {
       const busy = peopleKeysBusyAt(r.ev), away = unavailableKeysForDateSlot(r.ev.date, r.ev.slot), here = peopleKeysUsedInEvent(r.ev);
-      const opt = p => { const k = normalizeName(p.name), why = here.has(k) ? 'on this shoot' : away.has(k) ? 'away' : busy.has(k) ? 'busy then' : '';
-        return '<option value="' + p.id + '"' + (why ? ' disabled' : '') + '>' + escapeHtml(p.name + ' · ' + workload(k, season) + ' this season' + (why ? ' · ' + why : '')) + '</option>'; };
+      const opt = p => { const k = normalizeName(p.name), out = !here.has(k) && !away.has(k) && busy.has(k) ? outOnlyShoots(r.ev, p.id) : [], why = here.has(k) ? 'on this shoot' : away.has(k) ? 'away' : out.length ? '' : busy.has(k) ? 'busy then' : '';
+        return '<option value="' + p.id + '"' + (why ? ' disabled' : '') + '>' + escapeHtml(p.name + ' · ' + workload(k, season) + ' this season' + (why ? ' · ' + why : out.length ? ' · ' + outText(r.ev, out) : '')) + '</option>'; };
       const free = list => list.slice().sort((a, b) => { const fa = !(here.has(normalizeName(a.name)) || away.has(normalizeName(a.name)) || busy.has(normalizeName(a.name))), fb = !(here.has(normalizeName(b.name)) || away.has(normalizeName(b.name)) || busy.has(normalizeName(b.name))); return (fb ? 1 : 0) - (fa ? 1 : 0) || workload(normalizeName(a.name), season) - workload(normalizeName(b.name), season); });
       const extra = othersFor(r.type);
       return '<select class="sb-field pl-sel" data-i="' + i + '" style="flex:1 1 220px;min-width:0" aria-label="Who for ' + escapeHtml(r.ev.name) + '"><option value="">Pick ' + (r.type === 'drone' ? 'a drone pilot' : 'a ' + SLOT_LABEL[r.type].toLowerCase() + ' person') + '…</option>' +
@@ -3276,6 +3301,7 @@ body.mh-view-board #mutos-home { display: none; }
     const list = modal.querySelector('#pl-list'); if (keepTop) list.scrollTop = keepTop;
     modal.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => openPlanner(b.dataset.tab)));
     modal.querySelectorAll('.pl-sel').forEach(el => el.addEventListener('change', () => { if (!el.value) return; const r = rows[+el.dataset.i], p = findShooter(el.value);
+      const out = outOnlyShoots(r.ev, el.value); if (out.length) linkTravel(r.ev, out);
       fillSlot(r.ev, r.type, el.value);
       let extra = ''; if (r.type === 'drone') { const u = modal.querySelector('.pl-unit[data-i="' + el.dataset.i + '"]'); extra = applyUnit(r.ev, r.ev.assignments.find(x => x.memberId === el.value), u && u.value); }
       saveData({ quiet: true }); const top = list.scrollTop; renderBoard(); openPlanner(tab, top);
