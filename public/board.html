@@ -518,7 +518,7 @@ body.mh-view-board #mutos-home { display: none; }
   <div class="sb-layout">
     <div class="sb-rail" id="sb-rail">
       <span class="sb-rail-title">Plan</span>
-      <button class="sb-add-btn solid" id="sb-new-wedding" type="button">＋ New wedding</button>
+      <button class="sb-add-btn solid" id="sb-new-wedding" type="button">＋ New client</button>
       <button class="sb-add-btn" id="sb-callsheet" type="button">Tomorrow's call sheet</button>
       <button class="sb-add-btn" id="sb-prewed" type="button">Pre-wedding notices</button>
       <button class="sb-add-btn" id="sb-planner" type="button">Drone &amp; freelancer planner</button>
@@ -555,6 +555,19 @@ body.mh-view-board #mutos-home { display: none; }
   const COLL = { shooters: 'shooters', assistants: 'assistants', equipment: 'gear', events: 'events', unavailability: 'away', seasons: 'seasons', settings: 'settings' };
   const SLOT_TYPES = ['photo', 'video', 'director', 'drone'];
   const SLOT_LABEL = { photo: 'Photo', video: 'Video', director: 'Director', drone: 'Drone' };
+  // What kind of client (17 Nov 2026, Ravi: "add not only wedding, instead a client with their functions like wedding, anniversary,
+  // birthday, event, others"). Kept on every shoot of the client as ev.occasion (no field = wedding, as before).
+  const OCCASIONS = [['wedding', 'Wedding', '💍'], ['anniversary', 'Anniversary', '💞'], ['birthday', 'Birthday', '🎂'], ['event', 'Event', '🎉'], ['other', 'Other', '📷']];
+  const occOf = ev => (ev && OCCASIONS.some(o => o[0] === ev.occasion)) ? ev.occasion : 'wedding';
+  const occLabel = k => (OCCASIONS.find(o => o[0] === k) || OCCASIONS[0])[1], occIcon = k => (OCCASIONS.find(o => o[0] === k) || OCCASIONS[0])[2];
+  const occOptions = sel => OCCASIONS.map(o => '<option value="' + o[0] + '"' + (o[0] === sel ? ' selected' : '') + '>' + o[2] + ' ' + o[1] + '</option>').join('');
+  // the functions each kind starts with (name, coverage, slot); all count as short events for billing (change it on the shoot if not)
+  const OCC_FUNCTIONS = {
+    anniversary: [['Anniversary party', '1+1', 'Evening'], ['Couple shoot', '1+1', 'Morning'], ['Puja', '1+0', 'Morning']],
+    birthday: [['Birthday party', '1+1', 'Evening'], ['Pre-birthday shoot', '1+0', 'Morning'], ['Puja / Havan', '1+0', 'Morning']],
+    event: [['Event', '1+1', 'Evening'], ['Setup / decor', '1+0', 'Morning']],
+    other: [['Shoot', '1+1', 'Morning']]
+  };
   const FUNCTIONS = [['Mehndi', '2+2'], ['Haldi', '2+2'], ['Tilak', '1+1'], ['Engagement', '2+2'], ['Sangeet', '2+2'], ['Wedding', '3+2'], ['Reception', '2+2']];
   const DRIVE = 'Google Drive';
   const CREW_FOLDER_DEFAULT = '1vi8BQkRYujFUu-5QS-kR6nKg_dWeIcoW';
@@ -703,6 +716,7 @@ body.mh-view-board #mutos-home { display: none; }
       ...(ev.sharedGearOK ? { sharedGearOK: true } : {}),
       ...(ev.assistNA ? { assistNA: true } : {}),
       ...(ev.quick ? { quick: true } : {}),
+      ...(OCCASIONS.some(o => o[0] === ev.occasion) && ev.occasion !== 'wedding' ? { occasion: ev.occasion } : {}),
       ...(Array.isArray(ev.travelFrom) && ev.travelFrom.length ? { travelFrom: ev.travelFrom.slice() } : {}),
       ...(ev.noteSent && ev.notes && ev.noteSent === ev.notes ? { noteSent: ev.notes } : {}),
       ...(ev.preSent ? { preSent: String(ev.preSent) } : {}),
@@ -1284,7 +1298,7 @@ body.mh-view-board #mutos-home { display: none; }
       const team = [];
       ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: clientRoleOn(ev, a), phone: p.phone || '' }); });
       ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: 'Assistant', phone: p.phone || '' }); });
-      out.push({ id: ev.id, date: ev.date, day: formatDay(ev.date), slot: ev.slot, callTime: ev.callTime || '', report: ev.callTime ? formatTime12(ev.callTime) : '', shoot: ev.name, wedding: ev.wedding || '', venue: ev.location || '', map: ev.mapLink || '',
+      out.push({ id: ev.id, date: ev.date, day: formatDay(ev.date), slot: ev.slot, callTime: ev.callTime || '', report: ev.callTime ? formatTime12(ev.callTime) : '', shoot: ev.name, wedding: ev.wedding || '', occasion: occOf(ev), venue: ev.location || '', map: ev.mapLink || '',
         premium: ev.tier === 'Premium', role, gear, shared: ev.equipmentIds.map(gid => sharedLabel(ev, gid)), team, clientName: ev.contactName || '', clientPhone: ev.contactPhone || '', notes: ev.notes || '', travel: travelNotes(ev, key) });
     });
     return out.sort((a, b) => a.date.localeCompare(b.date) || (SLOT_ORDER[a.slot] || 0) - (SLOT_ORDER[b.slot] || 0) || a.shoot.localeCompare(b.shoot));
@@ -2947,7 +2961,8 @@ body.mh-view-board #mutos-home { display: none; }
   function slotOptionsHtml(sel) { return SLOT_OPTIONS.map(s => '<option value="' + s + '"' + (s === sel ? ' selected' : '') + '>' + s + '</option>').join(''); }
   function openEditShootModal(ev) {
     const modal = makeModal(modalHead('Edit shoot', ev.status === 'cancelled' ? 'This shoot is cancelled.' : '') + '<div class="sb-edit-form">' +
-      '<div class="sb-two"><div><label class="sb-edit-label" for="ef-name">Shoot name</label><input id="ef-name" class="sb-field"></div><div><label class="sb-edit-label" for="ef-wedding">Wedding / client</label><input id="ef-wedding" class="sb-field" placeholder="e.g. Akriti"></div></div>' +
+      '<div class="sb-two"><div><label class="sb-edit-label" for="ef-name">Shoot name</label><input id="ef-name" class="sb-field"></div><div><label class="sb-edit-label" for="ef-wedding">Client</label><input id="ef-wedding" class="sb-field" placeholder="e.g. Akriti"></div></div>' +
+      '<label class="sb-edit-label" for="ef-occ">Kind of client</label><select id="ef-occ" class="sb-field">' + occOptions(occOf(ev)) + '</select>' +
       '<div class="sb-two"><div><label class="sb-edit-label" for="ef-date">Date</label><input id="ef-date" class="sb-field" type="date"></div><div><label class="sb-edit-label" for="ef-slot">Time slot</label><select id="ef-slot" class="sb-field">' + slotOptionsHtml(ev.slot) + '</select></div></div>' +
       '<div class="sb-two"><div><label class="sb-edit-label" for="ef-coverage">Coverage</label><input id="ef-coverage" class="sb-field" placeholder="e.g. 2+2+D+Dr"></div><div><label class="sb-edit-label" for="ef-call">Report time</label><input id="ef-call" class="sb-field" type="time"></div></div>' +
       '<span class="sb-edit-label">Event length (for billing)</span><div class="sb-seg" id="ef-type"><button type="button" data-v="short">Short event</button><button type="button" data-v="full">Full event</button></div>' +
@@ -2975,7 +2990,7 @@ body.mh-view-board #mutos-home { display: none; }
     // a login with limits (supervisor): only the itinerary and the client's contact can be changed here
     const L = window.MUTOS_APP && window.MUTOS_APP.limits ? window.MUTOS_APP.limits() : null;
     if (L) {
-      [['#ef-wedding', 'wedding'], ['#ef-coverage', 'coverage'], ['#ef-tier', 'tier'], ['#ef-quick', 'quick']].forEach(([sel, f]) => { if (!L.fields.includes(f)) { q(sel).disabled = true; q(sel).title = L.note; } });
+      [['#ef-wedding', 'wedding'], ['#ef-occ', 'occasion'], ['#ef-coverage', 'coverage'], ['#ef-tier', 'tier'], ['#ef-quick', 'quick']].forEach(([sel, f]) => { if (!L.fields.includes(f)) { q(sel).disabled = true; q(sel).title = L.note; } });
       if (!L.fields.includes('eventType')) segs.forEach(b => { b.disabled = true; b.title = L.note; });
       if (!L.fields.includes('status')) q('#ef-cancel').hidden = true;
       if (!L.canDelete(ev.id)) q('#ef-delete').hidden = true;
@@ -2988,6 +3003,8 @@ body.mh-view-board #mutos-home { display: none; }
       if (map && !/^https?:\/\//i.test(map)) { toast('The map link should start with https://'); return false; }
       Object.assign(ev, { name, date, wedding: q('#ef-wedding').value.trim(), coverage: q('#ef-coverage').value.trim(), callTime: q('#ef-call').value, tier: q('#ef-tier').value, location: q('#ef-loc').value.trim(), slot: q('#ef-slot').value, mapLink: map, contactName: q('#ef-cname').value.trim(), contactPhone: q('#ef-cphone').value.trim(), notes: q('#ef-notes').value.trim(), eventType: type });
       if (q('#ef-quick').checked) ev.quick = true; else delete ev.quick;
+      { const occ = q('#ef-occ').value, setOcc = e2 => { if (occ === 'wedding') delete e2.occasion; else e2.occasion = occ; };
+        setOcc(ev); if (ev.wedding) state.events.forEach(o => { if (o !== ev && normalizeName(o.wedding) === normalizeName(ev.wedding)) setOcc(o); }); }   // the same for every shoot of this client
       if (ev.contactPhone || ev.contactName) {
         let n = 0; const ck = normalizeName(clientLabel(ev));
         state.events.forEach(o => { if (o !== ev && Math.abs((parseD(o.date) || 0) - (parseD(ev.date) || 0)) < 20 * 86400000 && normalizeName(clientLabel(o)) === ck) { let c = false; if (!o.contactPhone && ev.contactPhone) { o.contactPhone = ev.contactPhone; c = true; } if (!o.contactName && ev.contactName) { o.contactName = ev.contactName; c = true; } if (c) n++; } });
@@ -3012,8 +3029,9 @@ body.mh-view-board #mutos-home { display: none; }
       (custom ? '<input class="sb-field fn-name" placeholder="Function name">' : '<span class="sb-fn-name">' + escapeHtml(name) + '</span>') +
       '<input type="date" class="sb-field fn-date" aria-label="Date"><select class="sb-field fn-slot" aria-label="Slot">' + slotOptionsHtml(name === 'Wedding' || name === 'Reception' || name === 'Sangeet' || name === 'Engagement' ? 'Evening' : 'Morning') + '</select>' +
       '<input class="sb-field fn-cov" value="' + escapeHtml(cov) + '" aria-label="Coverage" placeholder="2+2"></div>';
-    const modal = makeModal(modalHead('New wedding', 'Tick the functions, give each a date. Weddings count as full events for billing, the rest as short events. You can change any of this later.') +
+    const modal = makeModal(modalHead('New client', 'Pick the kind of client, tick the functions and give each a date. The wedding counts as a full event for billing, everything else as a short event (change it on a shoot if needed). You can change any of this later.') +
       '<div class="sb-edit-form">' +
+      '<span class="sb-edit-label">Kind of client</span><div id="nw-occ" class="sb-chips" style="display:flex;flex-wrap:wrap;gap:6px">' + OCCASIONS.map(o => '<button type="button" class="sb-chip' + (o[0] === 'wedding' ? ' on' : '') + '" data-occ="' + o[0] + '" aria-pressed="' + (o[0] === 'wedding') + '" style="cursor:pointer">' + o[2] + ' ' + o[1] + '</button>').join('') + '</div>' +
       '<div class="sb-two"><div><label class="sb-edit-label" for="nw-client">Client / family name</label><input id="nw-client" class="sb-field" placeholder="e.g. Akriti"></div><div><label class="sb-edit-label" for="nw-venue">Venue or city</label><input id="nw-venue" class="sb-field" placeholder="e.g. Hotel Clarks Awadh"></div></div>' +
       '<div class="sb-two"><div><label class="sb-edit-label" for="nw-cname">Client name (for messages)</label><input id="nw-cname" class="sb-field" placeholder="e.g. Mr Verma"></div><div><label class="sb-edit-label" for="nw-cphone">Client WhatsApp number</label><input id="nw-cphone" class="sb-field" type="tel" inputmode="tel" placeholder="e.g. 98765 43210"></div></div>' +
       '<label class="sb-edit-label" for="nw-tier">Client tier</label><select id="nw-tier" class="sb-field"><option value="Standard">Standard client</option><option value="Premium">Premium client</option></select>' +
@@ -3023,6 +3041,19 @@ body.mh-view-board #mutos-home { display: none; }
     const fns = modal.querySelector('#nw-fns');
     const wire = row => { row.querySelector('.fn-date').addEventListener('change', () => { row.querySelector('.fn-on').checked = true; }); };
     fns.querySelectorAll('.sb-fn-row').forEach(wire);
+    let occ = 'wedding';
+    // the function list follows the kind of client (dates already typed for a function with the same name are kept)
+    modal.querySelectorAll('#nw-occ [data-occ]').forEach(b => b.addEventListener('click', () => {
+      occ = b.dataset.occ;
+      modal.querySelectorAll('#nw-occ [data-occ]').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); x.style.background = on ? 'var(--accent-soft, #f3e3dc)' : ''; x.style.fontWeight = on ? '700' : ''; });
+      const keep = new Map([...fns.querySelectorAll('.sb-fn-row')].map(r => [r.dataset.fn, { d: r.querySelector('.fn-date').value, on: r.querySelector('.fn-on').checked }]));
+      const list = occ === 'wedding' ? FUNCTIONS.map(f => [f[0], f[1]]) : OCC_FUNCTIONS[occ];
+      fns.innerHTML = list.map(f => fnRow(f[0], f[1], false)).join('');
+      fns.querySelectorAll('.sb-fn-row').forEach((r, i) => { wire(r); const f = list[i]; if (f[2]) r.querySelector('.fn-slot').value = f[2]; const k = keep.get(r.dataset.fn); if (k) { r.querySelector('.fn-date').value = k.d; r.querySelector('.fn-on').checked = k.on; } });
+      if (list.length === 1) fns.querySelector('.fn-on').checked = true;
+      modal.querySelector('#nw-client').placeholder = occ === 'wedding' ? 'e.g. Akriti' : occ === 'birthday' ? 'e.g. Aarav (1st birthday)' : occ === 'anniversary' ? 'e.g. Sharma 25th' : 'e.g. Scarlet launch';
+    }));
+    { const on = modal.querySelector('#nw-occ .on'); if (on) { on.style.background = 'var(--accent-soft, #f3e3dc)'; on.style.fontWeight = '700'; } }
     modal.querySelector('#nw-add-fn').addEventListener('click', () => { customCount++; fns.insertAdjacentHTML('beforeend', fnRow('', '2+2', true)); const r = fns.lastElementChild; wire(r); r.querySelector('.fn-name').focus(); });
     modal.querySelector('#nw-cancel').addEventListener('click', closeModal);
     modal.querySelector('#nw-save').addEventListener('click', () => {
@@ -3038,7 +3069,7 @@ body.mh-view-board #mutos-home { display: none; }
         const date = r.querySelector('.fn-date').value;
         if (!fname) { toast('Give the extra function a name.'); return; }
         if (!date) { toast('Pick a date for ' + fname + '.'); return; }
-        created.push(cleanEvent({ id: uid(), name: client + ' ' + fname, wedding: client, location: venue, tier, contactName, contactPhone, date, slot: r.querySelector('.fn-slot').value, coverage: r.querySelector('.fn-cov').value.trim(), eventType: /wedding/i.test(fname) ? 'full' : 'short' }));
+        created.push(cleanEvent({ id: uid(), name: client + ' ' + fname, wedding: client, occasion: occ, location: venue, tier, contactName, contactPhone, date, slot: r.querySelector('.fn-slot').value, coverage: r.querySelector('.fn-cov').value.trim(), eventType: occ === 'wedding' && /wedding/i.test(fname) ? 'full' : 'short' }));
       }
       state.events.push(...created);
       closeModal(); renderBoard(); saveData();
@@ -4076,7 +4107,8 @@ body.mh-view-board #mutos-home { display: none; }
       (ev.noteSent === ev.notes ? '<button type="button" class="sb-mini-btn" data-action="notesend" style="color:var(--ok-ink)" title="You sent this note to the team. Tap to send again.">✓ sent to team</button>' : '<button type="button" class="sb-mini-btn" data-action="notesend" style="color:var(--warn-ink);font-weight:600" title="Send this note to everyone on this shoot on WhatsApp">➤ send to team</button>')) + '</div>';
     else if (!cancelled) h += '<div class="sb-card-meta"><button type="button" class="sb-mini-btn" data-action="note" style="padding:0;color:var(--ink-muted)">+ note for team</button></div>';
     h += '<div class="sb-tags">';
-    if (ev.wedding) h += '<span class="sb-tag wedding">' + escapeHtml(ev.wedding) + ' wedding</span>';
+    if (ev.wedding) h += '<span class="sb-tag wedding">' + (occOf(ev) === 'wedding' ? '' : occIcon(occOf(ev)) + ' ') + escapeHtml(ev.wedding) + ' ' + occLabel(occOf(ev)).toLowerCase() + '</span>';
+    else if (occOf(ev) !== 'wedding') h += '<span class="sb-tag wedding">' + occIcon(occOf(ev)) + ' ' + occLabel(occOf(ev)) + '</span>';
     h += ev.tier === 'Premium' ? '<span class="sb-tag premium">★ Premium · 4K HDR</span>' : '<span class="sb-tag">Standard</span>';
     h += '<span class="sb-tag">' + (ev.eventType === 'full' ? 'Full event' : 'Short event') + '</span>';
     if (ev.quick) h += '<span class="sb-tag" title="Crew sent here keep their own shoot; never double-booked">⚡ Quick visit</span>';
@@ -4403,7 +4435,7 @@ body.mh-view-board #mutos-home { display: none; }
   function renderEmpty() {
     const wrap = document.createElement('div');
     wrap.className = 'sb-empty-state';
-    wrap.innerHTML = '<h2>The board is empty</h2><p>Shoots you add appear here, grouped by date, with the team and gear pinned to each one. Start with "New wedding", or load a backup file to bring everything back.</p><div class="sb-actions"><button type="button" class="sb-btn-ghost" id="sb-empty-load">⭱ Load backup</button></div>';
+    wrap.innerHTML = '<h2>The board is empty</h2><p>Shoots you add appear here, grouped by date, with the team and gear pinned to each one. Start with "New client", or load a backup file to bring everything back.</p><div class="sb-actions"><button type="button" class="sb-btn-ghost" id="sb-empty-load">⭱ Load backup</button></div>';
     wrap.querySelector('#sb-empty-load').addEventListener('click', () => document.getElementById('sb-restore-input').click());
     board.appendChild(wrap);
   }
@@ -4526,7 +4558,7 @@ body.mh-view-board #mutos-home { display: none; }
       b.addEventListener('click', () => { showingNewForm = true; newFormTargetKey = 'end'; renderBoard(); });
       addSection.appendChild(b);
       const w = document.createElement('button'); w.type = 'button'; w.className = 'sb-new-card';
-      w.innerHTML = '<span class="sb-new-card-plus">＋</span><span>New wedding (all functions)</span>';
+      w.innerHTML = '<span class="sb-new-card-plus">＋</span><span>New client (all functions)</span>';
       w.addEventListener('click', openNewWeddingModal);
       addSection.appendChild(w);
     }
@@ -4544,7 +4576,7 @@ body.mh-view-board #mutos-home { display: none; }
     const weddings = [...new Set(state.events.map(e => e.wedding).filter(Boolean))];
     card.innerHTML =
       '<input id="nf-name" class="sb-field" placeholder="Shoot name (e.g. Akriti Sangeet)">' +
-      '<input id="nf-wedding" class="sb-field" placeholder="Wedding / client (optional)" list="nf-weddings"><datalist id="nf-weddings">' + weddings.map(w => '<option value="' + escapeHtml(w) + '">').join('') + '</datalist>' +
+      '<input id="nf-wedding" class="sb-field" placeholder="Client (optional)" list="nf-weddings"><datalist id="nf-weddings">' + weddings.map(w => '<option value="' + escapeHtml(w) + '">').join('') + '</datalist>' +
       '<input id="nf-coverage" class="sb-field" placeholder="Coverage (e.g. 2+2+D+Dr)">' +
       '<select id="nf-tier" class="sb-field"><option value="Standard" selected>Standard client</option><option value="Premium">Premium client</option></select>' +
       '<input id="nf-loc" class="sb-field" placeholder="Location">' +
@@ -4555,7 +4587,8 @@ body.mh-view-board #mutos-home { display: none; }
     card.querySelector('#nf-save').addEventListener('click', () => {
       const name = card.querySelector('#nf-name').value.trim(), date = card.querySelector('#nf-date').value;
       if (!name || !date) { toast('Give the shoot a name and a date first.'); return; }
-      state.events.push(cleanEvent({ id: uid(), name, wedding: card.querySelector('#nf-wedding').value.trim(), coverage: card.querySelector('#nf-coverage').value.trim(), tier: card.querySelector('#nf-tier').value, location: card.querySelector('#nf-loc').value.trim(), contactPhone: card.querySelector('#nf-cphone').value.trim(), date, slot: card.querySelector('#nf-slot').value }));
+      { const wv = card.querySelector('#nf-wedding').value.trim(), sib = wv && state.events.find(o => normalizeName(o.wedding) === normalizeName(wv)); var nfOcc = sib ? sib.occasion : undefined; }   // a new shoot of a known client gets its kind
+      state.events.push(cleanEvent({ id: uid(), name, wedding: card.querySelector('#nf-wedding').value.trim(), occasion: nfOcc, coverage: card.querySelector('#nf-coverage').value.trim(), tier: card.querySelector('#nf-tier').value, location: card.querySelector('#nf-loc').value.trim(), contactPhone: card.querySelector('#nf-cphone').value.trim(), date, slot: card.querySelector('#nf-slot').value }));
       showingNewForm = false; newFormTargetKey = null;
       if (date < todayStr() && !prefs.showPast) toast('Added. It is a past date, so tap "Show past shoots" to see it.');
       renderBoard(); saveData();
@@ -4982,7 +5015,7 @@ body.mh-view-board #mutos-home { display: none; }
     const shootRows = events.map(ev => {
       const c = getConflictIds(ev);
       return {
-        Shoot: ev.name, Wedding: ev.wedding, Status: ev.status === 'cancelled' ? 'Cancelled' : 'Confirmed', Date: ev.date, 'Time slot': ev.slot, 'Report time': formatTime12(ev.callTime), Location: ev.location, Map: ev.mapLink,
+        Shoot: ev.name, Wedding: ev.wedding, Kind: occLabel(occOf(ev)), Status: ev.status === 'cancelled' ? 'Cancelled' : 'Confirmed', Date: ev.date, 'Time slot': ev.slot, 'Report time': formatTime12(ev.callTime), Location: ev.location, Map: ev.mapLink,
         Coverage: ev.coverage, 'Event length': ev.eventType === 'full' ? 'Full' : 'Short', 'Client tier': ev.tier,
         'Crew assigned / needed': (crewNeeded(ev.coverage) !== null ? crewCount(ev) + ' / ' + crewNeeded(ev.coverage) : String(crewCount(ev))),
         Shooters: ev.assignments.map(a => { const m = findShooter(a.memberId); if (!m) return ''; const g = [a.gearIds.map(gName).join(', '), a.ownKit ? 'own kit' : ''].filter(Boolean).join(' + '); return m.name + (m.role ? ' [' + m.role + ']' : '') + (g ? ' (' + g + ')' : '') + (c.conflictShooterIds.has(a.memberId) ? ' DOUBLE-BOOKED' : ''); }).filter(Boolean).join('; '),
@@ -5037,7 +5070,7 @@ body.mh-view-board #mutos-home { display: none; }
   })();
   // phone: a floating "Plan" button opens the same actions as the side panel
   document.getElementById('sb-fab').addEventListener('click', () => {
-    const acts = [['sb-new-wedding', '＋ New wedding'], ['sb-callsheet', 'Tomorrow\'s call sheet'], ['sb-workload', 'Crew workload'], ['sb-billing', 'Billing & payouts'], ['sb-history', 'Change history'], ['sb-manage-shooters', 'Manage shooters'], ['sb-manage-assistants', 'Manage assistants'], ['sb-manage-gear', 'Manage gear'], ['sb-rentals', 'Vendor rentals']];
+    const acts = [['sb-new-wedding', '＋ New client'], ['sb-callsheet', 'Tomorrow\'s call sheet'], ['sb-workload', 'Crew workload'], ['sb-billing', 'Billing & payouts'], ['sb-history', 'Change history'], ['sb-manage-shooters', 'Manage shooters'], ['sb-manage-assistants', 'Manage assistants'], ['sb-manage-gear', 'Manage gear'], ['sb-rentals', 'Vendor rentals']];
     const waiting = inboxCount();
     const modal = makeModal(modalHead('Plan', '') + '<div class="sb-menu-grid">' +
       (waiting ? '<button type="button" class="full" data-go="__inbox" style="border-color:var(--gold)">' + waiting + ' from Team Alignment to confirm</button>' : '') +

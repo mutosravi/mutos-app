@@ -114,7 +114,7 @@
   // Home shows a few desks; each desk opens its own tools (decided 6 Nov: "main categories, then sub categories")
   const DESKS = [
     { k: 'shoots', ic: 'board', title: 'Shoots desk', cls: 'main', tools: [
-      ['board', 'board', 'Shoot board', 'main'], ['sb-new-wedding', 'plus', 'New wedding'], ['sb-manage-shooters', 'crew', 'Crew'], ['sb-manage-assistants', 'person', 'Assistants'],
+      ['board', 'board', 'Shoot board', 'main'], ['sb-new-wedding', 'plus', 'New client'], ['sb-manage-shooters', 'crew', 'Crew'], ['sb-manage-assistants', 'person', 'Assistants'],
       ['sb-rentals', 'truck', 'Rentals'], ['sb-callsheet', 'sheet', 'Call sheet'], ['sb-prewed', 'ring', 'Pre-wedding'], ['sb-planner', 'drone', 'Drones & freelancers'],
       ['sb-workload', 'bars', 'Workload'], ['sb-billing', 'rupee', 'Billing'], ['sync', 'sync', 'Sync Team Alignment'], ['/crew.html?preview=1', 'eye', 'Crew view'], ['sb-history', 'list', 'History']] },
     { k: 'work', ic: 'film', title: 'Work desk', tools: [

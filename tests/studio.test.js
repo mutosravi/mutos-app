@@ -322,9 +322,9 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(!(await visitor.$('.fn')), 'not signed in: only a "Sign in with Google" button, no details');
   ok(handle(null, { op: 'rpc', fn: 'client_get', args: { p_token: link.token } }).error, 'visitors cannot read a wedding even with the secret id');
   const stranger = await as('someone.else@gmail.com');
-  await stranger.goto(B + '/client.html?k=' + link.token); await stranger.waitForFunction(() => /Not your wedding/.test(document.body.textContent));
+  await stranger.goto(B + '/client.html?k=' + link.token); await stranger.waitForFunction(() => /Not your booking/.test(document.body.textContent));
   ok(!(await stranger.$('.fn')), 'another Gmail cannot open the family\'s page');
-  await stranger.goto(B + '/client.html'); await stranger.waitForFunction(() => /could not find your wedding/.test(document.body.textContent));
+  await stranger.goto(B + '/client.html'); await stranger.waitForFunction(() => /could not find your booking/.test(document.body.textContent));
   ok((await stranger.textContent('#top')).includes('someone.else@gmail.com'), 'and is told which Gmail they used');
   const fam = await as(FAM);
   await fam.goto(B + '/'); await fam.waitForURL('**/client.html'); await fam.waitForSelector('.fn');
@@ -781,6 +781,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal .cl-refs img.pid-ok');
   ok(/Reference photos from the family \(2\)/.test(await owner.textContent('.sb-modal .cl-refs')) && /Stage like this/.test(await owner.textContent('.sb-modal .cl-refs')), 'Clients → See answers shows the reference photos');
   driveOn = false;
+  // kind of client (17 Nov 2026): a birthday client's page says "Your birthday" and has no couple card
+  { const fd = T.client_feed.get(wed.key).data, before = JSON.stringify(fd.functions);
+    fd.functions.forEach(f => { f.occasion = 'birthday'; });
+    await fam.goto(B + '/client.html'); await fam.waitForSelector('.fn');
+    ok(/Your birthday/.test(await fam.textContent('#top')) && !(await fam.$('[data-card="couple"]')), 'a birthday client: "Your birthday", no couple card');
+    fd.functions = JSON.parse(before); }
 
   // the work desk adds every deliverable of the package
   await owner.goto(B + '/desk.html'); await owner.waitForSelector('#add'); await owner.click('#add'); await owner.selectOption('#aw', wed.key); await owner.waitForSelector('#apk-go');

@@ -103,7 +103,7 @@
   let c, session;
   try { c = await app.client(); session = await app.session(); } catch (e) { fail('Could not connect. Check your internet and try again.'); return; }
   if (!session) {
-    card('<h2>Your wedding with Muto\'s</h2><p>Sign in with the Gmail you gave Muto\'s to fill in the details of your functions.</p>' +
+    card('<h2>Your booking with Muto\'s</h2><p>Sign in with the Gmail you gave Muto\'s to fill in the details of your functions.</p>' +
       '<button type="button" class="pillbtn" id="gsign" style="width:100%">Sign in with Google</button><p style="font-size:12px;margin-top:4px">Only the Gmail you gave us can open your page. <a href="/privacy.html">Privacy</a></p>');
     $('gsign').addEventListener('click', () => { try { sessionStorage.setItem('mutos-client-k', wanted); } catch (e) {} app.signIn(); });
     return;
@@ -117,7 +117,7 @@
   const want = wanted || remembered, list = mine || [];
   const token = (list.find(w => w.token === want) || list[0] || {}).token || want;
   if (!token) {
-    card('<h2>We could not find your wedding</h2><p>You are signed in as <b>' + esc(email) + '</b>, but this Gmail is not on Muto\'s list yet. Send this Gmail to Muto\'s on WhatsApp, then tap Try again. Or sign in with the Gmail you gave us.</p>' +
+    card('<h2>We could not find your booking</h2><p>You are signed in as <b>' + esc(email) + '</b>, but this Gmail is not on Muto\'s list yet. Send this Gmail to Muto\'s on WhatsApp, then tap Try again. Or sign in with the Gmail you gave us.</p>' +
       '<div class="pillrow"><button type="button" class="pillbtn" id="again">Try again</button><button type="button" class="pillbtn light" id="other">Another Gmail</button></div>');
     $('again').addEventListener('click', () => location.reload()); $('other').addEventListener('click', () => app.signOut());
     return;
@@ -125,7 +125,7 @@
   if (list.length > 1) $('pick').innerHTML = list.map(w => '<a href="/client.html?k=' + esc(w.token) + '" style="text-decoration:none"><span class="' + (w.token === token ? 'dark' : '') + '">' + esc(w.title) + '</span></a>').join('');
   const { data: got, error } = await c.rpc('client_get', { p_token: token });
   if (error || !got || got.error) {
-    if (got && got.not_listed) { card('<h2>Not your wedding?</h2><p>' + esc(got.error) + ' Sign in with the Gmail you gave Muto\'s.</p><button type="button" class="pillbtn light" id="other" style="width:100%">Use another Gmail</button>'); $('other').addEventListener('click', () => app.signOut()); }
+    if (got && got.not_listed) { card('<h2>Not your booking?</h2><p>' + esc(got.error) + ' Sign in with the Gmail you gave Muto\'s.</p><button type="button" class="pillbtn light" id="other" style="width:100%">Use another Gmail</button>'); $('other').addEventListener('click', () => app.signOut()); }
     else fail((got && got.error) || 'Could not open your details. Check your internet and try again.');
     return;
   }
@@ -137,6 +137,10 @@
 
   const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   const fns = (got.functions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  // kind of client (17 Nov 2026): wedding / anniversary / birthday / event / other, sent with each function by the studio's board
+  const occ = (fns.find(f => f.occasion) || {}).occasion || 'wedding', couple = occ === 'wedding' || occ === 'anniversary';
+  const occWord = { wedding: 'Your wedding', anniversary: 'Your anniversary', birthday: 'Your birthday', event: 'Your event', other: 'Your booking' }[occ] || 'Your booking';
+  const CPL = occ === 'anniversary' ? { b: 'Wife\'s name', g: 'Husband\'s name', hint: 'Wife\'s and husband\'s names' } : { b: 'Bride\'s name', g: 'Groom\'s name', hint: 'Bride\'s and groom\'s names' };
   const ans = Object.assign({ extra: [] }, got.answers || {});
   if (!Array.isArray(ans.extra)) ans.extra = [];
   if (!Array.isArray(ans.contacts)) ans.contacts = [];
@@ -183,16 +187,16 @@
   function render() {
     const total = fns.length + ans.extra.length, done = fns.filter(f => filled(ans[f.id])).length + ans.extra.filter(filled).length;
     const first = fns.find(f => f.date >= today), daysTo = first ? Math.round((new Date(first.date + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5) : null;
-    $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">Your wedding</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
-      '<h2>' + esc(coupleTitle() || got.title) + '</h2><p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
+    $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">' + esc(occWord) + '</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
+      '<h2>' + esc((couple && coupleTitle()) || got.title) + '</h2><p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
       '<div class="progress" aria-label="' + done + ' of ' + total + ' ready"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' ready</p>' +
       (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
       (studio ? '<div class="ans wait" style="margin:0" id="studio-note">Editing for the family, from Muto\'s. Your changes save here and the family sees them. Only the family can press Send.' + (got.updated_by ? ' Last changed by ' + esc(got.updated_by) + '.' : '') + '</div>' : '') +
       (late ? '<div class="ans wait" style="margin:0"><b>Payment reminder:</b> ' + inr(bk.overdue) + ' is overdue. Please clear it or call Muto\'s if anything is unclear. Thank you!</div>' : '') +
       (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Changed something? Tap Send again and our team sees it at once.</div>' : '') + '</section>';
     const cp = ans.couple, cpOk = !!(cp.bride && cp.groom);
-    let h = fcard('couple', ' sec' + (cpOk ? ' done' : ''), '<span class="txt"><h2>The couple</h2><span class="meta">' + esc(cpOk ? cp.bride + ' & ' + cp.groom : 'Bride\'s and groom\'s names') + '</span></span><span class="go' + (cpOk ? ' ok' : '') + '">' + (cpOk ? 'Edit' : 'Add') + '</span>',
-      '<div class="grid">' + field('couple', cp, ['bride', 'Bride\'s name', 'text', 'e.g. Divya Bansal', 'wide']) + field('couple', cp, ['groom', 'Groom\'s name', 'text', 'e.g. Swastik Gupta', 'wide']) + '</div>' + doneBtn);
+    let h = !couple ? '' : fcard('couple', ' sec' + (cpOk ? ' done' : ''), '<span class="txt"><h2>The couple</h2><span class="meta">' + esc(cpOk ? cp.bride + ' & ' + cp.groom : CPL.hint) + '</span></span><span class="go' + (cpOk ? ' ok' : '') + '">' + (cpOk ? 'Edit' : 'Add') + '</span>',
+      '<div class="grid">' + field('couple', cp, ['bride', CPL.b, 'text', 'e.g. Divya Bansal', 'wide']) + field('couple', cp, ['groom', CPL.g, 'text', 'e.g. Swastik Gupta', 'wide']) + '</div>' + doneBtn);
     h += '<div class="sechead2">Your functions</div>';
     fns.forEach(f => {
       const a = ans[f.id] = ans[f.id] || {}, ok = filled(a), short = f.type === 'short';
@@ -244,7 +248,7 @@
       const k = inp.dataset.k, f = inp.dataset.f, list = /^[xcvr]\d+$/.test(k) ? { x: ans.extra, c: ans.contacts, v: ans.vip, r: ans.refs }[k[0]] : null, obj = list ? list[Number(k.slice(1))] : (ans[k] = ans[k] || {});
       obj[f] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
       dirty = true; $('saved').textContent = 'Not saved yet'; scheduleSave();
-      if (k === 'couple') { const h2 = document.querySelector('#top .hero h2'); if (h2) h2.textContent = coupleTitle() || got.title; const m = document.querySelector('[data-card="couple"] .fn-sum .meta'); if (m) m.textContent = ans.couple.bride && ans.couple.groom ? ans.couple.bride + ' & ' + ans.couple.groom : 'Bride\'s and groom\'s names'; }
+      if (k === 'couple') { const h2 = document.querySelector('#top .hero h2'); if (h2) h2.textContent = coupleTitle() || got.title; const m = document.querySelector('[data-card="couple"] .fn-sum .meta'); if (m) m.textContent = ans.couple.bride && ans.couple.groom ? ans.couple.bride + ' & ' + ans.couple.groom : CPL.hint; }
       if (submittedAt && !studio) { $('send').textContent = 'Send changes to Muto\'s'; $('send').classList.add('pulse'); }
       const c2 = inp.closest('.fn'); if (!list || k[0] === 'x') { const ok = filled(obj), go = c2.querySelector('.fn-sum .go'); c2.classList.toggle('done', ok); if (go) { go.classList.toggle('ok', ok); go.textContent = ok ? 'Ready' : 'Add details'; } }
     }));
