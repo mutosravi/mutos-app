@@ -187,6 +187,14 @@ function rpc(fn, a, e) {
       const id = crypto.randomUUID(); T.drive_items.set(id, Object.assign({}, it, { id, drive: dst.id, what: 'backup', from_item: it.id, note: 'Backup of ' + T.drives.get(it.drive).name, added_by: e, added_at: new Date().toISOString() }));
       dlog(it.drive, e, 'Backed up ' + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + ' backed up here'); return { data: { ok: true, id, cards: [], cards_copied: 0 }, error: null };
     }
+    if (fn === 'drive_set_paths') {   // 030
+      const dr = T.drives.get(a.p_drive), me = [...T.people.values()].find(x => x.email === e);
+      if (!dr || !(staff(e) || (dr.holder && me && dr.holder === me.id))) return no('Only the studio or whoever has the drive can move its folders.');
+      const ms = a.p_moves || []; if (!ms.length) return no('Pick the folders to move.');
+      if (ms.some(m => { const it = T.drive_items.get(m.id); return !it || it.drive !== dr.id || it.removed_at || !String(m.path || '').split('/').filter(Boolean).length; })) return no('Some of these cannot move.');
+      ms.forEach(m => { T.drive_items.get(m.id).path = String(m.path).split('/').map(x => x.trim()).filter(Boolean).join('/'); });
+      dlog(dr.id, e, a.p_label + ' (' + ms.length + ' items)'); return { data: { ok: true, moved: ms.length }, error: null };
+    }
     if (fn === 'drive_backup_folder') {   // 029
       if (!staff(e)) return no('Only the admin or the manager can record a backup.');
       const P = String(a.p_path || '').split('/').filter(Boolean).join('/'); let n = 0, skipped = 0;
@@ -709,6 +717,22 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     for (let i = 0; i < 40; i++) { const id = crypto.randomUUID(); T.drive_items.set(id, { id, drive: d6, title: 'Big · Card ' + i, what: 'raw', path: 'Big/Haldi', size_label: '2 GB', files: 10, added_at: '2026-11-18T00:00:00Z', removed_at: null }); }
     await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + d6 + '"]'); await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub[data-cd="Big"]');
     ok(/Big.*40 items · 400 files · 80 GB/s.test(await owner.textContent('.dsub[data-cd="Big"]')) && /Late.*5 items/s.test(await owner.textContent('.dsub[data-cd="Late"]')), 'a register with more than 1000 lines: M 6 still shows all 40 card folders in Big and the 5 in Late (read in pages of 1000)');
+    // 030: a folder named wrong → rename it; then move two folders into another one
+    await owner.check('.dpick[data-pk="f:Late"]'); await owner.waitForSelector('#dmv:not([hidden]) #mv-namebox:not([hidden])');
+    ok(await owner.inputValue('#mv-name') === 'Late' && /1 folder selected/.test(await owner.textContent('#mv-n')), 'tick a folder: the move bar opens with its name ready to change');
+    await owner.fill('#mv-name', 'Latest'); await owner.click('#mv-go');
+    await owner.waitForFunction(() => /Late \(renamed Latest\) → top of M 6 \(5 items\)/.test(document.getElementById('toast').textContent));
+    ok([...T.drive_items.values()].filter(i => i.drive === d6 && i.path === 'Latest/Haldi').length === 5, 'renamed: the 5 lines are in Latest/Haldi now');
+    await owner.waitForSelector('.dsub[data-cd="Latest"]'); await owner.check('.dpick[data-pk="f:Big"]'); await owner.check('.dpick[data-pk="f:Latest"]');
+    if (SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'drive-move.png') });
+    ok(await owner.isHidden('#mv-namebox') && /2 folders selected/.test(await owner.textContent('#mv-n')), 'two folders ticked: no rename, just where to');
+    await owner.fill('#mv-to', '2026'); await owner.click('#mv-go');
+    await owner.waitForSelector('.dsub[data-cd="2026/Big"]');
+    ok([...T.drive_items.values()].filter(i => i.drive === d6 && /^2026\/(Big|Latest)\/Haldi$/.test(i.path)).length === 45 && /M 6.*2026/s.test(await owner.textContent('.dcrumbs')), 'moved Big and Latest into 2026 (with their subfolders); the drive opens in 2026');
+    await owner.check('.dpick[data-pk="f:2026/Big"]'); await owner.fill('#mv-to', '2026/Big/Haldi'); await owner.click('#mv-go');
+    await owner.waitForFunction(() => /cannot go inside itself/.test(document.getElementById('toast').textContent));
+    ok(true, 'a folder cannot be moved inside itself');
+    ok([...T.drive_log.values()].some(l => l.drive === d6 && /Moved Big, Latest to 2026/.test(l.what)), 'the drive history says what moved');
     await owner.click('#dclose');
     [...T.drive_items.values()].filter(i => i.drive === d6 || /^Old \d/.test(i.title)).forEach(i => T.drive_items.delete(i.id)); T.drives.delete(d6); }
   await kul.reload(); await kul.waitForSelector('#tab-drives [data-d]'); await kul.click('[data-d="' + DRV('M 1').id + '"]');
