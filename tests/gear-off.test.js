@@ -114,7 +114,17 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   const d4 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); const eq = st.equipment.find(e => e.id === 'q3-test'); delete eq.off;
     const ps = st.shooters.filter(x => !x.left && !/team/i.test(x.role || '')); const e = A.cleanEvent({ name: 'Q3 shoot 3', date: s.day, slot: 'Evening', coverage: '1+0', location: 'Place 3' }); e.assignments = [{ memberId: ps[3].id, gearIds: ['q3-test'] }]; st.events.push(e);
     return st.events.filter(x => x.date === s.day && /^Q3 shoot/.test(x.name)).map(A.hasConflict); }, q3);
-  ok(d4.length === 4 && d4.every(Boolean), 'four shoots wanting the 3 units (nothing marked) are still double-booked, as before');
+  ok(d4.length === 4 && d4.filter(Boolean).length === 1 && d4[3], 'four shoots wanting the 3 units (nothing marked): only the fourth is double-booked, the first three keep their bodies');
+  const ban4 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); A.renderBoard(); const e = st.events.find(x => x.date === s.day && x.name === 'Q3 shoot 3'); const b = document.querySelector('#card-' + e.id + ' .sb-banner'); return b ? b.textContent : ''; }, q3);
+  ok(/Test M4 \(all 3 in use\)/.test(ban4) || /Short on/.test(ban4), 'its card says which item: "' + ban4.slice(0, 80) + '"');
+  // quantity cut to 2 (Ravi: "I subtracted 1 body, made only 2 not 3"): three shoots → only the third is double-booked
+  const d5 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); st.equipment.find(e => e.id === 'q3-test').qty = 2; st.events = st.events.filter(x => x.name !== 'Q3 shoot 3');
+    return st.events.filter(x => x.date === s.day && /^Q3 shoot/.test(x.name)).map(A.hasConflict); }, q3);
+  ok(d5.length === 3 && d5.filter(Boolean).length === 1 && d5[2], 'quantity 2, three shoots: only the third is double-booked');
+  // a single item on two shoots at the same time: both are still flagged (either can let it go)
+  const d6 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); st.equipment.find(e => e.id === 'q3-test').qty = 1;
+    return st.events.filter(x => x.date === s.day && /^Q3 shoot/.test(x.name)).map(A.hasConflict); }, q3);
+  ok(d6.every(Boolean), 'a single item on three shoots at once: all of them flagged, as before');
   await p.keyboard.press('Escape'); await sleep(300);
   ok(!errs.length, 'no page errors ' + errs.join(' | '));
   await b.close(); server.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

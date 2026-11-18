@@ -1079,12 +1079,13 @@ body.mh-view-board #mutos-home { display: none; }
       const need = unitsIn(ev, id), free = unitsFreeFor(ev, id); if (need <= free) return;
       const off = offUnits(id, ev.date);
       if (off && need <= free + off) { if (!keepsUnits(ev, id, need)) na.add(id); return; }   // fine without the unavailable units
+      if (keepsUnits(ev, id, need)) return;   // several units: the earlier shoots keep theirs, only the shoot(s) left over are double-booked
       ce.add(id); });
     const seen = new Map();
     ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (!p) return; const k = normalizeName(p.name); if (seen.has(k)) { cs.add(a.memberId); cs.add(seen.get(k)); } else seen.set(k, a.memberId); });
     return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce, naEquip: na };
   }
-  // several units of one item and some marked not available (Ravi, 18 Nov 2026): the units still free go to the earlier shoots of the day
+  // several units of one item, more wanted than there are (or some marked not available) (Ravi, 18 Nov 2026): the units go to the earlier shoots of the day
   // (morning before evening, then the shoot added first), so only the shoot(s) left without one are flagged, not every shoot using that item
   function keepsUnits(ev, gid, need) {
     if (gearQty(gid) < 2) return false;
@@ -4141,7 +4142,7 @@ body.mh-view-board #mutos-home { display: none; }
     else if (short) h += '<div class="sb-banner warn">Short on crew · ' + crewCount(ev) + ' of ' + crewNeeded(ev.coverage) + (isGearShort(ev) ? ' · gear: ' + gearShortText(ev) : '') + (isAssistShort(ev) ? ' · ' + assistShortText(ev) : '') + '</div>';
     else if (gearShort) h += '<div class="sb-banner gear">Short on gear · ' + gearShortText(ev) + (isAssistShort(ev) ? ' · ' + assistShortText(ev) : '') + '</div>';
     else if (assistShort) h += '<div class="sb-banner assist">Short on assistant · ' + assistShortText(ev) + '</div>';
-    else if (conflict) h += '<div class="sb-banner">Double-booked</div>';
+    else if (conflict) h += '<div class="sb-banner">Double-booked' + (realClash.size ? ' · ' + escapeHtml([...realClash].map(id => gName(id) + (gearQty(id) > 1 ? ' (all ' + (gearQty(id) - offUnits(id, ev.date)) + ' in use)' : '')).join(', ')) : '') + '</div>';
     h += '<div class="sb-card-name">' + (serial ? '<span class="sb-serial">#' + serial + '</span> ' : '') + escapeHtml(ev.name) + '</div>';
     h += '<div class="sb-card-meta"><span>' + escapeHtml(formatDate(ev.date)) + '</span><span>' + escapeHtml(ev.slot) + '</span>' + (ev.callTime ? '<span>Report ' + escapeHtml(formatTime12(ev.callTime)) + '</span>' : '') + '<span>' + escapeHtml(ev.location || 'No location set') + '</span>' + (ev.mapLink ? '<a href="' + escapeHtml(ev.mapLink) + '" target="_blank" rel="noopener">Map ↗</a>' : '') + '</div>';
     { const out = isOutstation(ev), guessed = ev.outstation !== true && ev.outstation !== false, unknown = guessed && !out && guessPlace(ev.location) === 'unknown';
