@@ -187,6 +187,16 @@ function rpc(fn, a, e) {
       const id = crypto.randomUUID(); T.drive_items.set(id, Object.assign({}, it, { id, drive: dst.id, what: 'backup', from_item: it.id, note: 'Backup of ' + T.drives.get(it.drive).name, added_by: e, added_at: new Date().toISOString() }));
       dlog(it.drive, e, 'Backed up ' + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + ' backed up here'); return { data: { ok: true, id, cards: [], cards_copied: 0 }, error: null };
     }
+    if (fn === 'drive_backup_folder') {   // 029
+      if (!staff(e)) return no('Only the admin or the manager can record a backup.');
+      const P = String(a.p_path || '').split('/').filter(Boolean).join('/'); let n = 0, skipped = 0;
+      const pathOf = it => it.path || String(it.title).split(' · ')[0].trim();
+      for (const it of [...T.drive_items.values()].filter(x => x.drive === a.p_drive && !x.removed_at && (pathOf(x) === P || pathOf(x).startsWith(P + '/')))) {
+        const r = rpc('drive_backup_item', { p_item: it.id, p_to: a.p_to }, e).data;
+        if (r.error) { if (/already on/.test(r.error)) skipped++; else return { data: r, error: null }; } else n++;
+      }
+      return { data: { ok: true, lines: n, skipped, cards: [], cards_copied: 0 }, error: null };
+    }
     if (fn === 'drive_move_item') {
       const it = T.drive_items.get(a.p_item); if (!it || it.removed_at) return no('That data is no longer on the drive.');
       const dst = T.drives.get(a.p_to_drive); if (!dst || dst.id === it.drive) return no('Pick another drive.');
@@ -662,18 +672,32 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const raw = [...T.drive_items.values()].find(i => i.title === 'Client 59 · Haldi');
   ok(raw && raw.drive === DRV('M 1').id && raw.what === 'raw' && raw.added_by === OWNER && raw.files === 1450, 'the owner lists Client 59 Haldi raw on M 1 (1450 files)');
   // 028: the drive opens like a Mac window: storage, folders per client with files and size; back up a folder to another drive
-  await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"]');
+  await owner.waitForSelector('.dsub[data-cd="Client 59"]');
+  ok(/600 GB used of/.test(await owner.textContent('.sheet')) && /Client 59.*1 item · 1450 files · 600 GB.*no backup/s.test(await owner.textContent('.dsub[data-cd="Client 59"]')), 'M 1 opens like Finder: "600 GB used of …", 📁 Client 59 · 1 item · 1450 files · 600 GB · no backup');
+  await owner.click('.dsub[data-cd="Client 59"]'); await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"]');
   const fv = await owner.textContent('.sheet');
-  ok(/600 GB used of/.test(fv) && /📁 Client 59/.test(fv) && /Raw · 1450 files · 600 GB/.test(fv) && /no backup/.test(fv), 'M 1 opens as folders: "600 GB used of …", 📁 Client 59 → Haldi · Raw · 1450 files · 600 GB · no backup');
+  ok(/M 1 › Client 59/.test(fv) && /Raw · 1450 files · 600 GB/.test(fv), 'inside the folder (M 1 › Client 59): Haldi · Raw · 1450 files · 600 GB');
   await owner.click('.dfolder[data-fo="' + raw.id + '"]'); await owner.waitForSelector('#fo-to');
-  await owner.fill('#fo-f', '1452'); await owner.click('#fo-save'); await owner.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
-  ok(raw.files === 1452, 'the folder\'s file count can be corrected');
+  await owner.fill('#fo-f', '1452'); await owner.fill('#fo-p', 'Client 59/Haldi/'); await owner.click('#fo-save'); await owner.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
+  ok(raw.files === 1452 && raw.path === 'Client 59/Haldi/', 'file count corrected and the item put in the folder Client 59/Haldi');
+  await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"]');
+  ok(/M 1 › Client 59 › Haldi/.test(await owner.textContent('.dcrumbs')), 'the drive reopens in that folder: M 1 › Client 59 › Haldi');
+  await owner.click('.dcrumbs [data-cd=""]'); await owner.waitForSelector('.dsub[data-cd="Client 59"]'); await owner.click('.dsub[data-cd="Client 59"]'); await owner.waitForSelector('.dsub[data-cd="Client 59/Haldi"]');
+  ok(true, 'folders → subfolders: Client 59 › Haldi');
+  await owner.click('.dsub[data-cd="Client 59/Haldi"]'); await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"]');
   await owner.click('.dfolder[data-fo="' + raw.id + '"]'); await owner.waitForSelector('#fo-to');
   await owner.selectOption('#fo-to', DRV('Red').id); await owner.click('#fo-bk'); await owner.waitForFunction(() => /Backed up to Red/.test(document.getElementById('toast').textContent));
   const bkF = [...T.drive_items.values()].find(i => i.drive === DRV('Red').id && i.from_item === raw.id && !i.removed_at);
   ok(bkF && bkF.what === 'backup' && bkF.files === 1452 && bkF.size_label === '600 GB', 'Back up this folder → Red: the backup folder is listed on Red with the same files and size');
   await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"] .pill.ok');
-  ok(/1 more copy/.test(await owner.textContent('.dfolder[data-fo="' + raw.id + '"]')), 'on M 1 the folder now shows "✓ 1 more copy"');
+  // a whole folder in one go (029): Client 59 → M 5
+  await owner.click('.dcrumbs [data-cd="Client 59"]'); await owner.waitForSelector('#tb-to'); await owner.selectOption('#tb-to', DRV('M 5').id); await owner.click('#tb-go');
+  await owner.waitForFunction(() => /Client 59 backed up to M 5 \(1 item\)/.test(document.getElementById('toast').textContent));
+  const bkM5 = [...T.drive_items.values()].find(i => i.drive === DRV('M 5').id && i.from_item === raw.id && !i.removed_at);
+  ok(bkM5 && bkM5.path === 'Client 59/Haldi/', 'Back up "Client 59" (the whole folder) → M 5 gets the same folders');
+  T.drive_items.delete(bkM5.id);
+  await owner.waitForSelector('.dsub[data-cd="Client 59/Haldi"]'); await owner.click('.dsub[data-cd="Client 59/Haldi"]'); await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"] .pill.ok');
+  ok(/✓ \d more cop/.test(await owner.textContent('.dfolder[data-fo="' + raw.id + '"]')), 'on M 1 the item now shows "✓ … more copies"');
   if (SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'drive-folders.png') });
   ok(handle(CREWE, { op: 'rpc', fn: 'drive_backup_item', args: { p_item: raw.id, p_to: DRV('M 5').id } }).data.error, 'only the admin or manager records a backup');
   T.drive_items.delete(bkF.id);   // leave the rest of the story as it was
@@ -689,7 +713,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok((await cr.textContent('#tab-drives')).includes('From the office, given by Kuldeep') && (await cr.textContent('#tab-drives')).includes('for the reel'), '… "Waiting for you to accept: M 1 from the office, given by Kuldeep"');
   await cr.click('[data-yes]'); await cr.waitForFunction(() => /now your responsibility/.test(document.getElementById('toast').textContent));
   ok(DRV('M 1').holder === PP('Hamza').id && [...T.drive_log.values()].some(l => l.what.includes('Hamza accepted M 1 from the office')), 'Hamza accepts: M 1 is his responsibility, and the history says so');
-  await cr.click('.chip-b[data-dv="mine"]'); await cr.click('[data-d="' + DRV('M 1').id + '"]'); await cr.waitForSelector('[data-fo="' + raw.id + '"]');
+  await cr.click('.chip-b[data-dv="mine"]'); await cr.click('[data-d="' + DRV('M 1').id + '"]'); await cr.waitForSelector('.dsub[data-cd="Client 59"]'); await cr.click('.dsub[data-cd="Client 59"]'); await cr.click('.dsub[data-cd="Client 59/Haldi"]'); await cr.waitForSelector('[data-fo="' + raw.id + '"]');
   await cr.click('[data-fo="' + raw.id + '"]'); await cr.waitForSelector('#fo-mv'); ok(!(await cr.$('#fo-bk')), 'an editor holding the drive can move a folder but not record backups'); await cr.click('#fo-mv'); await cr.waitForSelector('#mto'); await cr.fill('#mto', 'M 5'); await cr.click('#mmove');
   await cr.waitForFunction(() => /Moved to M 5/.test(document.getElementById('toast').textContent));
   const onM5 = [...T.drive_items.values()].find(i => i.drive === DRV('M 5').id && !i.removed_at);

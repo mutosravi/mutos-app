@@ -81,7 +81,7 @@
       try { const s = await c.auth.getSession(); const tok = s && s.data && s.data.session && s.data.session.access_token; if (tok) fetch('/api/notify-drive', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ id }) }).catch(() => {}); } catch (e) {}
     }
 
-    async function openDrive(d) {
+    async function openDrive(d, startPath) {
       if (!d) return;
       const its = items.filter(it => it.drive === d.id), pm = pendingOf(d);
       const bg = W.sheet('<h3>' + esc(d.name) + '</h3><p class="sub" style="margin:-4px 0 8px">' + esc([[d.size_label, d.kind].filter(Boolean).join(' '), d.model, d.format, d.owner_type === 'client' ? 'client drive' + (d.client_name && d.client_name !== d.name ? ': ' + d.client_name : '') : 'studio drive'].filter(Boolean).join(' · ')) + '</p>' +
@@ -89,8 +89,8 @@
         '<div class="pillrow" style="margin-bottom:8px">' +
           (pm && forMe(pm) ? '<button type="button" class="pillbtn light" id="dno">Not received</button><button type="button" class="pillbtn" id="dyes">I have it ✓</button>'
             : (canGive(d) ? '<button type="button" class="pillbtn" id="dgive">' + (d.holder ? 'Give to someone' : 'Give out') + '</button>' : '') + (pm && (opts.staff || pm.given_by === opts.email) ? '<button type="button" class="pillbtn light" id="dcancel">Take back the handover</button>' : opts.staff ? '<button type="button" class="pillbtn light" id="dedit">Edit details</button>' : '')) + '</div>' +
-        folderView(d, its) +
-        (canEdit(d) ? '<div id="addbox"><div class="form-grid" style="margin-top:8px"><label class="wide">Wedding or event<input class="in" id="it-t" list="dl-wed" maxlength="160" placeholder="e.g. Jyoti & Amit · Haldi"></label>' +
+        '<div id="dtree"></div>' +
+        (canEdit(d) ? '<div id="addbox"><div class="form-grid" style="margin-top:8px"><label class="wide">Folder<input class="in" id="it-p" list="dl-path" maxlength="200" placeholder="e.g. Jyoti/Haldi/Candid"></label><label class="wide">Wedding or event<input class="in" id="it-t" list="dl-wed" maxlength="160" placeholder="e.g. Jyoti & Amit · Haldi"></label>' +
           '<label>What<select class="in" id="it-w">' + WHAT.map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select></label><label>Size<input class="in" id="it-s" maxlength="20" placeholder="e.g. 600 GB"></label>' +
           '<label>Files<input class="in" id="it-f" type="number" min="0" inputmode="numeric" placeholder="e.g. 812"></label>' +
           '<label class="wide">Note<input class="in" id="it-n" maxlength="300" placeholder="optional"></label></div><button type="button" class="pillbtn light" id="it-add" style="width:100%">＋ Add to this drive</button></div>' : '') +
@@ -99,7 +99,8 @@
         (opts.staff ? '<div id="dremoved"></div>' : '') +
         '<h4>History</h4><div id="dhist" class="sub">Loading…</div>' +
         '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="dclose">Close</button></div>' +
-        '<datalist id="dl-wed">' + (opts.weddings || []).map(w => '<option value="' + esc(w.title) + '">').join('') + '</datalist>');
+        '<datalist id="dl-wed">' + (opts.weddings || []).map(w => '<option value="' + esc(w.title) + '">').join('') + '</datalist>' +
+        '<datalist id="dl-path">' + [...new Set(its.flatMap(it => { const segs = (it.path || '').split('/').filter(Boolean); return segs.map((x, i) => segs.slice(0, i + 1).join('/')); }))].sort().map(x => '<option value="' + esc(x) + '">').join('') + '</datalist>');
       const g = id => bg.querySelector(id), on = (id, f) => { const x = g(id); if (x) x.addEventListener('click', f); };
       on('#dclose', () => bg.remove());
       on('#dyes', () => answer(pm.id, true)); on('#dno', () => answer(pm.id, false));
@@ -111,13 +112,13 @@
       on('#it-add', async () => {
         const t = g('#it-t').value.trim(); if (!t) { toast('Write the wedding or event.', true); return; }
         const w = (opts.weddings || []).find(x => x.title.toLowerCase() === t.toLowerCase().split(' · ')[0]);
-        const fv = g('#it-f').value.trim(), row = { drive: d.id, title: t, what: g('#it-w').value, size_label: g('#it-s').value.trim() || null, note: g('#it-n').value.trim() || null, wedding_key: w ? w.key : null };
+        const fv = g('#it-f').value.trim(), row = { drive: d.id, title: t, path: (g('#it-p').value || '').trim() || null, what: g('#it-w').value, size_label: g('#it-s').value.trim() || null, note: g('#it-n').value.trim() || null, wedding_key: w ? w.key : null };
         if (fv) row.files = Math.max(0, Math.round(Number(fv)) || 0);
         const { error } = await c.from('drive_items').insert(row);
         if (error) { toast('Could not add: ' + error.message, true); return; }
         bg.remove(); await refresh(); toast('Added to ' + d.name + '.'); openDrive(drives.find(x => x.id === d.id));
       });
-      bg.querySelectorAll('[data-fo]').forEach(b => b.addEventListener('click', () => openFolder(items.find(it => it.id === b.dataset.fo), d, bg)));
+      drawTree(bg, d, its, startPath && its.some(it => under(it, startPath)) ? startPath : '');
       // removed lines (admin / manager): bring back one removed by mistake (023_drive_restore.sql)
       if (opts.staff) (async () => {
         const { data: all } = await c.from('drive_items').select('*').eq('drive', d.id);
@@ -135,27 +136,58 @@
       const h = g('#dhist'); if (h) h.innerHTML = (log || []).length ? log.map(l => '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + '</div>').join('') : 'Nothing yet.';
     }
 
-    // ---------- the drive like a Mac window: storage, then folders per client with files and size ----------
-    function folderView(d, its) {
-      const cap = gbOf(d.size_label), used = its.reduce((n, it) => n + gbOf(it.size_label), 0), sized = its.filter(it => it.size_label).length;
-      const bar = cap ? '<div style="margin:6px 0 2px;height:8px;border-radius:4px;background:var(--sand,#eee);overflow:hidden"><i style="display:block;height:100%;width:' + Math.min(100, Math.round(used / cap * 100)) + '%;background:' + (used / cap > 0.9 ? 'var(--no-ink,#b23a26)' : 'var(--rose,#9e4f62)') + '"></i></div>' : '';
-      const head = '<h4>On this drive · ' + its.length + ' folder' + (its.length === 1 ? '' : 's') + '</h4>' + (its.length ? '<div class="meta" id="dstore">' + (cap ? gbText(used) + ' used of ' + gbText(cap) + ' · ' + gbText(Math.max(0, cap - used)) + ' free' : gbText(used) + ' listed') + (sized < its.length ? ' (' + (its.length - sized) + ' folder' + (its.length - sized === 1 ? '' : 's') + ' without a size)' : '') + '</div>' + bar : '');
-      if (!its.length) return head + '<p class="sub">Nothing listed yet.</p>';
-      const groups = new Map(); its.slice().sort((a, b) => clientOf(a).localeCompare(clientOf(b)) || a.title.localeCompare(b.title)).forEach(it => { const k = clientOf(it); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
-      return head + [...groups.entries()].map(([client, list]) => '<div class="dgroup" style="margin-top:10px"><div class="meta" style="font-weight:700;color:var(--ink)">📁 ' + esc(client) + ' <span style="font-weight:400">· ' + list.length + ' · ' + gbText(list.reduce((n, it) => n + gbOf(it.size_label), 0)) + '</span></div>' +
-        list.map(it => { const f = filesOf(it), cp = copiesOf(it), raw = it.what === 'raw';
-          return '<button type="button" class="rep dfolder" data-fo="' + it.id + '" style="display:flex;width:100%;text-align:left;justify-content:space-between;gap:8px;align-items:center;border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:8px 2px">' +
-            '<span><span aria-hidden="true">🗂</span> <b>' + esc(it.title) + '</b><br><span class="meta" style="display:inline">' + esc([whatLabel(it.what), f != null ? f + ' files' : '', it.size_label || ''].filter(Boolean).join(' · ')) + '</span></span>' +
-            '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok" title="' + esc(cp.map(x => (drives.find(y => y.id === x.drive) || {}).name).join(', ')) + '">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : raw ? '<span class="pill wait">no backup</span>' : '') + ' ›</span></button>'; }).join('') + '</div>').join('');
+    // ---------- the drive like a Finder window (029): folders → subfolders → what is inside ----------
+    // a line sits in its folder (path, e.g. "Sharma/Haldi/Candid"); older lines without one sit under the client's name
+    const pathOf = it => it.path || clientOf(it) || 'Not in a folder';
+    const under = (it, P) => !P || pathOf(it) === P || pathOf(it).startsWith(P + '/');
+    const sumGb = list => list.reduce((n, it) => n + gbOf(it.size_label), 0), sumFiles = list => list.reduce((n, it) => n + (filesOf(it) || 0), 0);
+    function backupBadge(list) {
+      const raw = list.filter(it => it.what === 'raw'), safe = raw.filter(it => copiesOf(it).length);
+      if (!raw.length) return list.some(it => copiesOf(it).length) ? '<span class="pill ok">✓ copies</span>' : '';
+      return safe.length === raw.length ? '<span class="pill ok">✓ backed up</span>' : safe.length ? '<span class="pill wait">' + (raw.length - safe.length) + ' without backup</span>' : '<span class="pill wait">no backup</span>';
+    }
+    function drawTree(bg, d, its, P) {
+      const box = bg.querySelector('#dtree'); if (!box) return;
+      const cap = gbOf(d.size_label), used = sumGb(its), sized = its.filter(it => it.size_label).length;
+      const here = its.filter(it => under(it, P)), sub = new Map(), inside = [];
+      here.forEach(it => { const rest = P ? pathOf(it).slice(P.length + 1) : pathOf(it); if (!rest) { inside.push(it); return; } const k = rest.split('/')[0]; if (!sub.has(k)) sub.set(k, []); sub.get(k).push(it); });
+      const segs = P ? P.split('/') : [];
+      const crumbs = '<div class="dcrumbs" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:8px 0 4px;font-size:14px"><button type="button" class="x" data-cd="" style="font-weight:700">' + esc(d.name) + '</button>' +
+        segs.map((x, i) => ' › <button type="button" class="x" data-cd="' + esc(segs.slice(0, i + 1).join('/')) + '"' + (i === segs.length - 1 ? ' style="font-weight:700;text-decoration:none"' : '') + '>' + esc(x) + '</button>').join('') + '</div>';
+      const head = '<h4>On this drive · ' + its.length + ' item' + (its.length === 1 ? '' : 's') + '</h4>' + (its.length ? '<div class="meta" id="dstore">' + (cap ? gbText(used) + ' used of ' + gbText(cap) + ' · ' + gbText(Math.max(0, cap - used)) + ' free' : gbText(used) + ' listed') + (sized < its.length ? ' (' + (its.length - sized) + ' without a size)' : '') + '</div>' +
+        (cap ? '<div style="margin:6px 0 2px;height:8px;border-radius:4px;background:var(--sand,#eee);overflow:hidden"><i style="display:block;height:100%;width:' + Math.min(100, Math.round(used / cap * 100)) + '%;background:' + (used / cap > 0.9 ? 'var(--no-ink,#b23a26)' : 'var(--rose,#9e4f62)') + '"></i></div>' : '') : '');
+      const folderRow = ([name, list]) => { const f = sumFiles(list), g = sumGb(list);
+        return '<button type="button" class="rep dsub" data-cd="' + esc(P ? P + '/' + name : name) + '" style="display:flex;width:100%;text-align:left;justify-content:space-between;gap:8px;align-items:center;border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:9px 2px">' +
+          '<span><span aria-hidden="true">📁</span> <b>' + esc(name) + '</b><br><span class="meta" style="display:inline">' + esc([list.length + ' item' + (list.length === 1 ? '' : 's'), f ? f + ' files' : '', g ? gbText(g) : ''].filter(Boolean).join(' · ')) + '</span></span><span style="flex:0 0 auto">' + backupBadge(list) + ' ›</span></button>'; };
+      const itemRow = it => { const f = filesOf(it), cp = copiesOf(it);
+        return '<button type="button" class="rep dfolder" data-fo="' + it.id + '" style="display:flex;width:100%;text-align:left;justify-content:space-between;gap:8px;align-items:center;border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:8px 2px">' +
+          '<span><span aria-hidden="true">🗂</span> ' + esc(it.title) + '<br><span class="meta" style="display:inline">' + esc([whatLabel(it.what), f != null ? f + ' files' : '', it.size_label || ''].filter(Boolean).join(' · ')) + '</span></span>' +
+          '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : it.what === 'raw' ? '<span class="pill wait">no backup</span>' : '') + ' ›</span></button>'; };
+      const others = drives.filter(x => x.id !== d.id && x.status === 'in_use');
+      box.innerHTML = head + (its.length ? crumbs : '') +
+        (!its.length ? '<p class="sub">Nothing listed yet.</p>' : !here.length ? '<p class="sub">This folder is empty.</p>' :
+          [...sub.entries()].sort((a, b) => a[0].localeCompare(b[0], 'en', { numeric: true })).map(folderRow).join('') + inside.sort((a, b) => a.title.localeCompare(b.title)).map(itemRow).join('')) +
+        (P && opts.staff && here.length && others.length ? '<div class="card" style="margin-top:10px;padding:10px 12px"><b>Back up "' + esc(segs[segs.length - 1]) + '"</b><p class="sub" style="margin:2px 0 6px">Copy the folder in Finder first, then record it here: everything in it (' + here.length + ' item' + (here.length === 1 ? '' : 's') + ', ' + gbText(sumGb(here)) + ') is listed on that drive in the same folders, and the cards in it with one copy turn <b>Copied ✓</b>.</p>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap"><select class="in" id="tb-to" style="flex:1 1 180px"><option value="">Backed up to…</option>' + others.map(x => '<option value="' + x.id + '">' + esc(x.name + (x.size_label ? ' · ' + x.size_label : '')) + '</option>').join('') + '</select><button type="button" class="pillbtn" id="tb-go">Record the backup</button></div></div>' : '');
+      box.querySelectorAll('[data-cd]').forEach(b => b.addEventListener('click', () => drawTree(bg, d, its, b.dataset.cd)));
+      box.querySelectorAll('[data-fo]').forEach(b => b.addEventListener('click', () => openFolder(items.find(it => it.id === b.dataset.fo), d, bg)));
+      const ip = bg.querySelector('#it-p'); if (ip && !ip.dataset.touched) { ip.value = P; ip.addEventListener('input', () => { ip.dataset.touched = '1'; }, { once: true }); }
+      const go = box.querySelector('#tb-go'); if (go) go.addEventListener('click', async () => {
+        const to = box.querySelector('#tb-to').value; if (!to) { toast('Pick the drive it was backed up to.', true); return; }
+        const r = await rpc('drive_backup_folder', { p_drive: d.id, p_path: P, p_to: to }); if (!r) return;
+        const dn = (drives.find(x => x.id === to) || {}).name;
+        toast(segs[segs.length - 1] + ' backed up to ' + dn + ' (' + r.lines + ' item' + (r.lines === 1 ? '' : 's') + (r.skipped ? ', ' + r.skipped + ' already there' : '') + ').' + (r.cards_copied ? ' ' + r.cards.join(', ') + (r.cards_copied > 1 ? ' are' : ' is') + ' now Copied ✓.' : ''));
+        bg.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id), P);
+      });
     }
     function openFolder(it, d, parent) {
       if (!it) return;
       const f = filesOf(it), cp = copiesOf(it), ks = cardsIn(it), others = drives.filter(x => x.id !== d.id && x.status === 'in_use' && !cp.some(y => y.drive === x.id));
       const ST = { empty: ['ok', 'Free'], hold: ['no', 'Hold · not copied'], single: ['wait', 'Single copy'], copied: ['ok', 'Copied ✓'] };
       const bg = W.sheet('<h3>🗂 ' + esc(it.title) + '</h3><p class="sub" style="margin:-4px 0 8px">' + esc([whatLabel(it.what), 'on ' + d.name, 'added ' + when(it.added_at)].join(' · ')) + '</p>' +
-        '<div class="form-grid"><label>Files<input class="in" id="fo-f" type="number" min="0" inputmode="numeric" value="' + (f != null ? f : '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Size<input class="in" id="fo-s" maxlength="20" value="' + esc(it.size_label || '') + '" placeholder="e.g. 120 GB"' + (canEdit(d) ? '' : ' disabled') + '></label>' +
+        '<div class="form-grid"><label class="wide">Folder<input class="in" id="fo-p" maxlength="200" value="' + esc(it.path || '') + '" placeholder="e.g. Sharma/Haldi/Candid"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Files<input class="in" id="fo-f" type="number" min="0" inputmode="numeric" value="' + (f != null ? f : '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Size<input class="in" id="fo-s" maxlength="20" value="' + esc(it.size_label || '') + '" placeholder="e.g. 120 GB"' + (canEdit(d) ? '' : ' disabled') + '></label>' +
         '<label class="wide">Note<input class="in" id="fo-n" maxlength="300" value="' + esc(it.note || '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label></div>' +
-        (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-save" style="width:100%">Save files / size</button>' : '') +
+        (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-save" style="width:100%">Save</button>' : '') +
         '<h4>Copies</h4>' + (cp.length ? cp.map(x => { const dd = drives.find(y => y.id === x.drive) || {}; return '<div class="rep">✓ <b>' + esc(dd.name || '?') + '</b> · ' + esc(whatLabel(x.what)) + ' · ' + esc(holderText(dd)) + '</div>'; }).join('') : '<p class="sub">' + (it.what === 'raw' ? 'Only here. Back it up to another drive.' : 'Only here.') + '</p>') +
         (ks.length ? '<h4>Cards in this folder</h4>' + ks.map(k => { const st = ST[k.data] || ['mute', k.data]; return '<span class="pill ' + st[0] + '" style="margin:0 6px 6px 0;display:inline-block">' + esc(k.code) + ' · ' + esc(st[1]) + '</span>'; }).join('') : '') +
         (opts.staff && others.length ? '<h4>Back up this folder</h4><p class="sub">Copy the folder in Finder first, then record it here. The cards in it that have only one copy turn <b>Copied ✓</b> (safe to format) by themselves.</p>' +
@@ -163,13 +195,13 @@
           '<button type="button" class="pillbtn" id="fo-bk" style="width:100%">Record the backup</button>' : '') +
         '<div class="pillrow" style="margin-top:12px">' + (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-mv">Move / copy</button><button type="button" class="pillbtn light" id="fo-rm">Remove</button>' : '') + '<button type="button" class="pillbtn light" id="fo-x">Close</button></div>');
       const g = s2 => bg.querySelector(s2), on = (s2, fn) => { const x = g(s2); if (x) x.addEventListener('click', fn); };
-      const back = async () => { bg.remove(); if (parent) parent.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id)); };
+      const back = async P2 => { bg.remove(); if (parent) parent.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id), P2 != null ? P2 : (it.path || '')); };
       on('#fo-x', () => bg.remove());
       on('#fo-save', async () => {
-        const fv = g('#fo-f').value.trim(), row = { size_label: g('#fo-s').value.trim() || null, note: g('#fo-n').value.trim() || null, files: fv === '' ? null : Math.max(0, Math.round(Number(fv)) || 0) };
+        const fv = g('#fo-f').value.trim(), row = { path: g('#fo-p').value.trim() || null, size_label: g('#fo-s').value.trim() || null, note: g('#fo-n').value.trim() || null, files: fv === '' ? null : Math.max(0, Math.round(Number(fv)) || 0) };
         const { error } = await c.from('drive_items').update(row).eq('id', it.id);
         if (error) { toast('Could not save: ' + error.message, true); return; }
-        toast('Saved.'); await back();
+        toast('Saved.'); await back(row.path ? row.path.split('/').filter(Boolean).join('/') : '');
       });
       on('#fo-bk', async () => {
         const to = g('#fo-to').value; if (!to) { toast('Pick the drive it was backed up to.', true); return; }

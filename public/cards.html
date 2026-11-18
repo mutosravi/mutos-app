@@ -495,13 +495,21 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     const others = drives.filter(d => !first || d.id !== first.drive);
     const bg = W.sheet('<h3>' + (backup ? 'Backup of ' : 'Copied ') + esc(k.code) + '</h3><p class="sub">' + (backup ? 'First copy: ' + esc(first ? first.drive_name + ' / ' + (first.folder || '') + ' (' + first.files + ' files)' : '?') + '. The backup must go on a different drive.' : 'Count the files on the drive after copying and write the number: it is the proof that everything came across.') + '</p>' +
       '<div class="form-grid"><label class="wide">Drive<input class="in" id="cp-drive" list="dl-drv" placeholder="Type the drive name (e.g. M 5)" autocomplete="off"></label>' +
-      '<label class="wide">Folder on the drive<input class="in" id="cp-folder" maxlength="200" value="' + esc(backup && first ? first.folder || '' : '') + '" placeholder="e.g. Sharma/Haldi/Candid"></label>' +
+      '<label class="wide">Folder on the drive<input class="in" id="cp-folder" list="dl-fold" maxlength="200" value="' + esc(backup && first ? first.folder || '' : '') + '" placeholder="e.g. Sharma/Haldi/Candid"><span class="hint">Folder/subfolder, as in Finder. The drive shows its folders the same way.</span></label>' +
       '<label>Number of files<input class="in" id="cp-files" type="number" inputmode="numeric" min="1" value="' + (backup && first ? first.files : '') + '"></label><label>Size<input class="in" id="cp-size" maxlength="20" placeholder="e.g. 120 GB"></label></div>' +
-      '<datalist id="dl-drv">' + others.map(d => '<option value="' + esc(d.name) + '">').join('') + '</datalist>' +
+      '<datalist id="dl-drv">' + others.map(d => '<option value="' + esc(d.name) + '">').join('') + '</datalist><datalist id="dl-fold"></datalist>' +
       '<h4>Goes on the drive\'s list as</h4>' + (lines.length ? lines.map(l => '<div class="rep">' + esc(l.title) + ' · ' + (backup ? 'Backup copy' : 'Raw') + '</div>').join('') : '<div class="rep">Card ' + esc(k.code) + ' (no notes from the team)</div>') +
       '<div class="pillrow" style="margin-top:12px"><button type="button" class="pillbtn light" id="cp-cx">Cancel</button><button type="button" class="pillbtn" id="cp-go">' + (backup ? 'Backup done' : 'Copied') + '</button></div>');
     const g = s2 => bg.querySelector(s2);
     g('#cp-cx').addEventListener('click', () => bg.remove());
+    // the folders already on the picked drive (and their parents) as suggestions (029)
+    const fillFolders = async () => {
+      const d = others.find(x => x.name.toLowerCase() === g('#cp-drive').value.trim().toLowerCase()); if (!d) return;
+      const { data } = await c.from('drive_items').select('path').eq('drive', d.id).is('removed_at', null);
+      const set = new Set(); (data || []).forEach(r => { const segs = String(r.path || '').split('/').filter(Boolean); segs.forEach((x, i) => set.add(segs.slice(0, i + 1).join('/'))); });
+      g('#dl-fold').innerHTML = [...set].sort().map(x => '<option value="' + esc(x) + '/">').join('');
+    };
+    g('#cp-drive').addEventListener('change', fillFolders); g('#cp-drive').addEventListener('input', fillFolders);
     g('#cp-go').addEventListener('click', async () => {
       const t = g('#cp-drive').value.trim().toLowerCase(), d = others.find(x => x.name.toLowerCase() === t);
       if (!d) { toast(first && first.drive_name.toLowerCase() === t ? 'The backup must go on a different drive from the first copy.' : 'Pick a drive from the list (add it in Drives first if it is new).', true); return; }
