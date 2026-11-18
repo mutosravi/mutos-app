@@ -321,7 +321,7 @@
     const evIds = w.events.map(e => e.id), tl = w.title.toLowerCase();
     const [linked, loose, drives, dir, uses] = await Promise.all([
       q(c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').eq('wedding_key', w.key)),
-      q(c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').is('wedding_key', null)),
+      q((async () => { const out = []; for (let from = 0; from < 200000; from += 1000) { const r = await c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').is('wedding_key', null).ilike('title', '%' + w.title.replace(/[%_]/g, '') + '%').order('id').range(from, from + 999); if (r.error) return from ? { data: out } : r; out.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; } return { data: out }; })()),
       q(c.from('drives').select('id, name, holder, status, owner_type')),
       q(c.rpc('people_directory')),
       q(c.from('card_uses').select('id, card, cycle, event_id, shoot, media, style, used').in('event_id', evIds))

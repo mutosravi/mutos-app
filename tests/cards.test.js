@@ -117,7 +117,7 @@ function handle(e, d) {
   if (d.op === 'rpc') { const r = rpc(d.fn, d.args, e); return { data: r, error: null }; }
   if (d.op === 'signout' || d.op === 'signin') return { data: null, error: null };
   const t = T[d.table]; if (!t) return { data: d.single ? null : [], error: null };
-  const match = r => d.filters.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'in' ? v.includes(r[c]) : op === 'gte' ? String(r[c]) >= v : op === 'lte' ? String(r[c]) <= v : op === 'is' ? r[c] == v : true);
+  const match = r => d.filters.every(([op, c, v]) => op === 'ilike' ? String(r[c] ?? '').toLowerCase().includes(String(v).replace(/%/g, '').toLowerCase()) : op === 'eq' ? r[c] === v : op === 'in' ? v.includes(r[c]) : op === 'gte' ? String(r[c]) >= v : op === 'lte' ? String(r[c]) <= v : op === 'is' ? r[c] == v : true);
   if (d.op === 'select') {
     if (!readable(d.table, e)) return { data: d.single ? null : [], error: null };
     let rows = [...t.values()].filter(match);

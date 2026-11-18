@@ -50,7 +50,7 @@ function awayRules(r, e) {
   r.status = r.why ? 'pending' : 'auto'; r.id = r.id || 'aw' + Math.random().toString(36).slice(2, 9); r.created_at = new Date().toISOString(); r.slot = r.slot || 'Full day'; r.reason = r.reason || '';
   return null;
 }
-const match = (r, f) => f.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
+const match = (r, f) => f.every(([op, c, v]) => op === 'ilike' ? String(r[c] ?? '').toLowerCase().includes(String(v).replace(/%/g, '').toLowerCase()) : op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
 const writes = [];
 function handle(email, d, srcPage) {
   if (d.op === 'session') return email ? { id: 'u-' + email, email, user_metadata: { full_name: email.split('@')[0] } } : null;

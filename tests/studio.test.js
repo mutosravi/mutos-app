@@ -59,7 +59,7 @@ function canWrite(t, r, e) {
   if (t === 'work_jobs' || t === 'work_reports') return staff(e) || (t === 'work_jobs' ? r.assignee && r.assignee === myPerson(e) : r.person === myPerson(e));
   return staff(e);
 }
-const match = (r, f) => f.every(([op, c, v]) => op === 'is' ? (r[c] ?? null) === v : op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
+const match = (r, f) => f.every(([op, c, v]) => op === 'ilike' ? String(r[c] ?? '').toLowerCase().includes(String(v).replace(/%/g, '').toLowerCase()) : op === 'is' ? (r[c] ?? null) === v : op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
 const err = m => ({ data: null, error: { message: m } });
 // same rules as the triggers in 004_studio.sql
 function before(t, r, old, e) {
@@ -253,6 +253,7 @@ function handle(e, d) {
     let rows = [...t.values()].filter(r => canSee(d.table, r, e) && match(r, d.filters));
     d.order.forEach(([c, asc]) => rows.sort((a, b) => String(a[c] ?? '').localeCompare(String(b[c] ?? '')) * (asc ? 1 : -1)));
     if (d.range) rows = rows.slice(d.range[0], d.range[1] + 1); if (d.limit) rows = rows.slice(0, d.limit);
+    rows = rows.slice(0, 1000);   // like Supabase: at most 1000 rows per read
     rows = JSON.parse(JSON.stringify(rows)); return { data: d.single ? (rows[0] || null) : rows, error: null };
   }
   if (d.op === 'update') {
@@ -702,6 +703,14 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(handle(CREWE, { op: 'rpc', fn: 'drive_backup_item', args: { p_item: raw.id, p_to: DRV('M 5').id } }).data.error, 'only the admin or manager records a backup');
   T.drive_items.delete(bkF.id);   // leave the rest of the story as it was
   await owner.click('#dclose');
+  // a big drive (18 Nov 2026, Ravi: "I cannot see all the cards I copied in M6"): Supabase sends 1000 rows per read, so every line must be read in pages
+  { const d6 = crypto.randomUUID(); T.drives.set(d6, { id: d6, name: 'M 6', kind: 'SSD', status: 'in_use', owner_type: 'studio', holder: null, size_label: '4 TB' });
+    for (let i = 0; i < 1205; i++) { const id = crypto.randomUUID(); T.drive_items.set(id, { id, drive: i < 5 ? d6 : DRV('Dibba 2').id, title: 'Old ' + i, what: 'raw', path: i < 5 ? 'Late/Haldi' : 'Old', size_label: '1 GB', files: 1, added_at: '2026-01-01T00:00:00Z', removed_at: null }); }
+    for (let i = 0; i < 40; i++) { const id = crypto.randomUUID(); T.drive_items.set(id, { id, drive: d6, title: 'Big · Card ' + i, what: 'raw', path: 'Big/Haldi', size_label: '2 GB', files: 10, added_at: '2026-11-18T00:00:00Z', removed_at: null }); }
+    await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + d6 + '"]'); await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub[data-cd="Big"]');
+    ok(/Big.*40 items · 400 files · 80 GB/s.test(await owner.textContent('.dsub[data-cd="Big"]')) && /Late.*5 items/s.test(await owner.textContent('.dsub[data-cd="Late"]')), 'a register with more than 1000 lines: M 6 still shows all 40 card folders in Big and the 5 in Late (read in pages of 1000)');
+    await owner.click('#dclose');
+    [...T.drive_items.values()].filter(i => i.drive === d6 || /^Old \d/.test(i.title)).forEach(i => T.drive_items.delete(i.id)); T.drives.delete(d6); }
   await kul.reload(); await kul.waitForSelector('#tab-drives [data-d]'); await kul.click('[data-d="' + DRV('M 1').id + '"]');
   await kul.waitForSelector('#dgive'); await kul.click('#dgive'); await kul.waitForSelector('#gto');
   await kul.selectOption('#gto', PP('Hamza').id); await kul.fill('#gnote', 'for the reel'); await kul.click('#ggo');

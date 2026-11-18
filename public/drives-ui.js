@@ -28,14 +28,15 @@
     // A drive keeper only hands over and receives (Ravi, 11 Nov 2026; 016_keeper_handover_only.sql)
     const canEdit = d => opts.staff || (d.holder && d.holder === opts.me);
 
+    const pageAll = async mk => { const out = []; for (let from = 0; from < 200000; from += 1000) { const r = await mk().order('id').range(from, from + 999); if (r.error) return from ? { data: out } : r; out.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; } return { data: out }; };   // Supabase sends at most 1000 rows per read
     async function load() {
       const [d, i, m, p, cc, ck] = await Promise.all([
         c.from('drives').select('*').order('name'),
-        c.from('drive_items').select('*').is('removed_at', null),
+        pageAll(() => c.from('drive_items').select('*').is('removed_at', null)),
         c.from('drive_moves').select('*').eq('status', 'pending'),
         c.rpc('people_directory'),
-        c.from('card_copies').select('card, cycle, backup, drive_name, items, files'),
-        c.from('cards').select('id, code, data, cycle')
+        pageAll(() => c.from('card_copies').select('id, card, cycle, backup, drive_name, items, files')),
+        pageAll(() => c.from('cards').select('id, code, data, cycle'))
       ]);
       if (d.error) throw d.error;
       drives = d.data || []; items = i.error ? [] : (i.data || []); moves = m.error ? [] : (m.data || []); dir = p.error ? [] : (p.data || []);
@@ -121,7 +122,7 @@
       drawTree(bg, d, its, startPath && its.some(it => under(it, startPath)) ? startPath : '');
       // removed lines (admin / manager): bring back one removed by mistake (023_drive_restore.sql)
       if (opts.staff) (async () => {
-        const { data: all } = await c.from('drive_items').select('*').eq('drive', d.id);
+        const { data: all } = await pageAll(() => c.from('drive_items').select('*').eq('drive', d.id));
         const gone = (all || []).filter(it => it.removed_at).sort((a, b) => String(b.removed_at).localeCompare(String(a.removed_at))).slice(0, 30), box = g('#dremoved');
         if (!box || !gone.length) return;
         box.innerHTML = '<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Removed from this drive (' + gone.length + ')</summary>' + gone.map(it => '<div class="rep" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) +

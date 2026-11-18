@@ -60,7 +60,7 @@ function writeErr(t, r, old, e, op) {
   if (['crew_feed', 'gear_feed', 'client_links', 'client_feed', 'client_itinerary', 'work_jobs'].includes(t)) return op === 'delete' ? 'quiet' : null;
   return 'new row violates row-level security policy for table "' + t + '"';
 }
-const match = (r, f) => f.every(([op, c, v]) => op === 'is' ? (r[c] ?? null) === v : op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
+const match = (r, f) => f.every(([op, c, v]) => op === 'ilike' ? String(r[c] ?? '').toLowerCase().includes(String(v).replace(/%/g, '').toLowerCase()) : op === 'is' ? (r[c] ?? null) === v : op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c] ?? '') >= v : op === 'lte' ? String(r[c] ?? '') <= v : v.includes(r[c]));
 let me = SUP, rtFire = null;
 const rpcLog = [];
 function rpc(fn, a, e) {

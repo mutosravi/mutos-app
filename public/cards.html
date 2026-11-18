@@ -147,12 +147,13 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
   const spec = k => [k.size_label, k.kind, k.brand].filter(Boolean).join(' ');
   const useText = u => u.used ? [u.shoot, [lbl(MEDIA, u.media), u.style ? lbl(STYLE, u.style).toLowerCase() : ''].filter(Boolean).join(' '), u.camera, u.note].filter(Boolean).join(' · ') : 'Not used' + (u.note ? ' · ' + u.note : '');
 
+  const pageAll = async mk => { const out = []; for (let from = 0; from < 200000; from += 1000) { const r = await mk().order('id').range(from, from + 999); if (r.error) return from ? { data: out } : r; out.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; } return { data: out }; };   // Supabase sends at most 1000 rows per read
   async function load() {
     const [k, m, u, cp, p, d] = await Promise.all([
-      c.from('cards').select('*').order('code'),
+      pageAll(() => c.from('cards').select('*')).then(r => (r.data && r.data.sort((a, b) => String(a.code).localeCompare(String(b.code), 'en', { numeric: true })), r)),
       c.from('card_moves').select('*').eq('status', 'pending'),
-      c.from('card_uses').select('*').order('at', { ascending: false }).limit(1500),
-      c.from('card_copies').select('*').order('at', { ascending: false }).limit(1500),
+      pageAll(() => c.from('card_uses').select('*')).then(r => (r.data && r.data.sort((a, b) => String(b.at).localeCompare(String(a.at))), r)),
+      pageAll(() => c.from('card_copies').select('*')).then(r => (r.data && r.data.sort((a, b) => String(b.at).localeCompare(String(a.at))), r)),
       c.rpc('people_directory'),
       c.from('drives').select('id, name, status').eq('status', 'in_use').order('name')
     ]);
@@ -505,7 +506,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     // the folders already on the picked drive (and their parents) as suggestions (029)
     const fillFolders = async () => {
       const d = others.find(x => x.name.toLowerCase() === g('#cp-drive').value.trim().toLowerCase()); if (!d) return;
-      const { data } = await c.from('drive_items').select('path').eq('drive', d.id).is('removed_at', null);
+      const { data } = await pageAll(() => c.from('drive_items').select('path').eq('drive', d.id).is('removed_at', null));
       const set = new Set(); (data || []).forEach(r => { const segs = String(r.path || '').split('/').filter(Boolean); segs.forEach((x, i) => set.add(segs.slice(0, i + 1).join('/'))); });
       g('#dl-fold').innerHTML = [...set].sort().map(x => '<option value="' + esc(x) + '/">').join('');
     };

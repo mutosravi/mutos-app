@@ -11,6 +11,7 @@
       gte(col, v) { d.filters.push(['gte', col, v]); return b; },
       lte(col, v) { d.filters.push(['lte', col, v]); return b; },
       is(col, v) { d.filters.push(['is', col, v]); return b; },
+      ilike(col, v) { d.filters.push(['ilike', col, v]); return b; },
       update(fields) { d.op = 'update'; d.rows = [fields]; return b; },
       order(col, o) { d.order.push([col, !o || o.ascending !== false]); return b; },
       range(a, z) { d.range = [a, z]; return b; },
