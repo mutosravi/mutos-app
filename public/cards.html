@@ -300,11 +300,14 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
   }
 
   function renderAll() {
-    const F = [['all', 'All'], ['office', 'In the office'], ['out', 'Out'], ['hold', 'Hold'], ['single', 'Single copy'], ['problem', 'Problems']];
+    // Free = empty card in the office, ready to give; Copied = footage with a backup, safe to format (18 Nov 2026, Ravi)
+    const F = [['all', 'All'], ['free', 'Free'], ['copied', 'Copied ✓'], ['office', 'In the office'], ['out', 'Out'], ['hold', 'Hold'], ['single', 'Single copy'], ['problem', 'Problems']];
     const s = q.trim().toLowerCase();
-    const inF = k => ({ all: k.condition !== 'retired', office: !k.holder && k.condition === 'ok', out: !!k.holder, hold: k.data === 'hold', single: k.data === 'single', problem: k.condition !== 'ok' || k.errors > 0 })[filt];
+    const RULE = { all: k => k.condition !== 'retired', free: k => k.condition === 'ok' && !k.holder && (k.data === 'empty' || !k.data), copied: k => k.condition === 'ok' && k.data === 'copied',
+      office: k => !k.holder && k.condition === 'ok', out: k => !!k.holder, hold: k => k.data === 'hold', single: k => k.data === 'single', problem: k => k.condition !== 'ok' || k.errors > 0 };
+    const inF = k => (RULE[filt] || RULE.all)(k);
     const list = cards.filter(k => s ? (k.code + ' ' + (k.serial || '') + ' ' + (k.brand || '') + ' ' + nameOf(k.holder)).toLowerCase().includes(s) : inF(k));
-    const n = f => cards.filter(k => ({ all: k.condition !== 'retired', office: !k.holder && k.condition === 'ok', out: !!k.holder, hold: k.data === 'hold', single: k.data === 'single', problem: k.condition !== 'ok' || k.errors > 0 })[f]).length;
+    const n = f => cards.filter(RULE[f]).length;
     $('tab-all').innerHTML = '<div class="tools"><input class="in" type="search" id="cq" placeholder="Find a card (code, serial, person)" value="' + esc(q) + '" style="flex:1 1 200px">' + (staff ? '<button type="button" class="pillbtn" id="add-cards" style="min-height:40px">＋ Add cards</button>' : '') + '</div>' +
       (s ? '' : '<div class="chips">' + F.map(([k, l]) => '<button type="button" class="chip-b' + (filt === k ? ' on' : '') + '" data-f="' + k + '">' + esc(l) + ' ' + n(k) + '</button>').join('') + '</div>') +
       (list.length ? list.map(k => row(k, canGive(k))).join('') + legend : '<div class="empty">' + (cards.length ? 'No cards here.' : 'No cards yet.' + (staff ? ' Tap ＋ Add cards and paste your list.' : '')) + '</div>') + selBar('all');

@@ -124,6 +124,21 @@
     await load(); open();
   }
 
+  // go to a shoot on the board (18 Nov 2026, Ravi: "this request should be clickable by me to go to that particular shoot"):
+  // closes this window, shows the board, goes to the date and lights up the shoot's card
+  function goShoot(id, date) {
+    api.closeModal();
+    if (location.hash !== '#board') location.hash = '#board';
+    setTimeout(() => {
+      if (api.goToDate) api.goToDate(date);
+      setTimeout(() => {
+        const card = id && document.getElementById('card-' + id); if (!card) return;
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.style.transition = 'box-shadow .3s'; card.style.boxShadow = '0 0 0 3px #c9973f, 0 8px 24px rgba(201,151,63,.35)';
+        setTimeout(() => { card.style.boxShadow = ''; }, 3500);
+      }, 350);
+    }, 120);
+  }
   function open() {
     if (!api) return;
     const esc = api.escapeHtml, s = summary();
@@ -134,10 +149,11 @@
         const p = s.ppl.get(r.person_key), on = p ? p.shoots.filter(x => x.date === r.date) : [];
         return line(esc(nameOf(r.person_key)) + ' · ' + esc(dayName(r.date)) + ' · ' + esc(r.slot),
           esc([r.reason ? '"' + r.reason + '"' : 'No reason given', on.length ? 'Booked on: ' + on.map(x => x.shoot + ' (' + x.slot + ')').join(', ') : 'Within 7 days', 'asked ' + stamp(r.created_at)].join(' · ')),
+          on.map(x => '<button type="button" class="sb-btn-sm secondary tu-go" data-ev="' + esc(x.id) + '" data-date="' + esc(x.date) + '">Open ' + esc(x.shoot) + '</button>').join('') + (on.length ? '' : '<button type="button" class="sb-btn-sm secondary tu-go" data-ev="" data-date="' + esc(r.date) + '">Open ' + esc(dayName(r.date)) + '</button>') +
           '<button type="button" class="sb-btn-sm tu-ok" data-id="' + esc(r.id) + '">Approve</button><button type="button" class="sb-btn-sm secondary tu-no" data-id="' + esc(r.id) + '">Decline</button>');
       })) +
-      sec('Can\'t make it', 'They said no to a shoot they are still on. Replace them, and this clears by itself.', s.cant.map(x => line(esc(x.p.name) + ' · ' + esc(x.s.day) + ' · ' + esc(x.s.shoot), esc((x.st.confirm_note ? '"' + x.st.confirm_note + '" · ' : '') + x.s.slot + ' · said ' + stamp(x.st.confirmed_at))))) +
-      sec('Not confirmed yet · next 7 days', '', s.unconf.map(x => line(esc(x.p.name) + ' · ' + esc(x.s.day) + ' · ' + esc(x.s.shoot), esc(x.s.slot + (x.stale ? ' · details changed after they confirmed' : ''))))) +
+      sec('Can\'t make it', 'They said no to a shoot they are still on. Replace them, and this clears by itself.', s.cant.map(x => line(esc(x.p.name) + ' · ' + esc(x.s.day) + ' · ' + esc(x.s.shoot), esc((x.st.confirm_note ? '"' + x.st.confirm_note + '" · ' : '') + x.s.slot + ' · said ' + stamp(x.st.confirmed_at)), '<button type="button" class="sb-btn-sm tu-go" data-ev="' + esc(x.s.id) + '" data-date="' + esc(x.s.date) + '">Open shoot</button>'))) +
+      sec('Not confirmed yet · next 7 days', '', s.unconf.map(x => line(esc(x.p.name) + ' · ' + esc(x.s.day) + ' · ' + esc(x.s.shoot), esc(x.s.slot + (x.stale ? ' · details changed after they confirmed' : '')), '<button type="button" class="sb-btn-sm secondary tu-go" data-ev="' + esc(x.s.id) + '" data-date="' + esc(x.s.date) + '">Open</button>'))) +
       sec('Data not handed over · last 30 days', '', s.data.map((x, i) => line(esc(x.p.name) + ' · ' + esc(x.s.day) + ' · ' + esc(x.s.shoot), esc(x.s.slot), '<button type="button" class="sb-btn-sm secondary tu-data" data-i="' + i + '">Mark received</button>'))) +
       sec('Studio gear with crew', 'Picked up and not marked returned.', s.gear.map(x => line(esc(x.p.name) + ' · ' + esc((x.s.gear || []).filter(g => g !== 'own kit').join(', ')), esc(x.s.day + ' · ' + x.s.shoot + ' · picked up ' + stamp(x.st.gear_out_at))))) +
       sec('Dates already blocked by crew', 'More than 7 days away and not booked, so they were accepted straight away.', aways.filter(r => r.status === 'auto' || r.status === 'approved').map(r => line(esc(nameOf(r.person_key)) + ' · ' + esc(dayName(r.date)) + ' · ' + esc(r.slot), esc((r.reason || 'No reason') + (r.status === 'approved' ? ' · approved by you' : ''))))) +
@@ -145,6 +161,7 @@
     const modal = api.makeModal(html, true);
     modal.querySelector('#tu-done').addEventListener('click', () => { api.closeModal(); api.renderBoard(); });
     modal.querySelector('#tu-crew').addEventListener('click', () => { location.href = '/crew.html?preview=1'; });
+    modal.querySelectorAll('.tu-go').forEach(b => b.addEventListener('click', () => goShoot(b.dataset.ev, b.dataset.date)));
     modal.querySelectorAll('.tu-ok').forEach(b => b.addEventListener('click', () => decide(b.dataset.id, 'approved')));
     modal.querySelectorAll('.tu-no').forEach(b => b.addEventListener('click', () => decide(b.dataset.id, 'declined')));
     modal.querySelectorAll('.tu-data').forEach(b => b.addEventListener('click', () => { const x = s.data[Number(b.dataset.i)]; if (x) dataReceived(x.p, x.s); }));

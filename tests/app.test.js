@@ -286,6 +286,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.click('.tu-ok[data-id="' + bookedRow.id + '"]'); await owner.waitForTimeout(800);
   await owner.click('.tu-no[data-id="' + soonRow.id + '"]'); await owner.waitForTimeout(800);
   ok(db.crew_away.get(bookedRow.id).status === 'approved' && db.crew_away.get(soonRow.id).status === 'declined', 'owner approved one, declined one');
+  // 18 Nov 2026: a request opens its shoot on the board
+  if (!(await owner.$('.sb-modal .tu-go'))) { await owner.keyboard.press('Escape'); await owner.waitForTimeout(300); await owner.click('#mutos-updates'); }
+  await owner.waitForSelector('.tu-go[data-ev]:not([data-ev=""])');
+  const goEv = await owner.getAttribute('.tu-go[data-ev]:not([data-ev=""])', 'data-ev');
+  await owner.click('.tu-go[data-ev="' + goEv + '"]'); await owner.waitForTimeout(900);
+  ok(!(await owner.$('.sb-modal')) && /#board/.test(owner.url()) && await owner.evaluate(id => { const c = document.getElementById('card-' + id); if (!c) return false; const r = c.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0 && /c9973f|201, 151, 63/.test(c.style.boxShadow); }, goEv), 'Team updates → "Open …" goes to that shoot on the board and lights it up');
   const mirrored2 = await owner.evaluate(() => window.__boardApi.state().unavailability.filter(u => String(u.id).startsWith('crew-')).map(u => u.date).sort());
   ok(JSON.stringify(mirrored2) === JSON.stringify([booked.date, free].sort()), 'approved date added to away list, declined not');
   ok(notifyCalls.length === 2 && notifyCalls.some(n => n.id === bookedRow.id) && notifyCalls.some(n => n.id === soonRow.id), 'crew member is told about both decisions');

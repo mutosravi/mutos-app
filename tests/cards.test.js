@@ -383,6 +383,14 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await shot(o, 'card-moved.png');
   await o.click('#k-close');
 
+  // ── filters: Free and Copied (18 Nov 2026) ──
+  await open(o, 'all'); await o.click('#tab-all [data-f="copied"]');
+  const cpd = await o.$$eval('#tab-all .crow[data-c]', l => l.map(x => x.dataset.c));
+  ok(cpd.length === [...T.cards.values()].filter(k => k.data === 'copied' && k.condition === 'ok').length && cpd.every(id => [...T.cards.values()].find(k => k.id === id).data === 'copied'), 'All cards → Copied ✓ shows exactly the copied cards (' + cpd.length + ')');
+  await o.click('#tab-all [data-f="free"]');
+  const fr = await o.$$eval('#tab-all .crow[data-c]', l => l.map(x => x.dataset.c));
+  ok(fr.every(id => { const k = [...T.cards.values()].find(x => x.id === id); return k.data === 'empty' && !k.holder && k.condition === 'ok'; }), 'Free shows only empty cards in the office (' + fr.length + ')');
+  await o.click('#tab-all [data-f="all"]');
   // ── photos of the cards (026 + worker/photos.js: on the studio's Google Drive) ──
   photoUser = OWNER;
   await open(o, 'all'); await o.click('[data-c="' + K('C03').id + '"]'); await o.waitForSelector('#k-phin', { state: 'attached' });
