@@ -88,6 +88,24 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   await p.keyboard.press('Escape'); await sleep(300);
   const after = await p.evaluate(id => { const card = document.getElementById('card-' + id); return card ? card.innerHTML.includes('⛔ NA') : null; }, pick.ev);
   ok(after === false, 'card no longer marked');
+  // an item with 3 units (Ravi, 18 Nov 2026: "Total 3 M4 bodies, I made one unavailable but it shows double booked to all others"): the form now marks 1 unit by default
+  const q3 = await p.evaluate(() => { const A = window.__boardApi, st = A.state(), d0 = new Date(A.todayStr() + 'T12:00:00'); d0.setDate(d0.getDate() + 240); const day = d0.toISOString().slice(0, 10);
+    const eq = { id: 'q3-test', name: 'Test M4', category: 'Body', qty: 3, order: 999 }; st.equipment.push(eq);
+    const ps = st.shooters.filter(x => !x.left && !/team/i.test(x.role || '')), evs = [];
+    for (let i = 0; i < 2; i++) { const e = A.cleanEvent({ name: 'Q3 shoot ' + i, date: day, slot: 'Evening', coverage: '1+0', location: 'Place ' + i }); e.assignments = [{ memberId: ps[i].id, gearIds: ['q3-test'] }]; st.events.push(e); evs.push(e.id); }
+    A.save(); A.renderBoard(); return { day, evs, sid: ps[2].id }; });
+  await p.click('#sb-manage-gear'); await p.waitForSelector('.sb-modal');
+  await p.evaluate(() => { const row = [...document.querySelectorAll('.sb-manage-row')].find(r => { const n = r.querySelector('.sb-manage-name'); return n && n.firstChild && n.firstChild.textContent.trim() === 'Test M4'; }); row.querySelector('.act-na').click(); });
+  await p.waitForSelector('.na-n');
+  ok(await p.inputValue('.na-n') === '1', '3 units: "How many of the 3" starts at 1, not all 3');
+  await p.fill('.na-from', q3.day); await p.dispatchEvent('.na-from', 'change'); await p.click('.na-add'); await sleep(800);
+  ok(/Test M4 \(1 of 3\) marked not available/.test(await p.textContent('#sb-toast')) && /1 of 3/.test(await p.textContent('.sb-modal')), 'the toast and the date say "1 of 3"');
+  const c3 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); const r = s.evs.map(id => A.hasConflict(st.events.find(e => e.id === id)));
+    const e = A.cleanEvent({ name: 'Q3 shoot 2', date: s.day, slot: 'Evening', coverage: '1+0', location: 'Place 2' }); e.assignments = [{ memberId: s.sid, gearIds: ['q3-test'] }]; st.events.push(e);
+    return { two: r, third: A.hasConflict(e) }; }, q3);
+  ok(c3.two.every(x => !x), 'two shoots using 1 each that day are fine (2 of 3 still free)');
+  ok(c3.third, 'a third one that day is double-booked (only 2 free)');
+  await p.keyboard.press('Escape'); await sleep(300);
   ok(!errs.length, 'no page errors ' + errs.join(' | '));
   await b.close(); server.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
 })();
