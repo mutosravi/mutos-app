@@ -6,11 +6,19 @@
   const WHAT = [['raw', 'Raw'], ['project', 'Project'], ['render', 'Render'], ['final', 'Final output'], ['backup', 'Backup copy'], ['other', 'Other']];
   const whatLabel = k => (WHAT.find(x => x[0] === k) || [k, k])[1];
   const STATUS = { in_use: 'In use', delivered: 'Delivered to client', faulty: 'Faulty', retired: 'Retired' };
+  // sizes typed as "600 GB", "1.2 TB", "800MB" → GB (for the storage bar); folder view (028, 18 Nov 2026)
+  const gbOf = t => { const m = String(t || '').replace(',', '.').match(/([\d.]+)\s*(tb|gb|mb|t|g|m)?/i); if (!m) return 0; const v = parseFloat(m[1]) || 0, u = (m[2] || 'gb').toLowerCase()[0]; return u === 't' ? v * 1000 : u === 'm' ? v / 1000 : v; };
+  const gbText = g => g >= 1000 ? (Math.round(g / 100) / 10) + ' TB' : Math.round(g) + ' GB';
   const when = ts => ts ? new Date(ts).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: '2-digit', hour: 'numeric', minute: '2-digit' }) : '';
 
   function mount(el, opts) {
     const c = opts.c, toast = opts.toast;
-    let drives = [], items = [], moves = [], dir = [], view = 'all', q = '';
+    let drives = [], items = [], moves = [], dir = [], copies = [], cardsAll = [], view = 'all', q = '';
+    // a folder = one line of the register: its file count (typed, or from the card copy), the cards whose footage is in it, its other copies
+    const filesOf = it => it.files != null ? it.files : (copies.filter(x => (x.items || []).includes(it.id)).reduce((n, x) => n + (x.files || 0), 0) || null);
+    const cardsIn = it => { const ids = new Set(copies.filter(x => (x.items || []).includes(it.id) || (it.from_item && (x.items || []).includes(it.from_item))).map(x => x.card)); return cardsAll.filter(k => ids.has(k.id)); };
+    const copiesOf = it => items.filter(x => x.id !== it.id && x.drive !== it.drive && (x.from_item === it.id || (it.from_item && (x.id === it.from_item || x.from_item === it.from_item)) || (x.title === it.title && x.wedding_key === it.wedding_key)));
+    const clientOf = it => { const w = (opts.weddings || []).find(x => x.key === it.wedding_key); return w ? w.title : String(it.title).split(' · ')[0].trim(); };
     const nameOf = id => id ? ((dir.find(p => p.id === id) || {}).name || 'someone') : 'the office';
     const holderText = d => d.status === 'delivered' ? 'Delivered to client' : d.holder ? 'With ' + nameOf(d.holder) : 'In the office';
     const pendingOf = d => moves.find(m => m.drive === d.id && m.status === 'pending');
@@ -21,14 +29,17 @@
     const canEdit = d => opts.staff || (d.holder && d.holder === opts.me);
 
     async function load() {
-      const [d, i, m, p] = await Promise.all([
+      const [d, i, m, p, cc, ck] = await Promise.all([
         c.from('drives').select('*').order('name'),
         c.from('drive_items').select('*').is('removed_at', null),
         c.from('drive_moves').select('*').eq('status', 'pending'),
-        c.rpc('people_directory')
+        c.rpc('people_directory'),
+        c.from('card_copies').select('card, cycle, backup, drive_name, items, files'),
+        c.from('cards').select('id, code, data, cycle')
       ]);
       if (d.error) throw d.error;
       drives = d.data || []; items = i.error ? [] : (i.data || []); moves = m.error ? [] : (m.data || []); dir = p.error ? [] : (p.data || []);
+      copies = cc.error ? [] : (cc.data || []); cardsAll = ck.error ? [] : (ck.data || []);
     }
     async function refresh() { await load(); render(); if (opts.onChange) opts.onChange(waiting()); }
     const waiting = () => moves.filter(forMe).length;
@@ -78,10 +89,10 @@
         '<div class="pillrow" style="margin-bottom:8px">' +
           (pm && forMe(pm) ? '<button type="button" class="pillbtn light" id="dno">Not received</button><button type="button" class="pillbtn" id="dyes">I have it ✓</button>'
             : (canGive(d) ? '<button type="button" class="pillbtn" id="dgive">' + (d.holder ? 'Give to someone' : 'Give out') + '</button>' : '') + (pm && (opts.staff || pm.given_by === opts.email) ? '<button type="button" class="pillbtn light" id="dcancel">Take back the handover</button>' : opts.staff ? '<button type="button" class="pillbtn light" id="dedit">Edit details</button>' : '')) + '</div>' +
-        '<h4>On this drive</h4>' + (its.length ? its.map(it => '<div class="rep" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) + (it.size_label ? ' · ' + esc(it.size_label) : '') + (it.note ? '<br><span class="meta">' + esc(it.note) + '</span>' : '') + '</span>' +
-          (canEdit(d) ? '<span style="display:flex;gap:6px;flex:0 0 auto"><button type="button" class="chip" data-mv="' + it.id + '">Move / copy</button><button type="button" class="chip" data-rm="' + it.id + '">Remove</button></span>' : '') + '</div>').join('') : '<p class="sub">Nothing listed yet.</p>') +
+        folderView(d, its) +
         (canEdit(d) ? '<div id="addbox"><div class="form-grid" style="margin-top:8px"><label class="wide">Wedding or event<input class="in" id="it-t" list="dl-wed" maxlength="160" placeholder="e.g. Jyoti & Amit · Haldi"></label>' +
           '<label>What<select class="in" id="it-w">' + WHAT.map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select></label><label>Size<input class="in" id="it-s" maxlength="20" placeholder="e.g. 600 GB"></label>' +
+          '<label>Files<input class="in" id="it-f" type="number" min="0" inputmode="numeric" placeholder="e.g. 812"></label>' +
           '<label class="wide">Note<input class="in" id="it-n" maxlength="300" placeholder="optional"></label></div><button type="button" class="pillbtn light" id="it-add" style="width:100%">＋ Add to this drive</button></div>' : '') +
         (opts.staff && d.status === 'in_use' ? '<button type="button" class="pillbtn light" id="dclean" style="width:100%;margin-top:8px">Cleaned this drive</button>' : '') +
         (opts.owner ? '<p style="margin-top:10px"><button type="button" class="x" id="dfix">Correct where it is</button></p>' : '') +
@@ -100,12 +111,13 @@
       on('#it-add', async () => {
         const t = g('#it-t').value.trim(); if (!t) { toast('Write the wedding or event.', true); return; }
         const w = (opts.weddings || []).find(x => x.title.toLowerCase() === t.toLowerCase().split(' · ')[0]);
-        const { error } = await c.from('drive_items').insert({ drive: d.id, title: t, what: g('#it-w').value, size_label: g('#it-s').value.trim() || null, note: g('#it-n').value.trim() || null, wedding_key: w ? w.key : null });
+        const fv = g('#it-f').value.trim(), row = { drive: d.id, title: t, what: g('#it-w').value, size_label: g('#it-s').value.trim() || null, note: g('#it-n').value.trim() || null, wedding_key: w ? w.key : null };
+        if (fv) row.files = Math.max(0, Math.round(Number(fv)) || 0);
+        const { error } = await c.from('drive_items').insert(row);
         if (error) { toast('Could not add: ' + error.message, true); return; }
         bg.remove(); await refresh(); toast('Added to ' + d.name + '.'); openDrive(drives.find(x => x.id === d.id));
       });
-      bg.querySelectorAll('[data-mv]').forEach(b => b.addEventListener('click', () => moveItem(items.find(it => it.id === b.dataset.mv), d, bg)));
-      bg.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => removeItem(items.find(it => it.id === b.dataset.rm), d, bg)));
+      bg.querySelectorAll('[data-fo]').forEach(b => b.addEventListener('click', () => openFolder(items.find(it => it.id === b.dataset.fo), d, bg)));
       // removed lines (admin / manager): bring back one removed by mistake (023_drive_restore.sql)
       if (opts.staff) (async () => {
         const { data: all } = await c.from('drive_items').select('*').eq('drive', d.id);
@@ -121,6 +133,54 @@
       })();
       const { data: log } = await c.from('drive_log').select('*').eq('drive', d.id).order('at', { ascending: false }).limit(40);
       const h = g('#dhist'); if (h) h.innerHTML = (log || []).length ? log.map(l => '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + '</div>').join('') : 'Nothing yet.';
+    }
+
+    // ---------- the drive like a Mac window: storage, then folders per client with files and size ----------
+    function folderView(d, its) {
+      const cap = gbOf(d.size_label), used = its.reduce((n, it) => n + gbOf(it.size_label), 0), sized = its.filter(it => it.size_label).length;
+      const bar = cap ? '<div style="margin:6px 0 2px;height:8px;border-radius:4px;background:var(--sand,#eee);overflow:hidden"><i style="display:block;height:100%;width:' + Math.min(100, Math.round(used / cap * 100)) + '%;background:' + (used / cap > 0.9 ? 'var(--no-ink,#b23a26)' : 'var(--rose,#9e4f62)') + '"></i></div>' : '';
+      const head = '<h4>On this drive · ' + its.length + ' folder' + (its.length === 1 ? '' : 's') + '</h4>' + (its.length ? '<div class="meta" id="dstore">' + (cap ? gbText(used) + ' used of ' + gbText(cap) + ' · ' + gbText(Math.max(0, cap - used)) + ' free' : gbText(used) + ' listed') + (sized < its.length ? ' (' + (its.length - sized) + ' folder' + (its.length - sized === 1 ? '' : 's') + ' without a size)' : '') + '</div>' + bar : '');
+      if (!its.length) return head + '<p class="sub">Nothing listed yet.</p>';
+      const groups = new Map(); its.slice().sort((a, b) => clientOf(a).localeCompare(clientOf(b)) || a.title.localeCompare(b.title)).forEach(it => { const k = clientOf(it); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
+      return head + [...groups.entries()].map(([client, list]) => '<div class="dgroup" style="margin-top:10px"><div class="meta" style="font-weight:700;color:var(--ink)">📁 ' + esc(client) + ' <span style="font-weight:400">· ' + list.length + ' · ' + gbText(list.reduce((n, it) => n + gbOf(it.size_label), 0)) + '</span></div>' +
+        list.map(it => { const f = filesOf(it), cp = copiesOf(it), raw = it.what === 'raw';
+          return '<button type="button" class="rep dfolder" data-fo="' + it.id + '" style="display:flex;width:100%;text-align:left;justify-content:space-between;gap:8px;align-items:center;border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:8px 2px">' +
+            '<span><span aria-hidden="true">🗂</span> <b>' + esc(it.title) + '</b><br><span class="meta" style="display:inline">' + esc([whatLabel(it.what), f != null ? f + ' files' : '', it.size_label || ''].filter(Boolean).join(' · ')) + '</span></span>' +
+            '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok" title="' + esc(cp.map(x => (drives.find(y => y.id === x.drive) || {}).name).join(', ')) + '">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : raw ? '<span class="pill wait">no backup</span>' : '') + ' ›</span></button>'; }).join('') + '</div>').join('');
+    }
+    function openFolder(it, d, parent) {
+      if (!it) return;
+      const f = filesOf(it), cp = copiesOf(it), ks = cardsIn(it), others = drives.filter(x => x.id !== d.id && x.status === 'in_use' && !cp.some(y => y.drive === x.id));
+      const ST = { empty: ['ok', 'Free'], hold: ['no', 'Hold · not copied'], single: ['wait', 'Single copy'], copied: ['ok', 'Copied ✓'] };
+      const bg = W.sheet('<h3>🗂 ' + esc(it.title) + '</h3><p class="sub" style="margin:-4px 0 8px">' + esc([whatLabel(it.what), 'on ' + d.name, 'added ' + when(it.added_at)].join(' · ')) + '</p>' +
+        '<div class="form-grid"><label>Files<input class="in" id="fo-f" type="number" min="0" inputmode="numeric" value="' + (f != null ? f : '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Size<input class="in" id="fo-s" maxlength="20" value="' + esc(it.size_label || '') + '" placeholder="e.g. 120 GB"' + (canEdit(d) ? '' : ' disabled') + '></label>' +
+        '<label class="wide">Note<input class="in" id="fo-n" maxlength="300" value="' + esc(it.note || '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label></div>' +
+        (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-save" style="width:100%">Save files / size</button>' : '') +
+        '<h4>Copies</h4>' + (cp.length ? cp.map(x => { const dd = drives.find(y => y.id === x.drive) || {}; return '<div class="rep">✓ <b>' + esc(dd.name || '?') + '</b> · ' + esc(whatLabel(x.what)) + ' · ' + esc(holderText(dd)) + '</div>'; }).join('') : '<p class="sub">' + (it.what === 'raw' ? 'Only here. Back it up to another drive.' : 'Only here.') + '</p>') +
+        (ks.length ? '<h4>Cards in this folder</h4>' + ks.map(k => { const st = ST[k.data] || ['mute', k.data]; return '<span class="pill ' + st[0] + '" style="margin:0 6px 6px 0;display:inline-block">' + esc(k.code) + ' · ' + esc(st[1]) + '</span>'; }).join('') : '') +
+        (opts.staff && others.length ? '<h4>Back up this folder</h4><p class="sub">Copy the folder in Finder first, then record it here. The cards in it that have only one copy turn <b>Copied ✓</b> (safe to format) by themselves.</p>' +
+          '<div class="form-grid"><label class="wide">Backed up to<select class="in" id="fo-to"><option value="">Pick the drive</option>' + others.map(x => '<option value="' + x.id + '">' + esc(x.name + (x.size_label ? ' · ' + x.size_label : '') + ' · ' + holderText(x)) + '</option>').join('') + '</select></label></div>' +
+          '<button type="button" class="pillbtn" id="fo-bk" style="width:100%">Record the backup</button>' : '') +
+        '<div class="pillrow" style="margin-top:12px">' + (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-mv">Move / copy</button><button type="button" class="pillbtn light" id="fo-rm">Remove</button>' : '') + '<button type="button" class="pillbtn light" id="fo-x">Close</button></div>');
+      const g = s2 => bg.querySelector(s2), on = (s2, fn) => { const x = g(s2); if (x) x.addEventListener('click', fn); };
+      const back = async () => { bg.remove(); if (parent) parent.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id)); };
+      on('#fo-x', () => bg.remove());
+      on('#fo-save', async () => {
+        const fv = g('#fo-f').value.trim(), row = { size_label: g('#fo-s').value.trim() || null, note: g('#fo-n').value.trim() || null, files: fv === '' ? null : Math.max(0, Math.round(Number(fv)) || 0) };
+        const { error } = await c.from('drive_items').update(row).eq('id', it.id);
+        if (error) { toast('Could not save: ' + error.message, true); return; }
+        toast('Saved.'); await back();
+      });
+      on('#fo-bk', async () => {
+        const to = g('#fo-to').value; if (!to) { toast('Pick the drive it was backed up to.', true); return; }
+        const r = await rpc('drive_backup_item', { p_item: it.id, p_to: to });
+        if (!r) return;
+        const dn = (drives.find(x => x.id === to) || {}).name;
+        toast('Backed up to ' + dn + '.' + (r.cards_copied ? ' ' + r.cards.join(', ') + (r.cards_copied > 1 ? ' are' : ' is') + ' now Copied ✓ (safe to format).' : ''));
+        await back();
+      });
+      on('#fo-mv', () => { if (parent) parent.remove(); moveItem(it, d, bg); });
+      on('#fo-rm', () => { if (parent) parent.remove(); removeItem(it, d, bg); });
     }
 
     function give(d, parent) {
