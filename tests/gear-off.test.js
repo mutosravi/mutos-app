@@ -70,8 +70,21 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   // remove the date again
   await p.click('#sb-manage-gear'); await p.waitForSelector('.sb-modal');
   await p.evaluate(name => { const row = [...document.querySelectorAll('.sb-manage-row')].find(r => { const n = r.querySelector('.sb-manage-name'); return n && n.firstChild && n.firstChild.textContent.trim() === name; }); row.querySelector('.act-na').click(); }, pick.gname);
-  await p.waitForSelector('[data-unoff]'); await p.click('[data-unoff]'); await sleep(1200);
-  ok(!docs.get('gear/' + pick.gid).data.off, 'removing the date clears it');
+  await p.waitForSelector('[data-unoff]');
+  // more days, to try "available again" on one day, on a range, and on all (18 Nov 2026, Ravi)
+  const addD = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+  await p.fill('.na-from', addD(pick.date, 10)); await p.dispatchEvent('.na-from', 'change'); await p.fill('.na-to', addD(pick.date, 13)); await p.click('.na-add'); await sleep(800);
+  ok(docs.get('gear/' + pick.gid).data.off.length === 5, 'marked 4 more days (5 in all)');
+  if (process.env.SHOTS) { await p.evaluate(() => document.querySelector('.na-all').scrollIntoView({ block: 'center' })); await p.screenshot({ path: process.env.SHOTS + '/gear-back.png' }); }
+  ok(/✓ available again/.test(await p.textContent('[data-unoff="' + pick.date + '"]')), 'each date has a clear "✓ available again" button');
+  await p.click('[data-unoff="' + pick.date + '"]'); await sleep(800);
+  ok(!docs.get('gear/' + pick.gid).data.off.some(x => x.d === pick.date) && /available again on/.test(await p.textContent('#sb-toast')), 'one day: available again on ' + pick.date);
+  const after1 = await p.evaluate(id => { const card = document.getElementById('card-' + id); return card ? card.innerHTML.includes('⛔ NA') : null; }, pick.ev);
+  ok(after1 === false, 'its shoot card is no longer marked ⛔ NA');
+  await p.fill('.na-from', addD(pick.date, 11)); await p.dispatchEvent('.na-from', 'change'); await p.fill('.na-to', addD(pick.date, 12)); await p.click('.na-back'); await sleep(800);
+  ok(docs.get('gear/' + pick.gid).data.off.map(x => x.d).join() === [addD(pick.date, 10), addD(pick.date, 13)].join(), 'a From–To range: those 2 days available again, the others stay');
+  await p.click('.na-all'); await sleep(1200);
+  ok(!docs.get('gear/' + pick.gid).data.off, '"Available again on all dates" clears the rest');
   await p.keyboard.press('Escape'); await sleep(300);
   const after = await p.evaluate(id => { const card = document.getElementById('card-' + id); return card ? card.innerHTML.includes('⛔ NA') : null; }, pick.ev);
   ok(after === false, 'card no longer marked');
