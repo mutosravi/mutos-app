@@ -59,7 +59,9 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   // the shoot using it is flagged, and the chip says why
   const flagged = await p.evaluate(id => { const card = document.getElementById('card-' + id); return card ? { na: card.innerHTML.includes('⛔ NA'), conflict: card.querySelectorAll('.is-conflict').length } : null; }, pick.ev);
   ok(flagged && flagged.na && flagged.conflict > 0, 'shoot card marks the item ⛔ NA and as a conflict');
-  ok(/double-booked/.test(await p.textContent('#sb-summary') || await p.evaluate(() => document.body.innerText)), 'board summary counts it');
+  const ban = await p.evaluate(id => { const c = document.getElementById('card-' + id), b = c && c.querySelector('.sb-banner'); return b ? b.textContent : ''; }, pick.ev);
+  const dbl = await p.evaluate(id => window.__boardApi.hasConflict(window.__boardApi.state().events.find(e => e.id === id)), pick.ev);
+  ok(/Short on (gear|crew)/.test(ban) && new RegExp(pick.gname + ' not available: swap it').test(ban) && !/Double-booked/.test(ban) && !dbl, 'the card says "' + pick.gname + ' not available: swap it" in its short banner, not "Double-booked"');
   // the other shoot that day: the item is greyed out in the gear picker with the reason
   const opened2 = await p.evaluate(id => { const card = document.getElementById('card-' + id); const btn = card && card.querySelector('[data-action="persongear"]'); if (!btn) return false; btn.click(); return true; }, pick.other);
   ok(opened2, 'opened the gear picker on the other shoot');
@@ -104,7 +106,15 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
     const e = A.cleanEvent({ name: 'Q3 shoot 2', date: s.day, slot: 'Evening', coverage: '1+0', location: 'Place 2' }); e.assignments = [{ memberId: s.sid, gearIds: ['q3-test'] }]; st.events.push(e);
     return { two: r, third: A.hasConflict(e) }; }, q3);
   ok(c3.two.every(x => !x), 'two shoots using 1 each that day are fine (2 of 3 still free)');
-  ok(c3.third, 'a third one that day is double-booked (only 2 free)');
+  ok(!c3.third, 'a third one that day is not "double-booked"…');
+  const n3 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); A.renderBoard(); const evs = st.events.filter(e => e.date === s.day && /^Q3 shoot/.test(e.name));
+    return evs.map(e => { const c = document.getElementById('card-' + e.id), b = c && c.querySelector('.sb-banner'); return e.name + ':' + (b ? b.textContent : ''); }); }, q3);
+  ok(n3.filter(x => /Test M4 not available \(1 of 3\): swap it/.test(x)).length === 1 && /Q3 shoot 2:.*not available/.test(n3.join('|')), '…only the last of the three is flagged "Test M4 not available (1 of 3): swap it"; the first two keep their bodies (' + n3.join(' | ').slice(0, 200) + ')');
+  // a real double booking is still one: two units off, three shoots → still not more than "not available"; but four shoots with 3 units and none off is double-booked
+  const d4 = await p.evaluate(s => { const A = window.__boardApi, st = A.state(); const eq = st.equipment.find(e => e.id === 'q3-test'); delete eq.off;
+    const ps = st.shooters.filter(x => !x.left && !/team/i.test(x.role || '')); const e = A.cleanEvent({ name: 'Q3 shoot 3', date: s.day, slot: 'Evening', coverage: '1+0', location: 'Place 3' }); e.assignments = [{ memberId: ps[3].id, gearIds: ['q3-test'] }]; st.events.push(e);
+    return st.events.filter(x => x.date === s.day && /^Q3 shoot/.test(x.name)).map(A.hasConflict); }, q3);
+  ok(d4.length === 4 && d4.every(Boolean), 'four shoots wanting the 3 units (nothing marked) are still double-booked, as before');
   await p.keyboard.press('Escape'); await sleep(300);
   ok(!errs.length, 'no page errors ' + errs.join(' | '));
   await b.close(); server.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

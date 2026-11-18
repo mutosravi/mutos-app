@@ -890,7 +890,8 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   function gearBusyAt(target) { return gearBusyElsewhere(target); }
   function getConflictIds(ev) {
     const cs = new Set(), ca = new Set(), ce = new Set();
-    if (!isActive(ev)) return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce };
+    const na = new Set();   // gear short only because some of it is marked not available: a gear problem to swap, not a double booking
+    if (!isActive(ev)) return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce, naEquip: na };
     const mine = allGearIds(ev);
     state.events.forEach(o => {
       if (o.id === ev.id || !overlaps(ev, o) || isQuick(ev) || isQuick(o)) return;   // a quick visit never double-books people
@@ -899,11 +900,26 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && keys.has(normalizeName(p.name))) cs.add(a.memberId); });
       ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p && keys.has(normalizeName(p.name))) ca.add(id); });
     });
-    [...new Set(mine)].forEach(id => { if (!isShareable(id) && unitsIn(ev, id) > unitsFreeFor(ev, id)) ce.add(id); });
+    [...new Set(mine)].forEach(id => { if (isShareable(id)) { if (offUnits(id, ev.date)) na.add(id); return; }
+      const need = unitsIn(ev, id), free = unitsFreeFor(ev, id); if (need <= free) return;
+      const off = offUnits(id, ev.date);
+      if (off && need <= free + off) { if (!keepsUnits(ev, id, need)) na.add(id); return; }   // fine without the unavailable units
+      ce.add(id); });
     const seen = new Map();
     ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (!p) return; const k = normalizeName(p.name); if (seen.has(k)) { cs.add(a.memberId); cs.add(seen.get(k)); } else seen.set(k, a.memberId); });
-    return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce };
+    return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce, naEquip: na };
   }
+  // several units of one item and some marked not available (Ravi, 18 Nov 2026): the units still free go to the earlier shoots of the day
+  // (morning before evening, then the shoot added first), so only the shoot(s) left without one are flagged, not every shoot using that item
+  function keepsUnits(ev, gid, need) {
+    if (gearQty(gid) < 2) return false;
+    const rank = o => [SLOT_ORDER[o.slot] ?? 3, state.events.indexOf(o)], mine = rank(ev);
+    const later = new Set(state.events.filter(o => o !== ev && o.date === ev.date && isActive(o) && unitsIn(o, gid) && (() => { const r = rank(o); return r[0] > mine[0] || (r[0] === mine[0] && r[1] > mine[1]); })()).map(o => o.id));
+    if (!later.size) return false;
+    const all = state.events; state.events = all.filter(o => !later.has(o.id));
+    try { return need <= unitsFreeFor(ev, gid); } finally { state.events = all; }
+  }
+  function naText(ev) { const n = getConflictIds(ev).naEquip; return [...n].map(id => gName(id) + ' not available' + (gearQty(id) > 1 ? ' (' + (offEntry(id, ev.date).n || gearQty(id)) + ' of ' + gearQty(id) + ')' : '') + ': swap it').join(', '); }
   function hasConflict(ev) { const c = getConflictIds(ev); return c.conflictShooterIds.size + c.conflictAssistantIds.size + c.conflictEquip.size > 0; }
   // Coverage code: "<photo>+<video>" then optional extras: "+D" = director, "+Dr" / "+Drone" = drone (a number in front sets how many, e.g. "+2Dr").
   function parseCoverage(cov) {
@@ -1020,12 +1036,13 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   function assistState(ev) { return ev.assistantIds.length ? (ev.assistOK ? 'ok' : 'unconfirmed') : (ev.assistNA ? 'na' : 'empty'); }
   function isAssistShort(ev) { if (!isActive(ev)) return false; const st = assistState(ev); return st === 'empty' || st === 'unconfirmed'; }
   function assistShortText(ev) { return assistState(ev) === 'empty' ? 'assistant not set' : 'assistants not confirmed'; }
-  function isGearShort(ev) { return gearGaps(ev).length > 0 || sharedGearMissing(ev) || needMissing(ev).length > 0; }
+  function isGearShort(ev) { return gearGaps(ev).length > 0 || sharedGearMissing(ev) || needMissing(ev).length > 0 || (isActive(ev) && getConflictIds(ev).naEquip.size > 0); }
   function gearShortText(ev) {
     const g = gearGaps(ev).length, parts = [];
     if (g) parts.push(g + ' ' + (g === 1 ? 'person' : 'people'));
     const nm = needMissing(ev); if (nm.length) parts.push('no ' + nm.map(x => x.label.toLowerCase() + (x.n ? ' ' + x.n + '/' + x.need : '')).join(', '));
     if (sharedGearMissing(ev)) parts.push(sharedGearState(ev) === 'empty' ? 'shared gear not set' : 'shared gear not confirmed');
+    if (isActive(ev)) { const t = naText(ev); if (t) parts.push(t); }
     return parts.join(' · ');
   }
   function roleClass(role) {
@@ -3930,8 +3947,9 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     return h + '</div>';
   }
   function createCardEl(ev, tiltIndex, serial, changedSet, opts) {
-    const { conflictShooterIds, conflictAssistantIds, conflictEquip } = getConflictIds(ev);
-    const conflict = conflictShooterIds.size + conflictAssistantIds.size + conflictEquip.size > 0;
+    const { conflictShooterIds, conflictAssistantIds, conflictEquip: realClash, naEquip } = getConflictIds(ev);
+    const conflict = conflictShooterIds.size + conflictAssistantIds.size + realClash.size > 0;
+    const conflictEquip = new Set([...realClash, ...naEquip]);   // red chips: double-booked or not available
     const cancelled = !isActive(ev);
     const card = document.createElement('div');
     const short = !cancelled && !conflict && isShort(ev);
