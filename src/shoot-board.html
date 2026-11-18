@@ -534,7 +534,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       status: ev.status === 'cancelled' ? 'cancelled' : 'confirmed',
       eventType: ev.eventType === 'full' || ev.eventType === 'short' ? ev.eventType : (/wedding/i.test(name) ? 'full' : 'short'),
       callTime: ev.callTime || '', contactName: ev.contactName || '', contactPhone: ev.contactPhone || '', mapLink: ev.mapLink || '', notes: ev.notes || '',
-      assignments: Array.isArray(ev.assignments) ? ev.assignments.map(a => { const o = { memberId: a.memberId, gearIds: Array.isArray(a.gearIds) ? a.gearIds.slice() : [] }; if (SLOT_TYPES.includes(a.slot)) o.slot = a.slot; if (a.take && typeof a.take === 'object') o.take = { photo: Number(a.take.photo) || 0, video: Number(a.take.video) || 0 }; if (a.ownKit && a.memberId) o.ownKit = true; return o; }) : (ev.memberIds || []).map(id => ({ memberId: id, gearIds: [] })),
+      assignments: Array.isArray(ev.assignments) ? ev.assignments.map(a => { const o = { memberId: a.memberId, gearIds: Array.isArray(a.gearIds) ? a.gearIds.slice() : [] }; if (SLOT_TYPES.includes(a.slot)) o.slot = a.slot; if (a.take && typeof a.take === 'object') o.take = { photo: Number(a.take.photo) || 0, video: Number(a.take.video) || 0 }; if (a.ownKit && a.memberId) o.ownKit = true; if (a.kitFrom && a.memberId && typeof a.kitFrom === 'string') o.kitFrom = a.kitFrom; return o; }) : (ev.memberIds || []).map(id => ({ memberId: id, gearIds: [] })),
       equipmentIds: Array.isArray(ev.equipmentIds) ? ev.equipmentIds.slice() : [],
       assistantIds: Array.isArray(ev.assistantIds) ? ev.assistantIds.slice() : [],
       ...(ev.sharedGearNA ? { sharedGearNA: true } : {}),
@@ -743,7 +743,15 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   // ---- quantities: an item can have several identical units; the board counts units instead of numbered copies ----
   function gearQty(gid) { const eq = findEquip(gid); return eq ? Math.max(1, Math.floor(Number(eq.qty)) || 1) : 1; }
   function sharedUnits(ev, gid) { return ev.equipmentIds.includes(gid) ? Math.max(1, Math.floor(Number((ev.sharedQty || {})[gid])) || 1) : 0; }
-  function unitsIn(ev, gid) { let n = sharedUnits(ev, gid); ev.assignments.forEach(a => { if (a.gearIds.includes(gid)) n++; }); return n; }
+  function unitsIn(ev, gid) { let n = sharedUnits(ev, gid); ev.assignments.forEach(a => { if (a.gearIds.includes(gid) && !broughtAlong(ev, a, gid)) n++; }); return n; }
+  // quick visit, same kit (Ravi, 18 Nov 2026: "Quick visit shoots should have an option to bring same kit from the shoot already he is in"):
+  // a.kitFrom = the shoot (same day) whose kit this person carries along; that gear is not counted again on the quick visit
+  function kitHolder(o, k) { return o.assignments.find(x => { const q = findShooter(x.memberId); return q && normalizeName(q.name) === k && (x.gearIds.length || x.ownKit); }) || null; }
+  function kitSource(ev, a) { if (!a || !a.kitFrom || !a.memberId || !isQuick(ev)) return null; const o = state.events.find(e => e.id === a.kitFrom); const p = findShooter(a.memberId);
+    if (!o || !p || !isActive(o) || o.date !== ev.date || isQuick(o)) return null; const b = kitHolder(o, normalizeName(p.name)); return b ? { o, b } : null; }
+  function broughtAlong(ev, a, gid) { if (!a.kitFrom) return false; const s = kitSource(ev, a); return !!s && s.b.gearIds.includes(gid); }
+  function kitSources(ev, a) { if (!isQuick(ev) || !a.memberId) return []; const p = findShooter(a.memberId); if (!p) return []; const k = normalizeName(p.name);
+    return state.events.filter(o => o.id !== ev.id && isActive(o) && !isQuick(o) && o.date === ev.date).map(o => ({ o, b: kitHolder(o, k) })).filter(x => x.b); }
   function evSlots(ev) { return SLOT_COVERAGE[ev.slot] || ['Morning', 'Evening']; }
   // Most units other shoots hold while this shoot needs them.
   // Lucknow shoots hold gear for their own slot. Shoots that share a place, or that you linked with "team travels",
@@ -3936,6 +3944,9 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     if (isActive(ev) && !isTeam(m) && !a.ownKit && roleClass(m.role) !== 'director') h += '<button class="sb-mini-btn" type="button" data-action="usekit" data-member="' + m.id + '" title="' + escapeHtml(ks && ks.missingFree.length ? 'Default kit: ' + ks.missingFree.map(gName).join(', ') + '. Or use someone else\'s kit.' : 'Give ' + m.name + ' a default kit, their own or someone else\'s') + '"' + (ks && ks.missingFree.length ? ' style="font-weight:600"' : '') + '>+ kit</button>';
     const tk = teamTake(a);
     if (tk) h += '<button class="sb-mini-btn" type="button" data-action="teamsize" data-member="' + m.id + '" title="People from this team on this shoot">' + (tk.photo + tk.video) + ' ppl</button>';
+    if (isActive(ev) && isQuick(ev)) { const src = kitSource(ev, a);
+      if (src) h += '<span class="sb-chip" style="padding:1px 5px;font-size:10.5px;background:#e8efe9;border-color:#b3d3c9" title="Carries the kit from that shoot here; it is not counted twice">🎒 Kit from ' + escapeHtml(src.o.name) + '<button type="button" data-action="samekitoff" data-member="' + m.id + '" aria-label="Not bringing that kit">×</button></span>';
+      else kitSources(ev, a).forEach(x => { h += '<button class="sb-mini-btn" type="button" data-action="samekit" data-member="' + m.id + '" data-src="' + x.o.id + '" title="' + escapeHtml(m.name + ' brings the kit he has on ' + x.o.name + ' (' + x.o.slot + '): ' + (x.b.gearIds.map(gName).join(', ') || 'own kit')) + '">🎒 same kit as ' + escapeHtml(x.o.name) + '</button>'; }); }
     h += '<button class="sb-mini-btn" type="button" data-action="persongear" data-member="' + m.id + '">+ gear</button>';
     h += '<button class="sb-mini-btn" type="button" data-action="switchshooter" data-member="' + m.id + '" title="Swap or move" aria-label="Swap or move ' + escapeHtml(m.name) + '">⇄</button>';
     h += '<button class="sb-mini-btn x" type="button" data-action="removeperson" data-member="' + m.id + '" aria-label="Remove ' + escapeHtml(m.name) + '">×</button></div>';
@@ -4099,6 +4110,10 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
         case 'sameteampick': { const src = state.events.find(e => e.id === b.dataset.src); if (src) openCopyReview(src, ev, 'add', true); return; }
         case 'sameteam': { const src = state.events.find(e => e.id === b.dataset.src); if (src) carryTeamFrom(ev, src); return; }
         case 'usekit': if (assignment) return openKitChooser(ev, assignment); break;
+        case 'samekit': { if (!assignment) return; const x = kitSources(ev, assignment).find(y => y.o.id === b.dataset.src); if (!x) return;
+          assignment.kitFrom = x.o.id; x.b.gearIds.forEach(g => { if (!assignment.gearIds.includes(g)) assignment.gearIds.push(g); }); if (x.b.ownKit) assignment.ownKit = true;
+          toast((findShooter(assignment.memberId) || {}).name + ' brings his kit from ' + x.o.name + (x.b.gearIds.length ? ' (' + x.b.gearIds.map(gName).join(', ') + ')' : '') + '. Not counted twice.', true); break; }
+        case 'samekitoff': { if (!assignment) return; const src = kitSource(ev, assignment); if (src) assignment.gearIds = assignment.gearIds.filter(g => !src.b.gearIds.includes(g)); delete assignment.kitFrom; break; }
         case 'teamsize': if (assignment) openTeamSize(ev, assignment); return;
         case 'switchshooter': return openSwitchShooterModal(ev, mem);
         case 'switchassistant': return openSwitchAssistantModal(ev, b.dataset.assistant);
@@ -4999,7 +5014,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
         applySnapshot(key, snap);
         if (!snap.metadata.fromCache && ++firstDone === KEYS.length) {
           setSync('cloud', 'Saved to cloud · ' + state.events.length + ' shoots');
-          if (window.MUTOS_APP && window.MUTOS_APP.attach) window.MUTOS_APP.attach({ state: () => state, save: () => saveData({ quiet: true }), saveSystem: () => saveData({ quiet: true, system: true }), crewFeedFor, allPeopleKeys, recordsForKey, displayName, phoneForKey, normalizeName, todayStr, makeModal, modalHead, closeModal, renderBoard, toast, escapeHtml, isActive, isShort, isGearShort, hasConflict, crewCount, crewNeeded, rentalsToBook, inboxCount, openInbox, openRentals, goToDate, seasonOf, canSyncTeam, syncTeamSheet: () => syncTeamSheet(true), formatDay, cleanEvent });
+          if (window.MUTOS_APP && window.MUTOS_APP.attach) window.MUTOS_APP.attach({ state: () => state, save: () => saveData({ quiet: true }), saveSystem: () => saveData({ quiet: true, system: true }), crewFeedFor, broughtAlong, allPeopleKeys, recordsForKey, displayName, phoneForKey, normalizeName, todayStr, makeModal, modalHead, closeModal, renderBoard, toast, escapeHtml, isActive, isShort, isGearShort, hasConflict, crewCount, crewNeeded, rentalsToBook, inboxCount, openInbox, openRentals, goToDate, seasonOf, canSyncTeam, syncTeamSheet: () => syncTeamSheet(true), formatDay, cleanEvent });
           setTimeout(() => { if (canPushCrew()) { const cur = crewSetting(); if (!cur.fileId || hash(JSON.stringify(crewRows())) !== cur.sig) scheduleCrewPush(); } }, 3000);
           setTimeout(() => { if (canSyncTeam()) syncTeamSheet(false); else renderTeamStatus(); }, 2500);
         }

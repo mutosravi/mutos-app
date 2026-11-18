@@ -79,6 +79,25 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   const cOff = await p.evaluate(x => { const A = window.__boardApi, q = A.state().events.find(e => e.id === x.quick); delete q.quick; const c = A.hasConflict(q); q.quick = true; return c; }, pick);
   ok(cOff, 'without the switch the same thing would be a double booking');
   if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/quick-visit.png' });
+  // same kit as his main shoot (18 Nov 2026, Ravi: "Quick visit shoots should have an option to bring same kit from the shoot already he is in")
+  await p.evaluate(x => { const A = window.__boardApi, st = A.state(); st.equipment.push({ id: 'kit-test-body', name: 'Kit Test Body', category: 'Body', order: 998 });
+    const m = st.events.find(e => e.id === x.main); m.assignments.find(a => a.memberId === x.member).gearIds.push('kit-test-body'); A.save(); A.renderBoard(); }, pick);
+  const skSel = '#card-' + pick.quick + ' [data-action="samekit"][data-member="' + pick.member + '"]';
+  await p.waitForSelector(skSel);
+  ok((await p.textContent(skSel)).includes('same kit as ' + pick.mainName), 'on the quick visit his row offers "🎒 same kit as ' + pick.mainName + '"');
+  await p.click(skSel); await sleep(500);
+  const sk = await p.evaluate(x => { const A = window.__boardApi, st = A.state(), q = st.events.find(e => e.id === x.quick), m = st.events.find(e => e.id === x.main), a = q.assignments.find(y => y.memberId === x.member);
+    return { has: a.gearIds.includes('kit-test-body'), from: a.kitFrom, cq: A.hasConflict(q), cm: A.hasConflict(m), along: A.broughtAlong(q, a, 'kit-test-body') }; }, pick);
+  ok(sk.has && sk.from === pick.main && sk.along, 'his kit (Kit Test Body) is on the quick visit, marked as brought from ' + pick.mainName);
+  ok(!sk.cq && !sk.cm, 'neither shoot is double-booked for that body (it is counted once)');
+  ok(/Kit from/.test(await p.textContent('#card-' + pick.quick)), 'the quick visit card shows "🎒 Kit from ' + pick.mainName + '"');
+  for (let i = 0; i < 40 && !((docs.get('events/' + pick.quick) || { data: {} }).data.assignments || []).some(a => a.kitFrom); i++) await sleep(150);
+  ok(((docs.get('events/' + pick.quick) || { data: {} }).data.assignments || []).some(a => a.kitFrom === pick.main), 'saved (kitFrom kept by cleanEvent)');
+  const plain = await p.evaluate(x => { const A = window.__boardApi, st = A.state(), q = st.events.find(e => e.id === x.quick), a = q.assignments.find(y => y.memberId === x.member); const k = a.kitFrom; delete a.kitFrom; const c = A.hasConflict(q); a.kitFrom = k; return c; }, pick);
+  ok(plain, 'without "same kit" the same body on both would be double-booked');
+  await p.click('#card-' + pick.quick + ' [data-action="samekitoff"][data-member="' + pick.member + '"]'); await sleep(400);
+  const off = await p.evaluate(x => { const A = window.__boardApi, q = A.state().events.find(e => e.id === x.quick), a = q.assignments.find(y => y.memberId === x.member); return { has: a.gearIds.includes('kit-test-body'), from: a.kitFrom || null }; }, pick);
+  ok(!off.has && !off.from, '× takes the kit off the quick visit again');
 
   // ── default kit in the gear picker: count shown, and still in the main list ──
   const kit = await p.evaluate(x => {

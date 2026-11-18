@@ -93,7 +93,7 @@
     const items = st.equipment.map(eq => Object.assign({ id: eq.id, name: eq.name, category: eq.category || '', qty: Math.max(1, Math.floor(Number(eq.qty)) || 1), vendor: eq.vendor || '' }, (eq.off || []).some(x => x.d >= from) ? { off: eq.off.filter(x => x.d >= from) } : {}));
     const shoots = st.events.filter(ev => ev.status !== 'cancelled' && ev.date && ev.date >= from && ev.date <= to).map(ev => {
       const carriers = [];
-      ev.assignments.forEach(a => { const p = st.shooters.find(x => x.id === a.memberId); if (p && (a.gearIds.length || a.ownKit)) carriers.push({ key: key(p), name: p.name, gear: a.gearIds.slice(), ownKit: !!a.ownKit }); });
+      ev.assignments.forEach(a => { const p = st.shooters.find(x => x.id === a.memberId); const gear = a.gearIds.filter(g => !(api.broughtAlong && api.broughtAlong(ev, a, g))); /* a quick visit's same kit is handed out once, for the main shoot */ if (p && (gear.length || (a.ownKit && !a.kitFrom))) carriers.push({ key: key(p), name: p.name, gear, ownKit: !!a.ownKit }); });
       const team = ev.assignments.map(a => st.shooters.find(x => x.id === a.memberId)).concat(ev.assistantIds.map(id => st.assistants.find(x => x.id === id))).filter(Boolean).map(p => ({ key: key(p), name: p.name }));
       return { id: ev.id, date: ev.date, slot: ev.slot, shoot: ev.name, venue: ev.location || '', callTime: ev.callTime || '', carriers, shared: ev.equipmentIds.flatMap(g => Array(Math.max(1, Math.floor(Number((ev.sharedQty || {})[g])) || 1)).fill(g)), team };
     }).sort((a, b) => a.date.localeCompare(b.date) || String(a.slot).localeCompare(String(b.slot)));
