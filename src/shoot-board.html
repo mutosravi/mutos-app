@@ -563,6 +563,8 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     if (p.sentList && typeof p.sentList === 'object' && !Array.isArray(p.sentList)) o.sentList = p.sentList; // what the last schedule message listed, to mark new and changed shoots next time
     if (Array.isArray(p.defaultGear) && p.defaultGear.length) o.defaultGear = p.defaultGear.slice();
     if (p.ownKit) o.ownKit = true;
+    if (p.freelance === true || p.freelance === false) o.freelance = p.freelance; // in-house or freelancer (18 Nov 2026); unset = guessed from role / own kit
+    if (p.avail && typeof p.avail === 'object') { const old = addDays(todayStr(), -2), a = {}; Object.keys(p.avail).forEach(d => { if (d >= old && (p.avail[d] === 'yes' || p.avail[d] === 'asked')) a[d] = p.avail[d]; }); if (Object.keys(a).length) o.avail = a; } // a freelancer's answer per date: asked / yes ("no" becomes a day off)
     if (p.email && typeof p.email === 'string') o.email = p.email.trim().toLowerCase(); // team app login (Google account)
     if (/team/i.test(o.role)) o.lineup = { photo: p.lineup && p.lineup.photo != null ? Number(p.lineup.photo) : 2, video: p.lineup && p.lineup.video != null ? Number(p.lineup.video) : 2 };
     return o;
@@ -1823,10 +1825,11 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
               (window.MUTOS_APP ? '<input class="sb-field ed-email" id="ed-email-' + p.id + '" type="email" autocomplete="off" placeholder="Login Gmail (team app)" title="The Google account this person signs in to the team app with">' : '') +
               (team ? '<input class="sb-field ed-lp" id="ed-lp-' + p.id + '" type="number" min="0" inputmode="numeric" placeholder="Usual photo" title="Usual photo people"><input class="sb-field ed-lv" id="ed-lv-' + p.id + '" type="number" min="0" inputmode="numeric" placeholder="Usual video" title="Usual video people">'
                 : '<input class="sb-field ed-rs" id="ed-rs-' + p.id + '" type="number" min="0" inputmode="numeric" placeholder="Short event ₹"><input class="sb-field ed-rf" id="ed-rf-' + p.id + '" type="number" min="0" inputmode="numeric" placeholder="Full event ₹">') +
-              (!team && personType === 'shooter' ? '<label class="sb-manage-sub" style="display:flex;gap:6px;align-items:center;flex-basis:100%"><input type="checkbox" class="ed-ownkit"> Usually brings own kit (freelancer). New shoots mark it automatically.</label>' : '') +
+              (!team && personType === 'shooter' ? '<label class="sb-manage-sub" style="display:flex;gap:6px;align-items:center;flex-basis:100%"><input type="checkbox" class="ed-free"> Freelancer (not our in-house team): ask before booking</label><label class="sb-manage-sub" style="display:flex;gap:6px;align-items:center;flex-basis:100%"><input type="checkbox" class="ed-ownkit"> Usually brings own kit. New shoots mark it automatically.</label>' : '') +
               '<button class="sb-zone-add" type="button">Save</button>' + (team ? '<span class="sb-manage-sub" style="flex-basis:100%">Usual lineup when this team is added to a shoot. Teams are left out of billing.</span>' : '');
             f.querySelector('.ed-name').value = p.name; f.querySelector('.ed-role').value = p.role || ''; f.querySelector('.ed-phone').value = p.phone || ''; if (f.querySelector('.ed-email')) f.querySelector('.ed-email').value = p.email || '';
             const okEl = f.querySelector('.ed-ownkit'); if (okEl) okEl.checked = !!p.ownKit;
+            const frEl = f.querySelector('.ed-free'); if (frEl) frEl.checked = isFreelancer(p);
             if (team) { f.querySelector('.ed-lp').value = (p.lineup || {}).photo ?? 2; f.querySelector('.ed-lv').value = (p.lineup || {}).video ?? 2; }
             else {
               f.querySelector('.ed-rs').value = p.rateShort ?? ''; f.querySelector('.ed-rf').value = p.rateFull ?? '';
@@ -1848,6 +1851,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
               const emEl = f.querySelector('.ed-email'); if (emEl) { const em = emEl.value.trim().toLowerCase(); if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('That login email does not look right.'); return; } if (em) p.email = em; else delete p.email; }
               if (f.querySelector('.ed-lp')) p.lineup = { photo: Math.max(0, Number(f.querySelector('.ed-lp').value) || 0), video: Math.max(0, Number(f.querySelector('.ed-lv').value) || 0) };
               else { p.rateShort = num(f.querySelector('.ed-rs').value); p.rateFull = num(f.querySelector('.ed-rf').value); }
+              const frEl = f.querySelector('.ed-free'); if (frEl) p.freelance = frEl.checked;
               const okEl = f.querySelector('.ed-ownkit');
               if (okEl) {
                 const was = !!p.ownKit;
@@ -2027,7 +2031,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const day = dayBookings(ev);
     const items = state.shooters.filter(p => mine.has(p.id) || (!p.left && !myAsst.has(normalizeName(p.name))))
       .map(p => { const k = normalizeName(p.name), b = day.get(k), out = mine.has(p.id) ? [] : outOnlyShoots(ev, p.id), clash = !mine.has(p.id) && busy.has(k) && !out.length, movable = clash && sameTimeShoots(ev, p.id).length > 0;
-        return { id: p.id, name: p.name, sub: out.length ? outText(ev, out) + ' · tick if the places are close' : movable ? 'tick to move here' : personSub(p, season), group: p.role || 'Other', dot: colorFor(p.id, MEMBER_DOTS), note: dayNote(b), noteBusy: clash, rank: dayRank(b),
+        return { id: p.id, name: p.name, sub: out.length ? outText(ev, out) + ' · tick if the places are close' : movable ? 'tick to move here' : personSub(p, season) + flTag(p, ev.date), group: p.role || 'Other', dot: colorFor(p.id, MEMBER_DOTS), note: dayNote(b), noteBusy: clash, rank: dayRank(b),
           disabledReason: mine.has(p.id) ? null : away.has(k) ? 'Away · ' + away.get(k) : clash && !movable ? 'Busy at this time' : null }; })
       .sort((a, b) => (a.group || '').localeCompare(b.group || '') || a.rank - b.rank || a.name.localeCompare(b.name));
     openPicker({
@@ -2085,11 +2089,11 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const day = dayBookings(ev);
     const items = state.shooters.filter(p => !p.left && fits(p.role, type) && !onKeys.has(normalizeName(p.name)))
       .map(p => { const k = normalizeName(p.name), r = away.get(k), b = day.get(k), out = outOnlyShoots(ev, p.id), from = out.length ? [] : sameTimeShoots(ev, p.id), clash = busy.has(k) && !out.length, stuck = clash && !from.length;
-        return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : out.length ? outText(ev, out) : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
+        return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : out.length ? outText(ev, out) : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season) + flTag(p, ev.date), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
           detail: out.length && !r ? 'Stays on ' + out.map(o => o.name).join(', ') + ' too: pick if the places are close (linked as team travels)' : clash && !stuck ? 'Leaves ' + from.map(o => o.name + ' (' + o.slot + ')').join(', ') + '; their gear stays there as an open slot' : b ? (clash ? '⛔ ' : '✓ Also ') + dayNote(b) : '', search: dayNote(b) }; })
       .sort((a, b) => a.rank - b.rank || a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
     const mk = p => { const k = normalizeName(p.name), r = away.get(k), b = day.get(k), out = outOnlyShoots(ev, p.id), from = out.length ? [] : sameTimeShoots(ev, p.id), clash = busy.has(k) && !out.length, stuck = clash && !from.length;
-      return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : out.length ? outText(ev, out) : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
+      return { id: p.id, name: p.name, sub: r ? 'Away · ' + r : out.length ? outText(ev, out) : stuck ? 'Busy at this time' : clash ? 'moves here from ' + from.map(o => o.name).join(', ') : personSub(p, season) + flTag(p, ev.date), disabled: !!r || stuck, role: p.role || '', rank: r ? 4 : dayRank(b),
         detail: out.length && !r ? 'Stays on ' + out.map(o => o.name).join(', ') + ' too: pick if the places are close (linked as team travels)' : clash && !stuck ? 'Leaves ' + from.map(o => o.name + ' (' + o.slot + ')').join(', ') + '; their gear stays there as an open slot' : b ? (clash ? '⛔ ' : '✓ Also ') + dayNote(b) : '', search: dayNote(b) }; };
     // people whose usual role is something else: offered below the main list, for the days you need them to switch
     const inMain = new Set(state.shooters.filter(p => !p.left && fits(p.role, type)).map(p => normalizeName(p.name))), seenO = new Set(); // one row per person, and not those already in the main list under another role
@@ -2236,7 +2240,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
         const aw = !mine.has(p.id) && away.get(k);
         if (out.length && !aw) return { id: p.id, name: p.name, sub: outText(ev, out), detail: pname + ' is taken off this shoot; ' + p.name + ' stays on ' + out.map(o => o.name).join(', ') + ' too (pick if the places are close: linked as team travels)', rank: 2 };
         return { id: p.id, name: p.name, disabled: !!aw,
-          sub: aw ? 'Away · ' + aw : mine.has(p.id) ? 'on this shoot · swap places' : clash ? 'moves here from ' + spots.map(x => x.ev.name).join(', ') : personSub(p, season),
+          sub: aw ? 'Away · ' + aw : mine.has(p.id) ? 'on this shoot · swap places' : clash ? 'moves here from ' + spots.map(x => x.ev.name).join(', ') : personSub(p, season) + flTag(p, ev.date),
           detail: clash ? pname + ' is taken off this shoot; ' + p.name + ' leaves ' + spots.map(x => x.ev.name + ' (' + x.ev.slot + ')').join(', ') + ', where the gear stays as an open slot' : b ? '✓ Also ' + dayNote(b) : '',
           rank: aw ? 5 : mine.has(p.id) ? 4 : clash ? 3 : dayRank(b) };
       }).filter(Boolean)
@@ -3104,7 +3108,11 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   }
   document.getElementById('sb-prewed').addEventListener('click', openPreWedding);
   // ---------- one window to fill drone slots and freelancer slots across every upcoming shoot ----------
-  function isFreelancer(p) { return /freelanc/i.test(p.role || ''); }
+  // in-house or freelancer (Ravi, 18 Nov 2026: "Free shooters should be of 2 categories ... we need to ask freelancers if they are free")
+  function isFreelancer(p) { if (!p || isTeam(p)) return false; if (p.freelance === true || p.freelance === false) return p.freelance; return /freelanc/i.test(p.role || '') || !!p.ownKit; }
+  function availOf(p, date) { let v = ''; recordsForKey(normalizeName(p.name)).forEach(r => { const x = r.avail && r.avail[date]; if (x === 'yes' || (x === 'asked' && !v)) v = x; }); return v; }
+  function setAvail(p, date, v) { recordsForKey(normalizeName(p.name)).forEach(r => { if (r.avail) { delete r.avail[date]; if (!Object.keys(r.avail).length) delete r.avail; } }); if (v) { p.avail = Object.assign({}, p.avail || {}); p.avail[date] = v; } }
+  function flTag(p, date) { if (!isFreelancer(p)) return ''; const v = availOf(p, date); return ' · ' + (v === 'yes' ? '✓ freelancer, said free' : v === 'asked' ? 'freelancer, asked: no answer yet' : 'freelancer: ask first'); }
   function openSlotsOf(ev) { const pl = placeAssignments(ev); if (!pl) return { photo: 0, video: 0, drone: 0, director: 0 }; const o = {}; SLOT_TYPES.forEach(t => { o[t] = pl[t].filter(x => !x).length; }); return o; }
   function fillSlot(ev, type, pid) {
     const open = ev.assignments.find(x => !x.memberId && x.slot === type);
@@ -3225,7 +3233,8 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
         if (o.names) { const as = e.assistantIds.map(id => findAssistantPerson(id)).filter(Boolean).map(p => p.name); const cs = e.assignments.map(x => { const p = findShooter(x.memberId); if (!p) return ''; const t = teamTake(x); return p.name + (t ? ' ×' + (t.photo + t.video) : ''); }).filter(Boolean);
           L.push('  ' + (cs.join(', ') || 'no one assigned yet') + (as.length ? ' · Asst: ' + as.join(', ') : '')); } }); });
     L.push('');
-    L.push('Free shooters (' + info.free.length + '): ' + (info.free.join(', ') || 'none'));
+    L.push('Free in-house (' + info.freeIn.length + '): ' + (info.freeIn.join(', ') || 'none'));
+    if (info.freeFl.length) L.push('Freelancers to ask (' + info.freeFl.length + '): ' + info.freeFl.join(', '));
     if (state.assistants.length) L.push('Free assistants (' + info.freeAsst.length + '): ' + (info.freeAsst.join(', ') || 'none'));
     if (info.away.length) L.push('Away: ' + info.away.join(', '));
     if (info.travelling.length) L.push('Travelling (far shoot): ' + info.travelling.join(', '));
@@ -3280,6 +3289,30 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     modal.querySelector('#nt-save').addEventListener('click', () => { const ch = save(); closeModal(); if (ch) { renderBoard(); saveData(); } });
     modal.querySelector('#nt-group').addEventListener('click', () => { const ch = save(); if (!ev.notes) { toast('Write the note first.'); return; } if (ch) { renderBoard(); saveData({ quiet: true }); } copyText(teamNoteText(ev, '')); });
     modal.querySelector('#nt-send').addEventListener('click', () => { const ch = save(); if (!ev.notes) { toast('Write the note first.'); return; } closeModal(); if (ch) { renderBoard(); saveData({ quiet: true }); } sendTeamNote(ev); });
+  }
+  // ask the freelancers who are not booked that day whether they are free (WhatsApp), and note their answer
+  function openAskFree(date) {
+    const busyK = new Set(); state.events.filter(e => isActive(e) && e.date === date).forEach(e => peopleKeysUsedInEvent(e).forEach(k => busyK.add(k)));
+    const awayK = new Set(state.unavailability.filter(u => u.date === date).map(u => { const r = state.shooters.find(x => x.id === u.personId) || state.assistants.find(x => x.id === u.personId); return r ? normalizeName(r.name) : ''; }));
+    const seen = new Set(), list = state.shooters.filter(p => { const k = normalizeName(p.name); if (p.left || !isFreelancer(p) || busyK.has(k) || awayK.has(k) || seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const open = state.events.filter(e => isActive(e) && e.date === date && crewNeeded(e.coverage) !== null && crewCount(e) < crewNeeded(e.coverage));
+    const msg = p => 'Hi ' + p.name.split(' ')[0] + ', Muto\'s Studio here. Are you free on ' + formatDay(date) + ' for a shoot? Please reply: morning / evening / full day / not free.';
+    const st = p => { const v = availOf(p, date); return v === 'yes' ? '<span class="sb-daytag">✓ said free</span>' : v === 'asked' ? '<span class="sb-daytag" style="background:#fff1d6;color:#7a5200">asked · no answer yet</span>' : '<span class="sb-daytag" style="background:#eee;color:#555">not asked</span>'; };
+    const modal = makeModal(modalHead('Ask freelancers · ' + formatDay(date), (list.length ? list.length + ' freelancer' + (list.length === 1 ? ' is' : 's are') + ' not booked by us that day. Ask them on WhatsApp, then note what they said: "Not free" marks the day off for them so nobody books them.' : 'Every freelancer is booked or away that day.') + (open.length ? ' Short on crew that day: ' + open.map(e => e.name + ' (' + e.slot + ')').join(', ') + '.' : '')) +
+      '<div class="sb-modal-list">' + list.map((p, i) => '<div class="sb-modal-row af-row" data-i="' + i + '" style="flex-wrap:wrap;gap:6px"><span class="sb-modal-row-name">' + escapeHtml(p.name) + st(p) + '</span><span class="sb-modal-row-sub">' + escapeHtml((p.role || '') + (p.phone ? ' · ' + p.phone : ' · no number saved')) + '</span>' +
+        '<span class="sb-btn-row" style="flex-basis:100%;margin:2px 0 0"><a class="sb-btn-sm wa af-ask" data-i="' + i + '">Ask</a><button type="button" class="sb-btn-sm secondary af-yes" data-i="' + i + '">Free ✓</button><button type="button" class="sb-btn-sm secondary af-no" data-i="' + i + '">Not free</button></span></div>').join('') + '</div>' +
+      '<div class="sb-modal-foot">' + (list.some(p => !availOf(p, date)) ? '<button type="button" class="secondary" id="af-all">Ask everyone not asked yet</button>' : '') + '<button type="button" id="af-done">Done</button></div>', true);
+    const after = () => { saveData(); openAskFree(date); };
+    modal.querySelectorAll('.af-ask').forEach(a => { const p = list[+a.dataset.i]; a.href = waLink(p.phone, msg(p)); a.target = waTarget(); a.dataset.wa = encodeURIComponent(JSON.stringify({ p: p.phone, t: msg(p) }));
+      const mark = () => { if (availOf(p, date) !== 'yes') { setAvail(p, date, 'asked'); setTimeout(after, 80); } };
+      a.addEventListener('click', mark); a.addEventListener('wa-copied', mark); });
+    modal.querySelectorAll('.af-yes').forEach(b => b.addEventListener('click', () => { const p = list[+b.dataset.i]; setAvail(p, date, 'yes'); toast(p.name + ' is free on ' + formatDay(date) + '.'); after(); }));
+    modal.querySelectorAll('.af-no').forEach(b => b.addEventListener('click', () => { const p = list[+b.dataset.i]; setAvail(p, date, '');
+      state.unavailability.push({ id: uid(), personType: 'shooter', personId: p.id, date, slot: 'Full day', reason: 'Freelancer: not free' }); toast(p.name + ' marked away on ' + formatDay(date) + '.'); after(); }));
+    const all = modal.querySelector('#af-all'); if (all) all.addEventListener('click', () => { const q = list.filter(p => !availOf(p, date)); q.forEach(p => setAvail(p, date, 'asked')); saveData();
+      openRunner(q.map(p => ({ who: p.name, phone: p.phone, text: msg(p) })), 'Ask freelancers · ' + formatDay(date), () => openAskFree(date)); });
+    modal.querySelector('#af-done').addEventListener('click', () => { closeModal(); renderBoard(); });
   }
   function openRunner(queue, label, onDone) {
     let i = 0;
@@ -4344,11 +4377,14 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       const bodies = freeGear.filter(eq => gearBucket(eq) === 'bodies'), lenses = freeGear.filter(eq => gearBucket(eq) === 'lenses'), other = freeGear.filter(eq => gearBucket(eq) === 'other');
       let hh = '<div class="sb-date-head"><span class="sb-date-title">' + escapeHtml(formatDateLong(dateKey === 'No date set' ? null : dateKey)) + '</span><span class="sb-date-count">' + evs.length + (evs.length === 1 ? ' shoot' : ' shoots') + (matchIds ? ' · ' + evs.filter(e => matchIds.has(e.id)).length + ' ' + ({ short: 'short on crew', gear: 'short on gear', drone: 'short on drone', assist: 'short on assistant', clash: 'double-booked', premium: 'premium', wedding: evs.filter(e => matchIds.has(e.id)).length === 1 ? 'wedding' : 'weddings' })[prefs.filter] : '') + '</span>';
       if (dateKey !== 'No date set') {
-        dayInfo[dateKey] = { free: freeShooters.map(p => p.name), freeAsst: freeAssistants.map(p => p.name), away: awayNames, travelling: [...travelling.entries()].map(([k, pl]) => displayName(k) + ' (' + pl + ')'), bodies: bodies.map(e => e.name) };
+        dayInfo[dateKey] = { free: freeShooters.map(p => p.name), freeIn: freeShooters.filter(p => !isFreelancer(p)).map(p => p.name), freeFl: freeShooters.filter(isFreelancer).map(p => p.name + (availOf(p, dateKey) === 'yes' ? ' (✓ free)' : availOf(p, dateKey) === 'asked' ? ' (asked)' : '')), freeAsst: freeAssistants.map(p => p.name), away: awayNames, travelling: [...travelling.entries()].map(([k, pl]) => displayName(k) + ' (' + pl + ')'), bodies: bodies.map(e => e.name) };
         hh += '<button type="button" class="sb-date-add" data-action="dayaway" title="Tick everyone who is not available on this date">✋ who is away</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="daystatus" title="A summary of this day to send to a team member: shoots, crew filled, who is free">➤ send day status</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="addhere">+ add shoot on this date</button>';
       }
       hh += '</div><div class="sb-available">';
-      hh += '<span><span class="sb-available-label">Free shooters</span>' + (state.shooters.length ? list(freeShooters, "everyone's booked") : '—') + '</span>';
+      { const inH = freeShooters.filter(p => !isFreelancer(p)), fl = freeShooters.filter(isFreelancer);
+        hh += '<span class="sb-free-in"><span class="sb-available-label">Free in-house</span>' + (state.shooters.length ? list(inH, "everyone's booked") : '—') + '</span>';
+        if (fl.length) hh += '<span class="sb-free-fl" title="Not booked by us that day, but freelancers may have other work: ask them first"><span class="sb-available-label">Freelancers · ask first</span>' + fl.map(p => { const v = dateKey === 'No date set' ? '' : availOf(p, dateKey); return escapeHtml(p.name) + (v === 'yes' ? ' <b title="Said they are free">✓</b>' : v === 'asked' ? ' <i title="Asked, no answer yet">(asked)</i>' : ''); }).join(', ') +
+          (dateKey !== 'No date set' ? ' <button type="button" class="sb-date-add" data-action="askfree" style="margin-left:6px">✆ ask</button>' : '') + '</span>'; }
       if (state.assistants.length) hh += '<span><span class="sb-available-label">Free assistants</span>' + list(freeAssistants, "everyone's booked") + '</span>';
       if (awayNames.length) hh += '<span><span class="sb-available-label" style="color:var(--danger-on-board)">Away</span>' + escapeHtml(awayNames.join(', ')) + '</span>';
       if (travelling.size) hh += '<span title="On a far shoot the day before or after, so travelling today"><span class="sb-available-label" style="color:#c9b8e0">🛫 Travelling (far shoot)</span>' + escapeHtml([...travelling.entries()].map(([k, pl]) => displayName(k) + ' (' + pl + ')').join(', ')) + '</span>';
@@ -4358,6 +4394,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       hh += '<span><details><summary>Free lenses (' + lenses.length + ') and other gear (' + other.length + ')</summary><span class="sb-available-label">Lenses</span>' + list(lenses, 'all out') + '<br><span class="sb-available-label">Other</span>' + list(other, 'all out') + '</details></span></div>';
       section.innerHTML = hh;
       const awayBtn = section.querySelector('[data-action="dayaway"]'); if (awayBtn) awayBtn.addEventListener('click', () => openDayAway(dateKey));
+      const askBtn = section.querySelector('[data-action="askfree"]'); if (askBtn) askBtn.addEventListener('click', () => openAskFree(dateKey));
       const dayBtn = section.querySelector('[data-action="daystatus"]'); if (dayBtn) dayBtn.addEventListener('click', () => openDayStatus(dateKey));
       const addHere = section.querySelector('[data-action="addhere"]');
       if (addHere) addHere.addEventListener('click', () => { showingNewForm = true; newFormTargetKey = dateKey; renderBoard(); });
