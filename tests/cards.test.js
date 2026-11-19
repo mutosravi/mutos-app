@@ -48,6 +48,12 @@ function rpc(fn, a, e) {
     ks.forEach(k => { [...T.card_moves.values()].filter(m => m.card === k.id && m.status === 'pending').forEach(m => { m.status = 'cancelled'; }); const id = uid(); T.card_moves.set(id, { id, card: k.id, batch, from_person: k.holder, to_person: a.p_to || null, status: 'pending', note: a.p_note, given_by: e, given_by_person: me, given_at: now() }); log(k.id, e, pname(k.holder) + ' → ' + pname(a.p_to) + ': given'); });
     return { ok: true, batch, count: ks.length, single_copy: single };
   }
+  if (fn === 'client_rename') { // 031 (the full move is in rls_client_rename.sql)
+    if (!staff(e)) return { error: 'Only the admin or the manager can rename a client.' };
+    globalThis.__renames = (globalThis.__renames || []).concat([a]); let n = 0;
+    [...T.drive_items.values()].forEach(i => { if (i.wedding_key === a.p_old) { i.wedding_key = a.p_new; n++; } });
+    (a.p_events || []).forEach(ev => { const id = 'cl' + Math.random(); T.client_log.set(id, { id, event_id: ev, kind: 'rename', what: 'Client renamed to ' + a.p_title, at: new Date().toISOString(), by_email: e }); });
+    return { ok: true, moved: { drive_lines: n } }; }
   if (fn === 'card_shoots') { // 022: every shoot, no phone
     if (!(desk(e) || me)) return [];
     return [...T.docs.values()].filter(d => d.collection === 'events' && d.data.status !== 'cancelled').map(d => ({ id: d.id, name: d.data.name, wedding: d.data.wedding, date: d.data.date, slot: d.data.slot, contactName: d.data.contactName, location: d.data.location }));
@@ -327,6 +333,19 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await shot(o, 'clients-past.png');
   await o.click('#dw-back'); await o.waitForSelector('[data-cltab="past"]');
   ok(await o.isVisible('.cl-past'), 'back returns to the Past list');
+  // ── Rename a client (20 Nov 2026, Ravi): every shoot gets the new name, and what hangs on the old name moves with it ──
+  await o.fill('#cl-q', 'verma'); await sleep(100);
+  await o.click('.cl-past:not([style*="none"]) [data-ren]'); await o.waitForSelector('#rn-name');
+  ok(await o.inputValue('#rn-name') === 'Verma', 'Rename opens with the current name');
+  await o.fill('#rn-name', 'Varma Family'); await o.click('#rn-go');
+  await o.waitForFunction(() => /is now Varma Family/.test((document.getElementById('sb-toast') || {}).textContent || ''), null, { timeout: 10000 });
+  const rn = (globalThis.__renames || [])[0] || {};
+  const bw = await o.evaluate(() => window.__boardApi.state().events.map(e => e.wedding || '')); const evs = bw.filter(w => w === 'Varma Family');
+  ok(rn.p_old === 'w:verma' && rn.p_new === 'w:varma family' && rn.p_title === 'Varma Family' && rn.p_events.length === evs.length && evs.length > 0, 'the database is asked to move w:verma → w:varma family, and all ' + evs.length + ' of its shoots say "Varma Family" on the board');
+  ok(!bw.includes('Verma'), 'no shoot keeps the old name');
+  ok([...T.client_log.values()].filter(l => l.kind === 'rename').length === evs.length, 'a History line on each of its shoots');
+  await o.waitForSelector('[data-cltab="past"]'); await o.click('[data-cltab="past"]'); await o.waitForSelector('.cl-past');
+  ok(/Varma Family/.test(await o.textContent('#cl-list')) && !/>Verma</.test(await o.innerHTML('#cl-list')), 'the Past list shows Varma Family');
 
   // ── Settings → Logs (Excel): cards, drives and gear in plain words ──
   await o.waitForFunction(() => window.MUTOS_LOGS_XLSX && window.XLSX, null, { timeout: 15000 });

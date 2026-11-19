@@ -105,13 +105,13 @@
     const tabs = '<div class="sb-btn-row" id="cl-tabs" style="padding:0 8px 6px"><button type="button" class="sb-btn-sm' + (past ? ' secondary' : '') + '" data-cltab="coming">Coming up</button><button type="button" class="sb-btn-sm' + (past ? '' : ' secondary') + '" data-cltab="past">Past</button>' +
       (past ? '<input class="sb-field" id="cl-q" placeholder="Search a past client" style="flex:1 1 160px;min-width:0">' : '') + '</div>';
     const pastRow = w => '<div class="sb-manage-row cl-past" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></div>' + moneyPill(w.key) + '</div>' +
-      '<div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm" data-data="' + esc(w.key) + '">Data copied</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>') + '</div></div>';
+      '<div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm" data-data="' + esc(w.key) + '">Data copied</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>') + '</div></div>';
     const html = tabs + '<div class="sb-modal-list" id="cl-list">' + (past ? (ws.length ? ws.map(pastRow).join('') : '<p class="sb-modal-empty">No past clients on the board.</p>') : ws.length ? ws.map(w => {
       const s = stateOf(w), sx = strays(w);
       return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span>' +
         (sx.length ? '<div class="cl-stray" style="margin-top:6px;background:#f2dfa7;color:#5c4410;border-radius:10px;padding:6px 8px;font-size:12.5px;line-height:1.4">Same phone, but not under this client (the family will not see them): <b>' + esc(sx.map(e => e.name + ' (' + dayName(e.date) + ')').join(', ')) + '</b>' +
           (w.key.startsWith('w:') && !sup() ? ' <button type="button" class="sb-btn-sm" data-join="' + esc(w.key) + '" style="margin-left:4px">Join them</button>' : '') + '</div>' : '') + '</div>' +
-        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
+        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
         (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Open &amp; edit</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
           : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
         (s.l && !(s.l.emails || []).length ? '<div class="sb-manage-sub" style="color:#7a2d1e;margin-top:4px">No Gmail yet: the family cannot sign in. Tap Gmails.</div>' : s.l ? '<div class="sb-manage-sub" style="margin-top:4px">Signs in with: ' + esc(s.l.emails.join(', ')) + '</div>' : '') + '</div>';
@@ -137,9 +137,39 @@
     modal.querySelectorAll('[data-book]').forEach(b => b.addEventListener('click', () => booking(byKey(b.dataset.book))));
     modal.querySelectorAll('[data-data]').forEach(b => b.addEventListener('click', () => dataWin(byKey(b.dataset.data), open)));
     modal.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => histWin(byKey(b.dataset.hist), open)));
+    modal.querySelectorAll('[data-ren]').forEach(b => b.addEventListener('click', () => renameWin(b.dataset.ren)));
     modal.querySelector('#cl-find').addEventListener('click', () => findData(open));
     const pk = modal.querySelector('#cl-packages'); if (pk) pk.addEventListener('click', () => packagesWin());
     if (sup()) modal.querySelectorAll('[data-book], #cl-packages').forEach(x => x.remove());
+  }
+  // rename a client (20 Nov 2026, Ravi): every shoot of the client gets the new name, and 031 client_rename moves what hangs on the
+  // old name (family login and answers, package & payments, Work desk jobs, drive data, family photos) to the new one
+  function renameWin(key) {
+    const w = weddings(true).find(x => x.key === key); if (!w || sup()) return;
+    const modal = api.makeModal(api.modalHead('Rename client', w.events.length + ' shoot' + (w.events.length > 1 ? 's' : '') + ' of ' + w.title + ' get the new name. The family login and answers, package & payments, Work desk jobs, drive data and family photos move with it.') +
+      '<div class="sb-edit-form"><label class="sb-edit-label" for="rn-name">New name</label><input id="rn-name" class="sb-field" maxlength="120" data-nosuggest>' +
+      '<p class="sb-manage-sub" id="rn-note" style="margin:6px 0 0"></p><p class="sb-manage-sub" style="margin:6px 0 0">' + esc(w.events.map(e => e.name + ' (' + dayName(e.date) + ')').join(' · ')) + '</p></div>' +
+      '<div class="sb-modal-foot"><button type="button" class="secondary" id="rn-back">Back</button><button type="button" id="rn-go">Rename</button></div>', true);
+    const inp = modal.querySelector('#rn-name'); inp.value = w.events.find(e => e.wedding) ? w.events.find(e => e.wedding).wedding : w.title; setTimeout(() => { inp.focus(); inp.select(); }, 30);
+    const other = () => { const k = 'w:' + api.normalizeName(inp.value.trim()); return k !== w.key ? weddings(true).find(x => x.key === k) : null; };
+    inp.addEventListener('input', () => { const o = other(); modal.querySelector('#rn-note').textContent = o ? 'There is already a client called ' + o.title + ' (' + o.events.length + ' shoot' + (o.events.length > 1 ? 's' : '') + '): the two become one client.' : ''; });
+    modal.querySelector('#rn-back').addEventListener('click', open);
+    modal.querySelector('#rn-go').addEventListener('click', async () => {
+      const name = inp.value.trim().replace(/\s+/g, ' '); if (!name) { api.toast('Type the new name.'); return; }
+      const nk = 'w:' + api.normalizeName(name), o = other();
+      if (nk === w.key && w.events.every(e => e.wedding === name)) { open(); return; }
+      if (o && !confirm(w.title + ' and ' + o.title + ' will be one client called ' + name + '. Go ahead?')) return;
+      const btn = modal.querySelector('#rn-go'); btn.disabled = true; btn.textContent = 'Renaming…';
+      try {
+        if (nk !== w.key) {
+          const c = await app.client(), { data, error } = await c.rpc('client_rename', { p_old: w.key, p_new: nk, p_title: name, p_events: w.events.map(e => e.id) });
+          if (error || !data || data.error) { api.toast(error ? 'Could not rename: ' + (/client_rename/.test(error.message) ? 'run supabase/031_client_rename.sql first.' : error.message) : data.error); btn.disabled = false; btn.textContent = 'Rename'; return; }
+        }
+        w.events.forEach(e => { e.wedding = name; }); api.save(); if (window.MUTOS_APP && window.MUTOS_APP.changed) window.MUTOS_APP.changed(); api.renderBoard();
+        lastSig.delete(w.key); await load(); await sync();
+        api.toast(w.title + ' is now ' + name + ' (' + w.events.length + ' shoot' + (w.events.length > 1 ? 's' : '') + ').'); open();
+      } catch (e) { api.toast('Could not rename: ' + (e.message || e)); btn.disabled = false; btn.textContent = 'Rename'; }
+    });
   }
   function moneyPill(key) {
     if (sup()) return '';

@@ -9,7 +9,11 @@
       if (!who) { location.href = '/'; throw new Error('signed out'); }
       if (who.role !== 'owner' && who.role !== 'manager' && who.role !== 'supervisor') { location.href = app.homeFor(who.role); throw new Error('not staff'); }
       window.__mutosRole = who.role; // supervisor.js limits what a supervisor can change
-      return { who, c: await app.client() };
+      const c = await app.client();
+      // who I am on the board, for "My shoots" (20 Nov 2026): my Gmail, my login's person key, and the board names People links to me
+      window.__mutosMe = { email: who.email, personKey: who.personKey || null, crewIds: [] };
+      try { const { data } = await c.from('people').select('crew_keys').eq('email', who.email).maybeSingle(); if (data && Array.isArray(data.crew_keys)) window.__mutosMe.crewIds = data.crew_keys; } catch (e) {}
+      return { who, c };
     })();
     return ready;
   }

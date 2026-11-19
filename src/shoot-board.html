@@ -322,6 +322,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       <button type="button" class="sb-chip-btn" data-filter="clash">Double-booked</button>
       <button type="button" class="sb-chip-btn" data-filter="premium">Premium</button>
       <button type="button" class="sb-chip-btn" data-filter="week">This week</button>
+      <button type="button" class="sb-chip-btn" data-filter="mine" hidden title="Shoots you are on yourself (your name on the board with your Login Gmail)">My shoots</button>
     </div>
     <select class="sb-select" id="sb-season" aria-label="Season"></select>
     <div class="sb-chips" role="group" aria-label="View">
@@ -729,6 +730,12 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     });
     return map;
   }
+  // "My shoots" for the admin and the manager (20 Nov 2026, Ravi): the board names that carry the signed-in Gmail (Login Gmail on
+  // the name, or the names linked to them on People), plus the person key of their login
+  function canMine() { return !!window.MUTOS_APP && ['owner', 'manager'].includes(window.__mutosRole); }
+  function myKeys() { const me = window.__mutosMe || {}, k = new Set(); if (!me.email) return k;
+    state.shooters.concat(state.assistants).forEach(p => { if ((p.email && p.email === me.email) || (me.crewIds || []).includes(p.id)) k.add(normalizeName(p.name)); });
+    if (me.personKey) k.add(me.personKey); return k; }
   function peopleKeysUsedInEvent(ev) {
     const keys = new Set();
     ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p) keys.add(normalizeName(p.name)); });
@@ -4206,6 +4213,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     if (prefs.filter === 'wedding' && !isWeddingShoot(ev)) return false;
     if (prefs.filter === 'premium' && ev.tier !== 'Premium') return false;
     if (prefs.filter === 'week' && !(ev.date >= today && ev.date <= addDays(today, 6))) return false;
+    if (prefs.filter === 'mine') { const k = myKeys(); if (!k.size || ![...peopleKeysUsedInEvent(ev)].some(x => k.has(x))) return false; }
     if (searchText) { const words = searchText.split(/\s+/).filter(Boolean); const hay = eventSearchText(ev); if (!words.every(w => hay.includes(w))) return false; }
     return true;
   }
@@ -4255,6 +4263,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const rd = document.getElementById('sb-redo'); if (rd) rd.addEventListener('click', redo);
   }
   function updateToolbar() {
+    { const mb = document.querySelector('[data-filter="mine"]'); if (mb) mb.hidden = !canMine(); if (prefs.filter === 'mine' && !canMine()) prefs.filter = 'all'; }
     document.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === prefs.filter)));
     document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === prefs.view)));
     const sel = document.getElementById('sb-season');
@@ -4277,7 +4286,8 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       monthEl.appendChild(b);
     });
   }
-  document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { prefs.filter = b.dataset.filter; savePrefs(); renderBoard(); }));
+  document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { prefs.filter = b.dataset.filter; savePrefs(); renderBoard();
+    if (b.dataset.filter === 'mine' && !myKeys().size) toast('Your name is not on the board yet: in Manage shooters, put your Login Gmail on your name.', true); }));
   document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { prefs.view = b.dataset.view; savePrefs(); renderBoard(); }));
   document.getElementById('sb-season').addEventListener('change', e => { prefs.season = e.target.value; savePrefs(); renderBoard(); });
   let searchTimer;
@@ -4416,7 +4426,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       });
       const list = (arr, empty) => arr.length ? arr.map(x => escapeHtml(x.name)).join(', ') : empty;
       const bodies = freeGear.filter(eq => gearBucket(eq) === 'bodies'), lenses = freeGear.filter(eq => gearBucket(eq) === 'lenses'), other = freeGear.filter(eq => gearBucket(eq) === 'other');
-      let hh = '<div class="sb-date-head"><span class="sb-date-title">' + escapeHtml(formatDateLong(dateKey === 'No date set' ? null : dateKey)) + '</span><span class="sb-date-count">' + evs.length + (evs.length === 1 ? ' shoot' : ' shoots') + (matchIds ? ' · ' + evs.filter(e => matchIds.has(e.id)).length + ' ' + ({ short: 'short on crew', gear: 'short on gear', drone: 'short on drone', assist: 'short on assistant', clash: 'double-booked', premium: 'premium', wedding: evs.filter(e => matchIds.has(e.id)).length === 1 ? 'wedding' : 'weddings' })[prefs.filter] : '') + '</span>';
+      let hh = '<div class="sb-date-head"><span class="sb-date-title">' + escapeHtml(formatDateLong(dateKey === 'No date set' ? null : dateKey)) + '</span><span class="sb-date-count">' + evs.length + (evs.length === 1 ? ' shoot' : ' shoots') + (matchIds ? ' · ' + evs.filter(e => matchIds.has(e.id)).length + ' ' + ({ short: 'short on crew', gear: 'short on gear', drone: 'short on drone', assist: 'short on assistant', clash: 'double-booked', premium: 'premium', mine: 'yours', week: 'this week', wedding: evs.filter(e => matchIds.has(e.id)).length === 1 ? 'wedding' : 'weddings' })[prefs.filter] : '') + '</span>';
       if (dateKey !== 'No date set') {
         dayInfo[dateKey] = { free: freeShooters.map(p => p.name), freeIn: freeShooters.filter(p => !isFreelancer(p)).map(p => p.name), freeFl: freeShooters.filter(isFreelancer).map(p => p.name + (availOf(p, dateKey) === 'yes' ? ' (✓ free)' : availOf(p, dateKey) === 'asked' ? ' (asked)' : '')), freeAsst: freeAssistants.map(p => p.name), away: awayNames, travelling: [...travelling.entries()].map(([k, pl]) => displayName(k) + ' (' + pl + ')'), bodies: bodies.map(e => e.name) };
         hh += '<button type="button" class="sb-date-add" data-action="dayaway" title="Tick everyone who is not available on this date">✋ who is away</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="daystatus" title="A summary of this day to send to a team member: shoots, crew filled, who is free">➤ send day status</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="addhere">+ add shoot on this date</button>';

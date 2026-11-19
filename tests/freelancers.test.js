@@ -64,7 +64,15 @@ const server = http.createServer((q, s) => { const p = q.url.split('?')[0], f = 
   const ds = await p.evaluate(() => [...document.querySelectorAll('.sb-modal textarea, .sb-modal .sb-msg, .sb-modal pre')].map(x => x.value || x.textContent).join('\n'));
   ok(/Free in-house \(\d+\):/.test(ds) && new RegExp('Freelancers to ask \\(\\d+\\): .*' + set.f1 + ' \\(✓ free\\)').test(ds), 'the day status message lists in-house and freelancers to ask');
   await p.keyboard.press('Escape'); await sleep(300);
-  // saved: kept by cleanPerson across a reload
+  // "My shoots" for the admin / manager (20 Nov 2026, Ravi): the shoots of the board name that carries my Login Gmail
+  ok(await p.isVisible('[data-filter="mine"]'), 'the admin sees a "My shoots" filter');
+  const mine = await p.evaluate(s => { const A = window.__boardApi, st = A.state(), me = st.shooters.find(x => x.name === s.ih); me.email = 'o@x.com';
+    const e = st.events.find(x => x.id === s.E); e.assignments = [{ memberId: me.id, gearIds: [] }]; A.save(); A.renderBoard();
+    const k = A.normalizeName(me.name); return st.events.filter(x => A.isActive(x) && x.date >= A.todayStr() && x.assignments.some(a => { const q = st.shooters.find(y => y.id === a.memberId); return q && A.normalizeName(q.name) === k; })).map(x => x.id); }, set);
+  await p.click('[data-filter="mine"]'); await sleep(500);
+  const shown = await p.evaluate(() => [...document.querySelectorAll('.sb-card')].map(c => c.id.replace('card-', '')));
+  ok(shown.length > 0 && shown.includes(set.E) && shown.every(id => mine.includes(id)), 'My shoots: only the ' + shown.length + ' shoot(s) ' + set.ih + ' (my Gmail) is on, including Freelance Test Sangeet');
+  await p.click('[data-filter="all"]'); await sleep(300);
   await p.reload(); await p.waitForFunction(() => window.__boardApi, null, { timeout: 20000 });
   const kept = await p.evaluate(s => { const x = window.__boardApi.state().shooters.find(y => y.id === s.f1id); return x.freelance === true && (x.avail || {})[s.day] === 'yes'; }, set);
   ok(kept, 'after a reload: still a freelancer, still "said free" for that day');
