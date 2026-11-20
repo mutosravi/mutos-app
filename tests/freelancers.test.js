@@ -73,6 +73,12 @@ const server = http.createServer((q, s) => { const p = q.url.split('?')[0], f = 
   const shown = await p.evaluate(() => [...document.querySelectorAll('.sb-card')].map(c => c.id.replace('card-', '')));
   ok(shown.length > 0 && shown.includes(set.E) && shown.every(id => mine.includes(id)), 'My shoots: only the ' + shown.length + ' shoot(s) ' + set.ih + ' (my Gmail) is on, including Freelance Test Sangeet');
   await p.click('[data-filter="all"]'); await sleep(300);
+  // and a "My shoots" tile on Home → Shoots desk
+  await p.goto('http://localhost:8798/board.html'); await p.waitForSelector('#mh-desks .desk', { timeout: 20000 });
+  await p.click('[data-desk="shoots"]'); await p.waitForSelector('#mh-desk [data-tile="mine"]');
+  await p.click('#mh-desk [data-tile="mine"]'); await sleep(800);
+  ok(await p.getAttribute('[data-filter="mine"]', 'aria-pressed') === 'true' && (await p.$$('.sb-card')).length > 0, 'Home → Shoots desk → My shoots opens the board with My shoots on');
+  await p.click('[data-filter="all"]'); await p.goto('http://localhost:8798/board.html#board'); await p.waitForFunction(() => window.__boardApi, null, { timeout: 20000 });
   await p.reload(); await p.waitForFunction(() => window.__boardApi, null, { timeout: 20000 });
   const kept = await p.evaluate(s => { const x = window.__boardApi.state().shooters.find(y => y.id === s.f1id); return x.freelance === true && (x.avail || {})[s.day] === 'yes'; }, set);
   ok(kept, 'after a reload: still a freelancer, still "said free" for that day');

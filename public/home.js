@@ -114,7 +114,7 @@
   // Home shows a few desks; each desk opens its own tools (decided 6 Nov: "main categories, then sub categories")
   const DESKS = [
     { k: 'shoots', ic: 'board', title: 'Shoots desk', cls: 'main', tools: [
-      ['board', 'board', 'Shoot board', 'main'], ['sb-new-wedding', 'plus', 'New client'], ['sb-manage-shooters', 'crew', 'Crew'], ['sb-manage-assistants', 'person', 'Assistants'],
+      ['board', 'board', 'Shoot board', 'main'], ['mine', 'person', 'My shoots'], ['sb-new-wedding', 'plus', 'New client'], ['sb-manage-shooters', 'crew', 'Crew'], ['sb-manage-assistants', 'person', 'Assistants'],
       ['sb-rentals', 'truck', 'Rentals'], ['sb-callsheet', 'sheet', 'Call sheet'], ['sb-prewed', 'ring', 'Pre-wedding'], ['sb-planner', 'drone', 'Drones & freelancers'],
       ['sb-workload', 'bars', 'Workload'], ['sb-billing', 'rupee', 'Billing'], ['sync', 'sync', 'Sync Team Alignment'], ['/crew.html?preview=1', 'eye', 'Crew view'], ['sb-history', 'list', 'History']] },
     { k: 'work', ic: 'film', title: 'Work desk', tools: [
@@ -166,6 +166,7 @@
   function runTile(k) {
     const a = api();
     if (k === 'board') toBoard(() => window.scrollTo(0, 0));
+    else if (k === 'mine') toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="mine"]'); if (f && f.getAttribute('aria-pressed') !== 'true') f.click(); window.scrollTo(0, 0); });   // My shoots (20 Nov 2026)
     else if (k === 'sync') { if (a) { a.syncTeamSheet(); toast('Syncing Team Alignment…'); } }
     else if (k === 'clients') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.open();
     else if (k === 'clientdata') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.data && window.MUTOS_CLIENTS.data();
