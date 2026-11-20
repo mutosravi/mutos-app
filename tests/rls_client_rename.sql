@@ -15,7 +15,7 @@ insert into bookings (wedding_key, title, package_name, items, total, plan, grac
 insert into booking_payments (wedding_key, amount, mode) values ('w:shrama', 40000, 'UPI');
 insert into work_jobs (wedding_key, wedding_title, wedding_date, kind, fn_label, assignee, due) values ('w:shrama', 'Shrama', '2026-12-01', 'reel', 'Haldi', (select id from people where name = 'Hamza'), '2026-12-20');
 insert into drives (name, kind) values ('M 6', 'SSD');
-insert into drive_items (drive, wedding_key, title, what, path) values ((select id from drives where name = 'M 6'), 'w:shrama', 'Shrama · Haldi', 'raw', 'Shrama/Haldi');
+insert into drive_items (drive, wedding_key, title, what) values ((select id from drives where name = 'M 6'), 'w:shrama', 'Shrama · Haldi', 'raw');
 set role authenticated; set request.jwt.claims = '{"email":"hamza@x.com"}';
 select pg_temp.check((client_rename('w:shrama', 'w:sharma', 'Sharma', array['e1','e2'])) ? 'error', 'crew cannot rename a client');
 set request.jwt.claims = '{"email":"m@x.com"}';

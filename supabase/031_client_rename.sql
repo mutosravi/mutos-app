@@ -31,15 +31,20 @@ begin
   update public.bookings set wedding_key = n where wedding_key = o; get diagnostics c = row_count; moved := moved || jsonb_build_object('package', c);
   update public.work_jobs set wedding_key = n, wedding_title = t where wedding_key = o; get diagnostics c = row_count; moved := moved || jsonb_build_object('jobs', c);
   update public.drive_items set wedding_key = n where wedding_key = o; get diagnostics c = row_count; moved := moved || jsonb_build_object('drive_lines', c);
-  update public.uploads set wedding_key = n where wedding_key = o; get diagnostics c = row_count; moved := moved || jsonb_build_object('photos', c);
-  update public.client_apply_log set wedding_key = n where wedding_key = o;
+  -- tables from later files (026 photos, 017 apply log) may not be in every database yet: skipped when missing
+  if to_regclass('public.uploads') is not null then
+    update public.uploads set wedding_key = n where wedding_key = o; get diagnostics c = row_count; moved := moved || jsonb_build_object('photos', c);
+  end if;
+  if to_regclass('public.client_apply_log') is not null then update public.client_apply_log set wedding_key = n where wedding_key = o; end if;
   perform set_config('mutos.quiet', '', true);
 
+  if to_regclass('public.client_log') is not null then
   foreach e in array coalesce(p_events, '{}') loop
     if length(e) between 1 and 100 then
       insert into public.client_log (event_id, wedding, kind, what) values (e, t, 'rename', left('Client renamed to ' || t || ' by ' || public.me_label(), 600));
     end if;
   end loop;
+  end if;
   return jsonb_build_object('ok', true, 'moved', moved);
 end $$;
 revoke all on function public.client_rename(text, text, text, text[]) from public, anon;
