@@ -107,6 +107,8 @@ function rpc(fn, a, e) {
     const id = uid(); T.card_copies.set(id, { id, card: k.id, cycle: k.cycle, backup, drive: d.id, drive_name: d.name, folder: a.p_folder, files: a.p_files, size_label: a.p_size, items, by_email: e, at: now() });
     Object.assign(k, { data: backup ? 'copied' : 'single', data_since: null }); log(k.id, e, (backup ? 'Backup copied to ' : 'Copied to ') + d.name); return { ok: true, backup };
   }
+  if (fn === 'card_no_backup') { if (!staff(e)) return err('Only the admin or the manager can decide that no backup is needed.'); const k = T.cards.get(a.p_card); if (k.data !== 'single') return err('not single');
+    k.data = a.p_free ? 'empty' : 'copied'; log(k.id, e, 'No backup needed (' + (a.p_why || 'No backup needed') + ')'); return { ok: true, data: k.data }; }
   if (fn === 'card_mark_empty') { if (!staff(e)) return err('no'); Object.assign(T.cards.get(a.p_card), { data: 'empty' }); return { ok: true }; }
   if (fn === 'card_problem') {
     const k = T.cards.get(a.p_card);
@@ -309,6 +311,11 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await open(o, 'all'); await pick(o, 'C02'); await o.click('#sel-give');
   ok(/only one copy, backup not done yet/.test(await o.textContent('.sheet')), 'giving out a single-copy card shows a gentle warning');
   await o.click('#g-cx');
+  // no backup needed (032): the admin marks C02 (one copy) as enough → green
+  await open(o, 'all'); await o.click('[data-c="' + K('C02').id + '"]'); await o.waitForSelector('#k-nobk');
+  await o.click('#k-nobk'); await o.fill('#nb-why', 'test shoot'); await o.click('#nb-copied'); await sleep(400);
+  ok(K('C02').data === 'copied' && [...T.card_log.values()].some(l => l.card === K('C02').id && /No backup needed \(test shoot\)/.test(l.what)), '"No backup needed" turns C02 (single) into Copied ✓, with the reason in its history');
+  K('C02').data = 'single';   // the rest of the story expects C02 with one copy
   // problems
   await o.click('[data-c="' + K('C04').id + '"]');
   ok(!(await o.$('#k-copy')), 'nothing to copy on an empty card');

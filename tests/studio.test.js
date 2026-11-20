@@ -187,6 +187,12 @@ function rpc(fn, a, e) {
       const id = crypto.randomUUID(); T.drive_items.set(id, Object.assign({}, it, { id, drive: dst.id, what: 'backup', from_item: it.id, note: 'Backup of ' + T.drives.get(it.drive).name, added_by: e, added_at: new Date().toISOString() }));
       dlog(it.drive, e, 'Backed up ' + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + ' backed up here'); return { data: { ok: true, id, cards: [], cards_copied: 0 }, error: null };
     }
+    if (fn === 'drive_no_backup' || fn === 'drive_need_backup') {   // 032 (cards part in rls_no_backup.sql)
+      if (!staff(e)) return no('Only the admin or the manager can decide that no backup is needed.');
+      const it = T.drive_items.get(a.p_item); if (!it) return no('Unknown folder.');
+      if (fn === 'drive_no_backup') { it.no_backup = true; it.no_backup_why = a.p_why || 'No backup needed'; dlog(it.drive, e, 'No backup needed for ' + it.title); return { data: { ok: true, cards: [] }, error: null }; }
+      it.no_backup = false; it.no_backup_why = null; dlog(it.drive, e, 'Backup needed again for ' + it.title); return { data: { ok: true }, error: null };
+    }
     if (fn === 'drive_set_paths') {   // 030
       const dr = T.drives.get(a.p_drive), me = [...T.people.values()].find(x => x.email === e);
       if (!dr || !(staff(e) || (dr.holder && me && dr.holder === me.id))) return no('Only the studio or whoever has the drive can move its folders.');
@@ -717,6 +723,14 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     for (let i = 0; i < 40; i++) { const id = crypto.randomUUID(); T.drive_items.set(id, { id, drive: d6, title: 'Big · Card ' + i, what: 'raw', path: 'Big/Haldi', size_label: '2 GB', files: 10, added_at: '2026-11-18T00:00:00Z', removed_at: null }); }
     await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + d6 + '"]'); await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub[data-cd="Big"]');
     ok(/Big.*40 items · 400 files · 80 GB/s.test(await owner.textContent('.dsub[data-cd="Big"]')) && /Late.*5 items/s.test(await owner.textContent('.dsub[data-cd="Late"]')), 'a register with more than 1000 lines: M 6 still shows all 40 card folders in Big and the 5 in Late (read in pages of 1000)');
+    // 032: a folder that needs no backup
+    { const one = [...T.drive_items.values()].find(x => x.drive === d6 && x.title === 'Big · Card 0');
+      await owner.click('.dsub[data-cd="Big"]'); await owner.click('.dsub[data-cd="Big/Haldi"]'); await owner.click('.dfolder[data-fo="' + one.id + '"]'); await owner.waitForSelector('#fo-nbc');
+      await owner.fill('#fo-nbw', 'reel only'); await owner.click('#fo-nbc'); await owner.waitForSelector('.dfolder[data-fo="' + one.id + '"] .pill.mute');
+      ok(one.no_backup && one.no_backup_why === 'reel only' && /no backup needed/.test(await owner.textContent('.dfolder[data-fo="' + one.id + '"]')), 'No backup needed: the folder shows "no backup needed" instead of "no backup"');
+      await owner.click('.dfolder[data-fo="' + one.id + '"]'); await owner.waitForSelector('#fo-needbk'); await owner.click('#fo-needbk'); await owner.waitForSelector('.dfolder[data-fo="' + one.id + '"] .pill.wait');
+      ok(!one.no_backup, '"Needs a backup after all" puts it back');
+      await owner.click('.dcrumbs [data-cd=""]'); await owner.waitForSelector('.dsub[data-cd="Late"]'); }
     // 030: a folder named wrong → rename it; then move two folders into another one
     await owner.check('.dpick[data-pk="f:Late"]'); await owner.waitForSelector('#dmv:not([hidden]) #mv-namebox:not([hidden])');
     ok(await owner.inputValue('#mv-name') === 'Late' && /1 folder selected/.test(await owner.textContent('#mv-n')), 'tick a folder: the move bar opens with its name ready to change');

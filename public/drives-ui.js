@@ -143,8 +143,9 @@
     const under = (it, P) => !P || pathOf(it) === P || pathOf(it).startsWith(P + '/');
     const sumGb = list => list.reduce((n, it) => n + gbOf(it.size_label), 0), sumFiles = list => list.reduce((n, it) => n + (filesOf(it) || 0), 0);
     function backupBadge(list) {
-      const raw = list.filter(it => it.what === 'raw'), safe = raw.filter(it => copiesOf(it).length);
+      const raw = list.filter(it => it.what === 'raw'), safe = raw.filter(it => copiesOf(it).length || it.no_backup);
       if (!raw.length) return list.some(it => copiesOf(it).length) ? '<span class="pill ok">✓ copies</span>' : '';
+      if (safe.length === raw.length && raw.every(it => it.no_backup && !copiesOf(it).length)) return '<span class="pill mute">no backup needed</span>';
       return safe.length === raw.length ? '<span class="pill ok">✓ backed up</span>' : safe.length ? '<span class="pill wait">' + (raw.length - safe.length) + ' without backup</span>' : '<span class="pill wait">no backup</span>';
     }
     function drawTree(bg, d, its, P) {
@@ -165,7 +166,7 @@
       const itemRow = it => { const f = filesOf(it), cp = copiesOf(it);
         return wrap('i:' + it.id, '<button type="button" class="rep dfolder" data-fo="' + it.id + '" style="display:flex;width:100%;text-align:left;justify-content:space-between;gap:8px;align-items:center;border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:8px 2px">' +
           '<span><span aria-hidden="true">🗂</span> ' + esc(it.title) + '<br><span class="meta" style="display:inline">' + esc([whatLabel(it.what), f != null ? f + ' files' : '', it.size_label || ''].filter(Boolean).join(' · ')) + '</span></span>' +
-          '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : it.what === 'raw' ? '<span class="pill wait">no backup</span>' : '') + ' ›</span></button>'); };
+          '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : it.no_backup ? '<span class="pill mute">no backup needed</span>' : it.what === 'raw' ? '<span class="pill wait">no backup</span>' : '') + ' ›</span></button>'); };
       const others = drives.filter(x => x.id !== d.id && x.status === 'in_use');
       box.innerHTML = head + (its.length ? crumbs : '') +
         (!its.length ? '<p class="sub">Nothing listed yet.</p>' : !here.length ? '<p class="sub">This folder is empty.</p>' :
@@ -230,7 +231,11 @@
         (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-save" style="width:100%">Save</button>' : '') +
         '<h4>Copies</h4>' + (cp.length ? cp.map(x => { const dd = drives.find(y => y.id === x.drive) || {}; return '<div class="rep">✓ <b>' + esc(dd.name || '?') + '</b> · ' + esc(whatLabel(x.what)) + ' · ' + esc(holderText(dd)) + '</div>'; }).join('') : '<p class="sub">' + (it.what === 'raw' ? 'Only here. Back it up to another drive.' : 'Only here.') + '</p>') +
         (ks.length ? '<h4>Cards in this folder</h4>' + ks.map(k => { const st = ST[k.data] || ['mute', k.data]; return '<span class="pill ' + st[0] + '" style="margin:0 6px 6px 0;display:inline-block">' + esc(k.code) + ' · ' + esc(st[1]) + '</span>'; }).join('') : '') +
-        (opts.staff && others.length ? '<h4>Back up this folder</h4><p class="sub">Copy the folder in Finder first, then record it here. The cards in it that have only one copy turn <b>Copied ✓</b> (safe to format) by themselves.</p>' +
+        // no backup needed (032): the folder shows it, and its cards with one copy turn copied or free
+        (opts.staff && it.what === 'raw' && !cp.length ? (it.no_backup ? '<div class="ans" style="margin:10px 0 0">No backup needed' + (it.no_backup_why ? ': ' + esc(it.no_backup_why) : '') + ' <button type="button" class="x" id="fo-needbk">Needs a backup after all</button></div>'
+          : '<h4>No backup needed?</h4><p class="sub">When one copy is enough. Its cards with one copy stop showing amber.</p><div class="form-grid"><label class="wide">Why<input class="in" id="fo-nbw" maxlength="200" placeholder="e.g. client took the raw, reel only"></label></div>' +
+            '<div class="pillrow"><button type="button" class="pillbtn light" id="fo-nbc">No backup · cards copied</button><button type="button" class="pillbtn light" id="fo-nbf">No backup · cards free</button></div>') : '') +
+        (opts.staff && others.length && !it.no_backup ? '<h4>Back up this folder</h4><p class="sub">Copy the folder in Finder first, then record it here. The cards in it that have only one copy turn <b>Copied ✓</b> (safe to format) by themselves.</p>' +
           '<div class="form-grid"><label class="wide">Backed up to<select class="in" id="fo-to"><option value="">Pick the drive</option>' + others.map(x => '<option value="' + x.id + '">' + esc(x.name + (x.size_label ? ' · ' + x.size_label : '') + ' · ' + holderText(x)) + '</option>').join('') + '</select></label></div>' +
           '<button type="button" class="pillbtn" id="fo-bk" style="width:100%">Record the backup</button>' : '') +
         '<div class="pillrow" style="margin-top:12px">' + (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-mv">Move / copy</button><button type="button" class="pillbtn light" id="fo-rm">Remove</button>' : '') + '<button type="button" class="pillbtn light" id="fo-x">Close</button></div>');
@@ -251,6 +256,10 @@
         toast('Backed up to ' + dn + '.' + (r.cards_copied ? ' ' + r.cards.join(', ') + (r.cards_copied > 1 ? ' are' : ' is') + ' now Copied ✓ (safe to format).' : ''));
         await back();
       });
+      const noBk = async free => { const r = await rpc('drive_no_backup', { p_item: it.id, p_why: (g('#fo-nbw') || {}).value || '', p_free: free }); if (!r) return;
+        toast('No backup needed for ' + it.title + '.' + (r.cards && r.cards.length ? ' ' + r.cards.join(', ') + (r.cards.length > 1 ? ' are' : ' is') + ' now ' + (free ? 'free' : 'Copied ✓') + '.' : '')); await back(); };
+      on('#fo-nbc', () => noBk(false)); on('#fo-nbf', () => noBk(true));
+      on('#fo-needbk', async () => { if (!(await rpc('drive_need_backup', { p_item: it.id }))) return; toast(it.title + ' needs a backup again.'); await back(); });
       on('#fo-mv', () => { if (parent) parent.remove(); moveItem(it, d, bg); });
       on('#fo-rm', () => { if (parent) parent.remove(); removeItem(it, d, bg); });
     }

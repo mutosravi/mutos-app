@@ -350,8 +350,8 @@
     const c = await app.client(), q = async p => { try { const r = await p; return r && !r.error ? r.data || [] : []; } catch (e) { return []; } };
     const evIds = w.events.map(e => e.id), tl = w.title.toLowerCase();
     const [linked, loose, drives, dir, uses] = await Promise.all([
-      q(c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').eq('wedding_key', w.key)),
-      q((async () => { const out = []; for (let from = 0; from < 200000; from += 1000) { const r = await c.from('drive_items').select('id, drive, wedding_key, title, what, size_label, note, removed_at, removed_why, added_at').is('wedding_key', null).ilike('title', '%' + w.title.replace(/[%_]/g, '') + '%').order('id').range(from, from + 999); if (r.error) return from ? { data: out } : r; out.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; } return { data: out }; })()),
+      q(c.from('drive_items').select('*').eq('wedding_key', w.key)),
+      q((async () => { const out = []; for (let from = 0; from < 200000; from += 1000) { const r = await c.from('drive_items').select('*').is('wedding_key', null).ilike('title', '%' + w.title.replace(/[%_]/g, '') + '%').order('id').range(from, from + 999); if (r.error) return from ? { data: out } : r; out.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; } return { data: out }; })()),
       q(c.from('drives').select('id, name, holder, status, owner_type')),
       q(c.rpc('people_directory')),
       q(c.from('card_uses').select('id, card, cycle, event_id, shoot, media, style, used').in('event_id', evIds))
@@ -381,7 +381,7 @@
       if (past && !mine.length && !open.length) flag += '<div style="color:#7a2d1e;font-size:12.5px"><b>⚠ Nothing listed on any drive</b> for this function.</div>';
       // a raw line is safe when a backup of the same thing (same title) is on another drive
       // (from a card: the same card and round has a backup copy; typed by hand: a backup line with the same title on another drive)
-      const lone = raw.filter(i => { const cp = itemCopy.get(i.id); return cp ? !copies.some(x => x.card === cp.card && x.cycle === cp.cycle && x.backup) : !bk.some(b => b.title === i.title && b.drive !== i.drive); });
+      const lone = raw.filter(i => !i.no_backup).filter(i => { const cp = itemCopy.get(i.id); return cp ? !copies.some(x => x.card === cp.card && x.cycle === cp.cycle && x.backup) : !bk.some(b => b.title === i.title && b.drive !== i.drive); });
       const cardOf = i => { const cp = itemCopy.get(i.id), k = cp && cards.find(x => x.id === cp.card); return k ? ' · card ' + k.code : ''; };
       if (lone.length) flag += '<div style="color:#5c4410;font-size:12.5px"><b>⚠ No backup</b> of ' + esc(lone.map(i => i.title + cardOf(i) + ' (' + drv(i.drive).name + ')').join(', ')) + '</div>';
       if (flag) warn++;
