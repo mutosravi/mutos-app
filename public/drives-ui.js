@@ -165,7 +165,7 @@
       const here = its.filter(it => under(it, P)), sub = new Map(), inside = [];
       here.forEach(it => { const rest = P ? pathOf(it).slice(P.length + 1) : pathOf(it); if (!rest) { inside.push(it); return; } const k = rest.split('/')[0]; if (!sub.has(k)) sub.set(k, []); sub.get(k).push(it); });
       const segs = P ? P.split('/') : [];
-      const crumbs = '<div class="dcrumbs" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:8px 0 4px;font-size:14px"><button type="button" class="x" data-cd="" style="font-weight:700">' + esc(d.name) + '</button>' +
+      const crumbs = '<div class="dcrumbs" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:8px 0 4px;padding:6px 0;font-size:14px;position:sticky;top:0;z-index:2;background:var(--card,#fff)">💽 <button type="button" class="x" data-cd="" style="font-weight:700">' + esc(d.name) + '</button>' +
         segs.map((x, i) => ' › <button type="button" class="x" data-cd="' + esc(segs.slice(0, i + 1).join('/')) + '"' + (i === segs.length - 1 ? ' style="font-weight:700;text-decoration:none"' : '') + '>' + esc(x) + '</button>').join('') + '</div>';
       const head = '<h4>On this drive · ' + its.length + ' item' + (its.length === 1 ? '' : 's') + '</h4>' + (its.length ? '<div class="meta" id="dstore">' + (cap ? gbText(used) + ' used of ' + gbText(cap) + ' · ' + gbText(Math.max(0, cap - used)) + ' free' : gbText(used) + ' listed') + (sized < its.length ? ' (' + (its.length - sized) + ' without a size)' : '') + '</div>' +
         (cap ? '<div style="margin:6px 0 2px;height:8px;border-radius:4px;background:var(--sand,#eee);overflow:hidden"><i style="display:block;height:100%;width:' + Math.min(100, Math.round(used / cap * 100)) + '%;background:' + (used / cap > 0.9 ? 'var(--no-ink,#b23a26)' : 'var(--rose,#9e4f62)') + '"></i></div>' : '') : '');
@@ -243,7 +243,11 @@
       if (!it) return;
       const f = filesOf(it), cp = copiesOf(it), ks = cardsIn(it), others = drives.filter(x => x.id !== d.id && x.status === 'in_use' && !cp.some(y => y.drive === x.id));
       const ST = { empty: ['ok', 'Free'], hold: ['no', 'Hold · not copied'], single: ['wait', 'Single copy'], copied: ['ok', 'Copied ✓'] };
-      const bg = W.sheet('<h3>🗂 ' + esc(it.title) + '</h3><p class="sub" style="margin:-4px 0 8px">' + esc([whatLabel(it.what), 'on ' + d.name, 'added ' + when(it.added_at)].join(' · ')) + '</p>' +
+      // where this line sits, like Finder's path bar: tap the drive or any folder to go there
+      const segs = pathOf(it).split('/'), crumb = (label, P, last) => '<button type="button" class="x" data-go="' + esc(P) + '"' + (last ? ' style="font-weight:700"' : '') + '>' + esc(label) + '</button>';
+      const crumbs = '<div class="dcrumbs fo-crumbs" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:0 0 6px;font-size:14px">💽 ' + crumb(d.name, '', false) +
+        segs.map((x, i) => ' › ' + crumb(x, segs.slice(0, i + 1).join('/'), i === segs.length - 1)).join('') + '</div>';
+      const bg = W.sheet(crumbs + '<h3>🗂 ' + esc(it.title) + '</h3><p class="sub" style="margin:-4px 0 8px">' + esc([whatLabel(it.what), 'on ' + d.name, 'added ' + when(it.added_at)].join(' · ')) + '</p>' +
         '<div class="form-grid"><label class="wide">Folder<input class="in" id="fo-p" maxlength="200" value="' + esc(it.path || '') + '" placeholder="e.g. Sharma/Haldi/Candid"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Files<input class="in" id="fo-f" type="number" min="0" inputmode="numeric" value="' + (f != null ? f : '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Size<input class="in" id="fo-s" maxlength="20" value="' + esc(it.size_label || '') + '" placeholder="e.g. 120 GB"' + (canEdit(d) ? '' : ' disabled') + '></label>' +
         '<label class="wide">Note<input class="in" id="fo-n" maxlength="300" value="' + esc(it.note || '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label></div>' +
         (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-save" style="width:100%">Save</button>' : '') +
@@ -257,6 +261,10 @@
           '<div class="form-grid"><label class="wide">Backed up to<select class="in" id="fo-to"><option value="">Pick the drive</option>' + others.map(x => '<option value="' + x.id + '">' + esc(x.name + (x.size_label ? ' · ' + x.size_label : '') + ' · ' + holderText(x)) + '</option>').join('') + '</select></label></div>' +
           '<button type="button" class="pillbtn" id="fo-bk" style="width:100%">Record the backup</button>' : '') +
         '<div class="pillrow" style="margin-top:12px">' + (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-mv">Move / copy</button><button type="button" class="pillbtn light" id="fo-rm">Remove</button>' : '') + '<button type="button" class="pillbtn light" id="fo-x">Close</button></div>');
+      bg.querySelectorAll('.fo-crumbs [data-go]').forEach(b => b.addEventListener('click', () => {
+        bg.remove(); if (!parent || !document.body.contains(parent)) { openDrive(d, b.dataset.go); return; }
+        drawTree(parent, d, items.filter(x => x.drive === d.id), b.dataset.go); const t = parent.querySelector('#dtree'); if (t) t.scrollIntoView({ block: 'start' });
+      }));
       const g = s2 => bg.querySelector(s2), on = (s2, fn) => { const x = g(s2); if (x) x.addEventListener('click', fn); };
       const back = async P2 => { bg.remove(); if (parent) parent.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id), P2 != null ? P2 : (it.path || '')); };
       on('#fo-x', () => bg.remove());

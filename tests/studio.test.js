@@ -803,6 +803,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     { const one = [...T.drive_items.values()].find(x => x.drive === d6 && x.title === 'Big · Card 3');
       await owner.goto(B + '/desk.html?tab=drives&drive=' + d6 + '&item=' + one.id); await owner.waitForSelector('#fo-p', { timeout: 20000 });
       ok(await owner.inputValue('#fo-p') === one.path && /M 6/.test(await owner.evaluate(() => [...document.querySelectorAll('.sheet-bg h3')].map(h => h.textContent).join(' '))), 'link from Client data: M 6 opens at ' + one.path + ' with that line\'s panel (check, copy, back up, move)');
+      // the path bar on top, like Finder: 💽 M 6 › 2026 › Big › Haldi; tap a folder or the drive to go there
+      ok(/M 6\s*›\s*2026\s*›\s*Big\s*›\s*Haldi/.test(await owner.textContent('.fo-crumbs')), 'the panel shows the path: M 6 › 2026 › Big › Haldi');
+      await owner.click('.fo-crumbs [data-go="2026"]'); await owner.waitForSelector('.dsub[data-cd="2026/Big"]');
+      ok(!(await owner.$('#fo-p')) && /M 6.*2026/s.test(await owner.textContent('#dtree .dcrumbs')), 'tap "2026": the panel closes and the drive shows the 2026 folder');
+      await owner.click('#dtree .dcrumbs [data-cd=""]'); await owner.waitForSelector('.dsub[data-cd="2026"]');
+      ok(true, 'tap the drive name: back to the top of M 6');
       await owner.evaluate(() => document.querySelectorAll('.sheet-bg').forEach(x => x.remove()));
       await owner.goto(B + '/desk.html?tab=drives'); await owner.waitForSelector('#tab-drives [data-d="' + d6 + '"]'); await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub'); }
     await owner.click('#dclose');
