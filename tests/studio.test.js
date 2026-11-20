@@ -214,6 +214,18 @@ function rpc(fn, a, e) {
       back.forEach(it => { it.removed_at = null; it.removed_why = null; }); dlog(a.p_drive, e, 'Data brought back: ' + back.length + ' items (' + a.p_why + ')');
       return { data: { ok: true, restored: back.length }, error: null };
     }
+    if (fn === 'drive_folders_to_drive') {   // 034 (cards and exact rules in rls_drive_to_drive.sql)
+      const src = T.drives.get(a.p_drive), dst = T.drives.get(a.p_to), me = [...T.people.values()].find(x => x.email === e), ms = a.p_moves || [];
+      if (!dst || dst.id === src.id) return no('That is the same drive.');
+      if (a.p_copy ? !staff(e) : !(staff(e) || (me && (src.holder === me.id || dst.holder === me.id)))) return no('Not allowed.');
+      if (ms.some(m => { const it = T.drive_items.get(m.id); return !it || it.drive !== src.id || it.removed_at || !String(m.path || '').split('/').filter(Boolean).length; })) return no('Some of these cannot go.');
+      let n = 0;
+      ms.forEach(m => { const it = T.drive_items.get(m.id), id = crypto.randomUUID();
+        T.drive_items.set(id, Object.assign({}, it, { id, drive: dst.id, path: m.path, what: a.p_copy ? 'backup' : it.what, from_item: it.id, removed_at: null, removed_why: null, moved_to: null, added_by: e, added_at: new Date().toISOString() }));
+        if (!a.p_copy) Object.assign(it, { removed_at: new Date().toISOString(), removed_why: 'moved', moved_to: id }); n++; });
+      dlog(src.id, e, (a.p_copy ? 'Copied ' : 'Moved ') + n + ' items to ' + dst.name); dlog(dst.id, e, n + ' items here from ' + src.name);
+      return { data: { ok: true, done: n, skipped: 0, cards: [] }, error: null };
+    }
     if (fn === 'drive_set_paths') {   // 030
       const dr = T.drives.get(a.p_drive), me = [...T.people.values()].find(x => x.email === e);
       if (!dr || !(staff(e) || (dr.holder && me && dr.holder === me.id))) return no('Only the studio or whoever has the drive can move its folders.');
@@ -811,6 +823,20 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
       ok(true, 'tap the drive name: back to the top of M 6');
       await owner.evaluate(() => document.querySelectorAll('.sheet-bg').forEach(x => x.remove()));
       await owner.goto(B + '/desk.html?tab=drives'); await owner.waitForSelector('#tab-drives [data-d="' + d6 + '"]'); await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub'); }
+    // 034: tick a folder → "To another drive" → M 1, into Archive, copied: the lines are on M 1 in Archive/Latest/Haldi as backups
+    { const m1 = DRV('M 1').id;
+      await owner.click('.dsub[data-cd="2026"]'); await owner.waitForSelector('.dpick[data-pk="f:2026/Latest"]');
+      await owner.check('.dpick[data-pk="f:2026/Latest"]'); await owner.click('#xd-go'); await owner.waitForSelector('#xd-ok');
+      await owner.selectOption('#xd-to', m1); await owner.fill('#xd-path', 'Archive'); await owner.selectOption('#xd-mode', 'copy');
+      ok(/Goes to M 1 › Archive › Latest/.test(await owner.textContent('#xd-hint')), 'To another drive: "Goes to M 1 › Archive › Latest"');
+      await owner.click('#xd-ok'); await owner.waitForFunction(() => /5 items copied to M 1/.test(document.getElementById('toast').textContent));
+      const onM1 = [...T.drive_items.values()].filter(i => i.drive === m1 && /^Archive\//.test(i.path || ''));
+      ok(onM1.length === 5 && onM1.every(i => i.path === 'Archive/Latest/Haldi' && i.what === 'backup') && [...T.drive_items.values()].filter(i => i.drive === d6 && /^2026\/Latest/.test(i.path) && !i.removed_at).length === 5, 'copied: 5 backup lines on M 1 in Archive/Latest/Haldi, M 6 unchanged');
+      await owner.waitForSelector('.dsub[data-cd="Archive/Latest"]');
+      ok(/M 1/.test(await owner.evaluate(() => [...document.querySelectorAll('.sheet-bg h3')].map(h => h.textContent).join(' '))), 'and M 1 opens at Archive');
+      onM1.forEach(i => T.drive_items.delete(i.id));
+      await owner.evaluate(() => document.querySelectorAll('.sheet-bg').forEach(x => x.remove()));
+      await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub'); }
     await owner.click('#dclose');
     [...T.drive_items.values()].filter(i => i.drive === d6 || /^Old \d/.test(i.title)).forEach(i => T.drive_items.delete(i.id)); T.drives.delete(d6); }
   await kul.reload(); await kul.waitForSelector('#tab-drives [data-d]'); await kul.click('[data-d="' + DRV('M 1').id + '"]');

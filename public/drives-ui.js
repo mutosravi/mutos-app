@@ -190,7 +190,7 @@
         box.insertAdjacentHTML('beforeend', '<div class="card" id="dmv" hidden style="margin-top:10px;padding:10px 12px;position:sticky;bottom:0;background:var(--card,#fff)"><b id="mv-n"></b>' +
           '<div class="form-grid" style="margin-top:6px"><label class="wide" id="mv-namebox" hidden>New name<input class="in" id="mv-name" maxlength="80" data-nosuggest></label>' +
           '<label class="wide">Move to (a folder on ' + esc(d.name) + ')<input class="in" id="mv-to" maxlength="200" list="dl-mvto" placeholder="Leave empty for the top of the drive" data-nosuggest><datalist id="dl-mvto">' + allFolders.map(x => '<option value="' + esc(x) + '">').join('') + '</datalist></label></div>' +
-          '<div class="pillrow"><button type="button" class="pillbtn" id="mv-go">Move</button><button type="button" class="pillbtn light" id="del-go">🗑 Deleted from drive</button><button type="button" class="pillbtn light" id="mv-x">Cancel</button></div></div>');
+          '<div class="pillrow"><button type="button" class="pillbtn" id="mv-go">Move</button><button type="button" class="pillbtn light" id="xd-go">💽 To another drive</button><button type="button" class="pillbtn light" id="del-go">🗑 Deleted from drive</button><button type="button" class="pillbtn light" id="mv-x">Cancel</button></div></div>');
         const bar = box.querySelector('#dmv'), picks = () => [...box.querySelectorAll('.dpick:checked')].map(x => x.dataset.pk);
         const show = () => { const pk = picks(), nf = pk.filter(k => k[0] === 'f').length, ni = pk.length - nf; bar.hidden = !pk.length; if (!pk.length) return;
           box.querySelector('#mv-n').textContent = [nf ? nf + ' folder' + (nf > 1 ? 's' : '') : '', ni ? ni + ' item' + (ni > 1 ? 's' : '') : ''].filter(Boolean).join(' and ') + ' selected';
@@ -200,6 +200,8 @@
         box.querySelector('#mv-to').addEventListener('input', e => { e.target.dataset.touched = '1'; });
         box.querySelectorAll('.dpick').forEach(x => x.addEventListener('change', show));
         box.querySelector('#mv-x').addEventListener('click', () => { box.querySelectorAll('.dpick:checked').forEach(x => { x.checked = false; }); show(); });
+        // the picked folders (with their subfolders) and items go to another drive, moved or copied (034)
+        box.querySelector('#xd-go').addEventListener('click', () => { const pk = picks(); if (pk.length) toDrive(d, its, pk, bg); });
         // the picked folders (with their subfolders) and items were deleted from the real drive (033)
         box.querySelector('#del-go').addEventListener('click', () => {
           const pk = picks(), ids = new Set(), words = [];
@@ -323,6 +325,38 @@
       };
       bg.querySelector('#mcopy').addEventListener('click', () => go(true)); bg.querySelector('#mmove').addEventListener('click', () => go(false));
       bg.querySelector('#mcx').addEventListener('click', () => bg.remove());
+    }
+    // "To another drive" (034_drive_folders_to_drive.sql): the ticked folders keep their subfolders and land in the folder picked on
+    // the other drive (empty = the top). Move = the data left this drive; Copy = it is on both now (a backup; admin / manager).
+    function toDrive(d, its, pk, parent) {
+      const others = drives.filter(x => x.id !== d.id && x.status === 'in_use');
+      if (!others.length) { toast('There is no other drive in use.', true); return; }
+      const nf = pk.filter(k => k[0] === 'f').length, ni = pk.length - nf;
+      const foldersOn = id => [...new Set(items.filter(it => it.drive === id).flatMap(it => { const sg = pathOf(it).split('/'); return sg.map((x, i) => sg.slice(0, i + 1).join('/')); }))].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+      const bg = W.sheet('<h3>To another drive</h3><p class="sub">' + esc([nf ? nf + ' folder' + (nf > 1 ? 's' : '') : '', ni ? ni + ' item' + (ni > 1 ? 's' : '') : ''].filter(Boolean).join(' and ')) + ' from <b>' + esc(d.name) + '</b>, with their subfolders. Copy or move them in Finder first, then record it here.</p>' +
+        '<div class="form-grid"><label class="wide">Drive<select class="in" id="xd-to"><option value="">Pick the drive</option>' + others.map(x => '<option value="' + x.id + '">' + esc(x.name + (x.size_label ? ' · ' + x.size_label : '')) + '</option>').join('') + '</select></label>' +
+        '<label class="wide">Into the folder<input class="in" id="xd-path" maxlength="200" list="dl-xd" placeholder="Leave empty for the top of the drive" data-nosuggest><datalist id="dl-xd"></datalist></label>' +
+        '<label class="wide">What happened<select class="in" id="xd-mode"><option value="move">Moved: it is not on ' + esc(d.name) + ' any more</option>' + (opts.staff ? '<option value="copy">Copied: it is on both drives now (backup)</option>' : '') + '</select></label></div>' +
+        '<p class="meta" id="xd-hint"></p><div class="pillrow"><button type="button" class="pillbtn light" id="xd-cx">Cancel</button><button type="button" class="pillbtn" id="xd-ok">Save</button></div>');
+      const g = q => bg.querySelector(q);
+      const hint = () => { const to = drives.find(x => x.id === g('#xd-to').value), D = g('#xd-path').value.split('/').map(x => x.trim()).filter(Boolean).join('/');
+        g('#dl-xd').innerHTML = to ? foldersOn(to.id).map(x => '<option value="' + esc(x) + '">').join('') : '';
+        const first = pk[0].slice(2), name = pk[0][0] === 'f' ? first.split('/').pop() : ((its.find(x => x.id === first) || {}).title || '');
+        g('#xd-hint').textContent = to ? 'Goes to ' + to.name + ' › ' + (D ? D.split('/').join(' › ') + ' › ' : '') + (pk[0][0] === 'f' ? name : '') + (pk.length > 1 ? ' (and the others)' : '') : ''; };
+      g('#xd-to').addEventListener('change', hint); g('#xd-path').addEventListener('input', hint);
+      g('#xd-cx').addEventListener('click', () => bg.remove());
+      g('#xd-ok').addEventListener('click', async () => {
+        const to = g('#xd-to').value; if (!to) { toast('Pick the drive.', true); return; }
+        const D = g('#xd-path').value.split('/').map(x => x.trim()).filter(Boolean).join('/'), copy = g('#xd-mode').value === 'copy', moves = new Map();
+        for (const k of pk.filter(k => k[0] === 'f')) { const S = k.slice(2), base = (D ? D + '/' : '') + S.split('/').pop(); its.filter(it => under(it, S)).forEach(it => moves.set(it.id, base + pathOf(it).slice(S.length))); }
+        for (const k of pk.filter(k => k[0] === 'i')) { const it = its.find(x => x.id === k.slice(2)); if (it && !moves.has(it.id)) moves.set(it.id, D || pathOf(it)); }
+        if (!moves.size) return;
+        const r = await rpc('drive_folders_to_drive', { p_drive: d.id, p_moves: [...moves].map(([id, path]) => ({ id, path })), p_to: to, p_copy: copy }); if (!r) return;
+        const dst = drives.find(x => x.id === to);
+        bg.remove(); if (parent) parent.remove(); await refresh();
+        toast(r.done + ' item' + (r.done === 1 ? '' : 's') + (copy ? ' copied' : ' moved') + ' to ' + dst.name + '.' + (r.skipped ? ' ' + r.skipped + ' were already there.' : '') + ((r.cards || []).length ? ' Cards now copied ✓: ' + r.cards.join(', ') + '.' : ''));
+        openDrive(drives.find(x => x.id === to), D);
+      });
     }
     // "Deleted from drive" for folders (033_drive_delete_folders.sql): first a check of what it does (only copies, cards that go back on
     // hold), then the reason; deleting the ONLY copy needs a tick and is for the admin / a manager only
