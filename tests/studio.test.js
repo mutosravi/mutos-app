@@ -620,6 +620,17 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(reps.length === 3 && reps.every(r => r.day === istDay() && r.by_email === CREWE), 'daily report saved: 2 jobs + other work');
   ok(reel.progress === 60 && lr.count_done === 350 && lr.status === 'editing', 'the report moves the jobs forward (60%, 350 photos, LR started)');
   ok(handle(CREWE, { table: 'work_reports', op: 'insert', rows: [{ person: PP('Saif').id, note: 'fake' }] }).error && handle(CREWE, { table: 'work_reports', op: 'insert', rows: [{ person: PP('Hamza').id, job: sj }] }).error, 'cannot report for someone else or on someone else\'s job');
+  // past days (20 Nov 2026, Ravi: "Employees can see their work report of any day in past")
+  { const old = istDay(-12), id = 'rep-old-1'; T.work_reports.set(id, { id, person: PP('Hamza').id, day: old, job: null, hours: 5, note: 'Album selection for Sharma', at: old + 'T12:00:00Z', by_email: CREWE });
+    await cr.click('[data-day="past"]'); await cr.waitForSelector('.past-day');
+    const pl = await cr.textContent('#tab-rep');
+    ok((await cr.$$('.past-day')).length === 2 && /3 entries/.test(pl) && /1 entry · 5 h/.test(pl), 'Past days: every day he reported (today 3 entries, 12 days ago 1 entry · 5 h)');
+    await cr.click('.past-day[data-pd="' + old + '"]'); await cr.waitForSelector('#past-head');
+    ok(/Album selection for Sharma/.test(await cr.textContent('#tab-rep')), 'tap a day: what he wrote that day');
+    await cr.fill('#past-d', istDay(-30)); await cr.dispatchEvent('#past-d', 'change'); await cr.waitForFunction(() => /No report sent for this day/.test(document.getElementById('tab-rep').textContent));
+    ok(true, 'any date: "No report sent for this day" when there is none');
+    await cr.click('[data-day="' + istDay() + '"]'); await cr.waitForSelector('.rline');
+    T.work_reports.delete(id); }
   // the desk sees it
   await owner.click('.bnav .tab[data-tab="today"]'); await owner.waitForFunction(() => /1 of 7 reported/.test(document.body.textContent));
   const rt = await owner.textContent('#rl');

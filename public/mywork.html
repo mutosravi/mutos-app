@@ -104,6 +104,7 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
   c.from('employees').select('email').eq('email', me.email).maybeSingle().then(r => { if (r && r.data) $('nav-att').hidden = false; }).catch(() => {});
 
   async function load() {
+    pastList = null;
     const [j, r] = await Promise.all([c.from('work_jobs').select('*').eq('assignee', person.id), c.from('work_reports').select('*').eq('person', person.id).gte('day', yesterday).order('at')]);
     if (j.error) throw j.error;
     jobs = j.data || []; todayReps = r.error ? [] : (r.data || []);
@@ -170,12 +171,33 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     });
   }
 
+  // ---------- my past reports (20 Nov 2026, Ravi: "Employees can see their work report of any day in past") ----------
+  let pastDay = '', pastList = null;
+  const repLine = r => { const j = jobs.find(x => x.id === r.job); return '<div class="sent"><span><b>' + esc(j ? j.wedding_title + ' · ' + W.jobName(j) : r.job ? 'A job no longer with you' : 'Other work') + '</b> ' + esc([r.progress != null ? r.progress + '%' : '', r.count ? r.count + ' photos' : '', r.hours ? r.hours + ' h' : '', r.note].filter(Boolean).join(' · ')) + '</span></div>'; };
+  async function renderPast() {
+    const tab = $('tab-rep'), back = '<div class="chipset" style="margin:6px 0 10px"><span data-day="' + today + '" style="cursor:pointer">Today</span><span data-day="' + yesterday + '" style="cursor:pointer">Yesterday (forgot)</span><span class="dark" data-day="past" style="cursor:pointer">Past days</span></div>';
+    tab.innerHTML = back + '<p class="sub">Loading…</p>';
+    if (!pastList) { pastList = []; for (let from = 0; from < 20000; from += 1000) { const { data, error } = await c.from('work_reports').select('*').eq('person', person.id).order('id').range(from, from + 999); if (error || !data) break; pastList.push(...data); if (data.length < 1000) break; }   // Supabase sends 1000 rows per read
+      pastList.sort((a, b) => b.day.localeCompare(a.day) || String(a.at).localeCompare(String(b.at))); }
+    const days = [...new Set(pastList.map(r => r.day))];
+    const of = d => pastList.filter(r => r.day === d), hrs = list => list.reduce((n, r) => n + (Number(r.hours) || 0), 0);
+    tab.innerHTML = back + '<div class="form-grid" style="margin:0 0 8px"><label class="wide">Go to a day<input class="in" type="date" id="past-d" max="' + today + '" value="' + esc(pastDay) + '"></label></div>' +
+      (pastDay ? '<h2 style="font-size:15px;margin:10px 0 4px" id="past-head">' + esc(W.dayLong(pastDay)) + (of(pastDay).length ? ' · ' + of(pastDay).length + ' entr' + (of(pastDay).length === 1 ? 'y' : 'ies') + (hrs(of(pastDay)) ? ' · ' + hrs(of(pastDay)) + ' h' : '') : '') + '</h2>' +
+        (of(pastDay).length ? of(pastDay).map(repLine).join('') : '<p class="sub">No report sent for this day.</p>') + '<p><button type="button" class="x" id="past-all">← All days</button></p>'
+      : (days.length ? '<h2 style="font-size:15px;margin:10px 0 4px">Your reports</h2>' + days.map(d => { const l = of(d), h = hrs(l); return '<button type="button" class="rep past-day" data-pd="' + d + '" style="display:flex;width:100%;justify-content:space-between;border:0;background:none;font:inherit;color:inherit;text-align:left;padding:9px 2px;cursor:pointer"><span><b>' + esc(W.dayLong(d)) + '</b><br><span class="meta">' + l.length + ' entr' + (l.length === 1 ? 'y' : 'ies') + (h ? ' · ' + h + ' h' : '') + '</span></span><span>›</span></button>'; }).join('')
+        : '<p class="sub">No reports yet.</p>'));
+    tab.querySelectorAll('[data-day]').forEach(b => b.addEventListener('click', () => { repDay = b.dataset.day; pastDay = ''; renderRep(); }));
+    tab.querySelectorAll('[data-pd]').forEach(b => b.addEventListener('click', () => { pastDay = b.dataset.pd; renderPast(); }));
+    const pd = $('past-d'); pd.addEventListener('change', () => { pastDay = pd.value && pd.value <= today ? pd.value : ''; renderPast(); });
+    const pa = $('past-all'); if (pa) pa.addEventListener('click', () => { pastDay = ''; renderPast(); });
+  }
   // ---------- today's report ----------
   let repDay = today;
   function renderRep() {
+    if (repDay === 'past') return renderPast();
     const sentToday = todayReps.filter(r => r.day === repDay), list = myOpen().filter(j => j.status !== 'sent' && j.status !== 'paused');
     const yJobs = new Set(todayReps.filter(r => r.day === W.addDays(repDay, -1) && r.job).map(r => r.job));
-    $('tab-rep').innerHTML = '<div class="chipset" style="margin:6px 0 10px"><span class="' + (repDay === today ? 'dark' : '') + '" data-day="' + today + '" style="cursor:pointer">Today</span><span class="' + (repDay === yesterday ? 'dark' : '') + '" data-day="' + yesterday + '" style="cursor:pointer">Yesterday (forgot)</span></div>' +
+    $('tab-rep').innerHTML = '<div class="chipset" style="margin:6px 0 10px"><span class="' + (repDay === today ? 'dark' : '') + '" data-day="' + today + '" style="cursor:pointer">Today</span><span class="' + (repDay === yesterday ? 'dark' : '') + '" data-day="' + yesterday + '" style="cursor:pointer">Yesterday (forgot)</span><span data-day="past" style="cursor:pointer">Past days</span></div>' +
       '<p class="sub" style="margin:0 0 6px">Tick what you worked on ' + (repDay === today ? 'today' : 'yesterday') + '. Takes 30 seconds.' + (yJobs.size && repDay === today ? ' <button type="button" class="x" id="same">Same as yesterday</button>' : '') + '</p>' +
       list.map(j => { const photo = W.isPhoto(j.kind); return '<div class="rline" data-j="' + j.id + '"><input type="checkbox" aria-label="Worked on it"><div><b>' + esc(j.wedding_title) + '</b><div class="meta">' + esc(W.jobName(j)) + ' · now ' + esc(W.progressText(j)) + '</div></div>' +
         '<div class="mini" hidden>' + (photo ? '<label>Photos done ' + (repDay === today ? 'today' : 'that day') + '<input class="in" type="number" min="0" data-r="count" placeholder="e.g. 350"></label>' : '<label>Progress now (%)<input class="in" type="number" min="0" max="100" data-r="progress" value="' + (j.progress || 0) + '"></label>') +
