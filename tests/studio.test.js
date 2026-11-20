@@ -626,6 +626,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(/Raw/.test(await cr.textContent('#jd-body')) && /In the office/.test(await cr.textContent('#jd-body')), '"Where is the data?" on his job: the raw footage is on Z 9, in the office');
   await cr.screenshot({ path: path.join(SHOTS, 'job-data.png') });
   await cr.click('#jd-x');
+  // "Open ›" goes to the Drives tab with Z 9 open at that folder and the line's panel open
+  await cr.click('.job[data-j="' + reel.id + '"] [data-data]'); await cr.waitForSelector('#jd-body .jd-open');
+  await cr.click('#jd-body .jd-open'); await cr.waitForSelector('#fo-f, #fo-p', { timeout: 10000 });
+  ok(!(await cr.isHidden('#tab-drives')) && /Z 9/.test(await cr.evaluate(() => [...document.querySelectorAll('.sheet-bg h3')].map(h => h.textContent).join(' '))), '"Open ›" opens Z 9 in Drives with that folder\'s panel');
+  await cr.evaluate(() => document.querySelectorAll('.sheet-bg').forEach(x => x.remove()));
+  await cr.click('.bnav .tab[data-tab="jobs"]'); await cr.waitForSelector('.job[data-j="' + reel.id + '"]');
   [...T.drive_items.values()].filter(i => T.drives.get(i.drive).name === 'Z 9').forEach(i => T.drive_items.delete(i.id)); [...T.drives.values()].filter(d => d.name === 'Z 9').forEach(d => T.drives.delete(d.id));   // leave the register as the later checks expect
   if (process.env.SHOTS) await cr.screenshot({ path: path.join(SHOTS, 'mywork-jobs.png'), fullPage: true });
   ok(rpc('x', {}, CREWE) && handle(CREWE, { table: 'work_jobs', op: 'update', filters: [['eq', 'id', reel.id]], rows: [{ status: 'final' }] }).error && handle(CREWE, { table: 'work_jobs', op: 'update', filters: [['eq', 'id', reel.id]], rows: [{ due: '2030-01-01' }] }).error, 'editor cannot mark final or move the due date');
@@ -793,6 +799,12 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     owner.nextPrompt = 'Wrong folder'; await owner.click('#dremoved summary'); await owner.click('[data-backall]');
     await owner.waitForFunction(() => /5 items brought back/.test(document.getElementById('toast').textContent));
     ok([...T.drive_items.values()].filter(i => i.drive === d6 && i.removed_at).length === 0, '"Bring back all" puts the 5 lines back in one go');
+    // a link from Client data (desk.html?tab=drives&drive=…&item=…) opens the drive at that folder with the line's panel
+    { const one = [...T.drive_items.values()].find(x => x.drive === d6 && x.title === 'Big · Card 3');
+      await owner.goto(B + '/desk.html?tab=drives&drive=' + d6 + '&item=' + one.id); await owner.waitForSelector('#fo-p', { timeout: 20000 });
+      ok(await owner.inputValue('#fo-p') === one.path && /M 6/.test(await owner.evaluate(() => [...document.querySelectorAll('.sheet-bg h3')].map(h => h.textContent).join(' '))), 'link from Client data: M 6 opens at ' + one.path + ' with that line\'s panel (check, copy, back up, move)');
+      await owner.evaluate(() => document.querySelectorAll('.sheet-bg').forEach(x => x.remove()));
+      await owner.goto(B + '/desk.html?tab=drives'); await owner.waitForSelector('#tab-drives [data-d="' + d6 + '"]'); await owner.click('[data-d="' + d6 + '"]'); await owner.waitForSelector('.dsub'); }
     await owner.click('#dclose');
     [...T.drive_items.values()].filter(i => i.drive === d6 || /^Old \d/.test(i.title)).forEach(i => T.drive_items.delete(i.id)); T.drives.delete(d6); }
   await kul.reload(); await kul.waitForSelector('#tab-drives [data-d]'); await kul.click('[data-d="' + DRV('M 1').id + '"]');

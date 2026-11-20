@@ -393,7 +393,10 @@
       drv = window.MutosDrives.mount($('tab-drives'), { c, me: mine ? mine.id : null, email: me.email, staff: !sup, owner, keeper: !sup || !!(mine && (mine.skills || []).includes('data')), toast, weddings: weddings.map(w => ({ key: w.key, title: w.title })),
         onChange: n => { $('nav-drv').hidden = !n; $('nav-drv').textContent = n || ''; } });
     }
-    try { await drv.refresh(); } catch (e) { $('tab-drives').innerHTML = '<div class="empty">Could not load drives (' + esc(e.message || e) + '). Run supabase/008_drives.sql first.</div>'; drv = null; }
+    try { await drv.refresh(); } catch (e) { $('tab-drives').innerHTML = '<div class="empty">Could not load drives (' + esc(e.message || e) + '). Run supabase/008_drives.sql first.</div>'; drv = null; return; }
+    // desk.html?tab=drives&drive=<id>&item=<id> (from Client data): open that drive at that folder, once
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('drive') && !renderDrives.done) { renderDrives.done = true; await drv.openAt({ drive: qs.get('drive'), item: qs.get('item') }); }
   }
 
   // ---------- tabs ----------

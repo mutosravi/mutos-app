@@ -404,7 +404,18 @@
       });
     }
 
-    return { refresh, waiting, render };
+    // open a drive straight at a line's folder, with that line's panel open (Client data, an editor's "Where is the data?"):
+    // by ids, or by drive name + title when only those are known
+    async function openAt(o) {
+      if (!drives.length) await load();
+      const d = drives.find(x => x.id === o.drive) || drives.find(x => o.driveName && x.name === o.driveName); if (!d) { toast('That drive is not in the register any more.', true); return false; }
+      const it = items.find(x => x.id === o.item && x.drive === d.id) || (o.title ? items.find(x => x.drive === d.id && x.title === o.title) : null);
+      openDrive(d, it ? pathOf(it) : '');
+      if (it) { const all = document.querySelectorAll('.sheet-bg'), b = all.length && all[all.length - 1].querySelector('.dfolder[data-fo="' + it.id + '"]'); if (b) b.click(); }
+      else if (o.item) toast('That line is no longer on ' + d.name + ' (see "Removed from this drive").');
+      return true;
+    }
+    return { refresh, waiting, render, openAt };
   }
   window.MutosDrives = { mount, WHAT, whatLabel };
 })();
