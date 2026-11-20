@@ -123,11 +123,22 @@
       // removed lines (admin / manager): bring back one removed by mistake (023_drive_restore.sql)
       if (opts.staff) (async () => {
         const { data: all } = await pageAll(() => c.from('drive_items').select('*').eq('drive', d.id));
-        const gone = (all || []).filter(it => it.removed_at).sort((a, b) => String(b.removed_at).localeCompare(String(a.removed_at))).slice(0, 30), box = g('#dremoved');
-        if (!box || !gone.length) return;
-        box.innerHTML = '<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Removed from this drive (' + gone.length + ')</summary>' + gone.map(it => '<div class="rep" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) +
+        const allGone = (all || []).filter(it => it.removed_at).sort((a, b) => String(b.removed_at).localeCompare(String(a.removed_at))), box = g('#dremoved');
+        if (!box || !allGone.length) return;
+        // lines marked deleted together (same moment, same reason, not moved) can come back together (drive_restore_lines, 033)
+        const groups = new Map(); allGone.filter(it => !it.moved_to).forEach(it => { const k = it.removed_at + '|' + (it.removed_why || ''); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); });
+        const together = [...groups.values()].filter(x => x.length > 1).slice(0, 10), inGroup = new Set(together.flat().map(it => it.id));
+        const gone = allGone.filter(it => !inGroup.has(it.id)).slice(0, 30);
+        box.innerHTML = '<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Removed from this drive (' + allGone.length + ')</summary>' +
+          together.map((list, i) => '<div class="rep dgone-grp" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span>📁 <b>' + esc([...new Set(list.map(it => (it.path || it.title)))].slice(0, 4).join(', ')) + '</b> · ' + list.length + ' items deleted together' +
+            '<br><span class="meta" style="display:inline">' + esc(when(list[0].removed_at)) + (list[0].removed_why ? ' · ' + esc(list[0].removed_why) : '') + '</span></span><button type="button" class="chip" data-backall="' + i + '" style="flex:0 0 auto">Bring back all</button></div>').join('') +
+          gone.map(it => '<div class="rep" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) +
           '<br><span class="meta" style="display:inline">removed ' + esc(when(it.removed_at)) + (it.removed_why ? ' · ' + esc(it.removed_why) : '') + '</span></span>' +
           (it.moved_to ? '<span class="meta" style="flex:0 0 auto">moved</span>' : '<button type="button" class="chip" data-back="' + it.id + '" style="flex:0 0 auto">Bring back</button>') + '</div>').join('') + '</details>';
+        box.querySelectorAll('[data-backall]').forEach(b => b.addEventListener('click', async () => {
+          const list = together[+b.dataset.backall], why = prompt('Why bring back these ' + list.length + ' items?', 'Removed by mistake'); if (!why) return;
+          if (await rpc('drive_restore_lines', { p_drive: d.id, p_items: list.map(it => it.id), p_why: why }, list.length + ' items brought back.')) { bg.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id)); }
+        }));
         box.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', async () => {
           const why = prompt('Why bring it back?', 'Removed by mistake'); if (!why) return;
           if (await rpc('drive_item_restore', { p_item: b.dataset.back, p_why: why }, 'Brought back.')) { bg.remove(); await refresh(); openDrive(drives.find(x => x.id === d.id)); }
@@ -179,7 +190,7 @@
         box.insertAdjacentHTML('beforeend', '<div class="card" id="dmv" hidden style="margin-top:10px;padding:10px 12px;position:sticky;bottom:0;background:var(--card,#fff)"><b id="mv-n"></b>' +
           '<div class="form-grid" style="margin-top:6px"><label class="wide" id="mv-namebox" hidden>New name<input class="in" id="mv-name" maxlength="80" data-nosuggest></label>' +
           '<label class="wide">Move to (a folder on ' + esc(d.name) + ')<input class="in" id="mv-to" maxlength="200" list="dl-mvto" placeholder="Leave empty for the top of the drive" data-nosuggest><datalist id="dl-mvto">' + allFolders.map(x => '<option value="' + esc(x) + '">').join('') + '</datalist></label></div>' +
-          '<div class="pillrow"><button type="button" class="pillbtn" id="mv-go">Move</button><button type="button" class="pillbtn light" id="mv-x">Cancel</button></div></div>');
+          '<div class="pillrow"><button type="button" class="pillbtn" id="mv-go">Move</button><button type="button" class="pillbtn light" id="del-go">🗑 Deleted from drive</button><button type="button" class="pillbtn light" id="mv-x">Cancel</button></div></div>');
         const bar = box.querySelector('#dmv'), picks = () => [...box.querySelectorAll('.dpick:checked')].map(x => x.dataset.pk);
         const show = () => { const pk = picks(), nf = pk.filter(k => k[0] === 'f').length, ni = pk.length - nf; bar.hidden = !pk.length; if (!pk.length) return;
           box.querySelector('#mv-n').textContent = [nf ? nf + ' folder' + (nf > 1 ? 's' : '') : '', ni ? ni + ' item' + (ni > 1 ? 's' : '') : ''].filter(Boolean).join(' and ') + ' selected';
@@ -189,6 +200,13 @@
         box.querySelector('#mv-to').addEventListener('input', e => { e.target.dataset.touched = '1'; });
         box.querySelectorAll('.dpick').forEach(x => x.addEventListener('change', show));
         box.querySelector('#mv-x').addEventListener('click', () => { box.querySelectorAll('.dpick:checked').forEach(x => { x.checked = false; }); show(); });
+        // the picked folders (with their subfolders) and items were deleted from the real drive (033)
+        box.querySelector('#del-go').addEventListener('click', () => {
+          const pk = picks(), ids = new Set(), words = [];
+          pk.filter(k => k[0] === 'f').forEach(k => { const S = k.slice(2); its.filter(it => under(it, S)).forEach(it => ids.add(it.id)); words.push(S); });
+          pk.filter(k => k[0] === 'i').forEach(k => { const it = its.find(x => x.id === k.slice(2)); if (it && !ids.has(it.id)) { ids.add(it.id); words.push(it.title); } });
+          if (ids.size) deleteLines(d, [...ids], words, bg, P);
+        });
         box.querySelector('#mv-go').addEventListener('click', async () => {
           const pk = picks(), D = String(box.querySelector('#mv-to').value || '').split('/').map(x => x.trim()).filter(Boolean).join('/');
           const nameIn = box.querySelector('#mv-namebox').hidden ? '' : box.querySelector('#mv-name').value.trim();
@@ -297,6 +315,36 @@
       };
       bg.querySelector('#mcopy').addEventListener('click', () => go(true)); bg.querySelector('#mmove').addEventListener('click', () => go(false));
       bg.querySelector('#mcx').addEventListener('click', () => bg.remove());
+    }
+    // "Deleted from drive" for folders (033_drive_delete_folders.sql): first a check of what it does (only copies, cards that go back on
+    // hold), then the reason; deleting the ONLY copy needs a tick and is for the admin / a manager only
+    const DEL_WHY = ['Client delivered', 'Space needed', 'Duplicate', 'Corrupt / unreadable'];
+    async function deleteLines(d, ids, words, parent, P) {
+      const chk = await rpc('drive_delete_lines', { p_drive: d.id, p_items: ids, p_why: 'check', p_check: true, p_last_ok: false }); if (!chk) return;
+      const last = chk.last || [], cards = chk.cards || [], n = chk.count;
+      const cardWord = k => k.after === 'hold' ? '<b>' + esc(k.code) + '</b> goes back <b style="color:var(--no-ink,#b23a26)">ON HOLD</b> (no copy left: do not format)' : '<b>' + esc(k.code) + '</b> becomes single copy (backup needed)';
+      const bg = W.sheet('<h3>Deleted from ' + esc(d.name) + '</h3><p class="sub"><b>' + esc(words.join(', ')) + '</b> · ' + n + ' item' + (n === 1 ? '' : 's') + '. Mark it here after deleting it on the drive itself. It stays in the drive\'s history and can be brought back.</p>' +
+        (last.length ? '<div class="ans wait" id="dl-last" style="margin:0 0 10px;border-color:var(--no-ink,#b23a26)"><b>⚠ The only copy of ' + last.length + ' item' + (last.length > 1 ? 's' : '') + '</b> (no backup or copy on any other drive):<ul style="margin:4px 0 0 18px;padding:0">' +
+          last.map(x => '<li>' + esc(x.title) + (x.path ? ' <span class="meta" style="display:inline">(' + esc(x.path) + ')</span>' : '') + (x.no_backup ? ' · no backup needed' : '') + '</li>').join('') + '</ul></div>'
+          : '<div class="ans ok" id="dl-safe" style="margin:0 0 10px">✓ Everything here has another copy on a drive.</div>') +
+        (cards.length ? '<div class="ans wait" id="dl-cards" style="margin:0 0 10px">Cards: ' + cards.map(cardWord).join(' · ') + '</div>' : '') +
+        '<div class="form-grid"><label class="wide">Why<select class="in" id="dl-why">' + DEL_WHY.map(x => '<option>' + esc(x) + '</option>').join('') + '<option value="">Something else…</option></select></label>' +
+        '<label class="wide" id="dl-otherbox" hidden>Write why<input class="in" id="dl-other" maxlength="200" data-nosuggest></label></div>' +
+        (last.length ? (opts.staff ? '<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="dl-ok"> I know this is the only copy and it is gone</label>'
+          : '<p class="sub" id="dl-noperm" style="color:var(--no-ink,#b23a26)">Only the admin or a manager can mark the only copy as deleted. Untick those items, or ask them.</p>') : '') +
+        '<div class="pillrow"><button type="button" class="pillbtn light" id="dl-cx">Cancel</button><button type="button" class="pillbtn" id="dl-go"' + (last.length && !opts.staff ? ' disabled' : '') + '>Mark deleted</button></div>');
+      const g = q => bg.querySelector(q);
+      g('#dl-why').addEventListener('change', () => { g('#dl-otherbox').hidden = !!g('#dl-why').value; });
+      g('#dl-cx').addEventListener('click', () => bg.remove());
+      g('#dl-go').addEventListener('click', async () => {
+        const why = g('#dl-why').value || g('#dl-other').value.trim(); if (!why) { toast('Write why it was deleted.', true); return; }
+        if (last.length && !(g('#dl-ok') && g('#dl-ok').checked)) { toast('Tick "I know this is the only copy" first.', true); return; }
+        const r = await rpc('drive_delete_lines', { p_drive: d.id, p_items: ids, p_why: why, p_check: false, p_last_ok: !!last.length }); if (!r) return;
+        bg.remove(); if (parent) parent.remove(); await refresh();
+        toast(r.deleted + ' item' + (r.deleted === 1 ? '' : 's') + ' marked deleted from ' + d.name + '.' + ((r.cards || []).length ? ' Cards updated: ' + r.cards.map(k => k.code + ' ' + (k.after === 'hold' ? 'on hold' : 'single')).join(', ') + '.' : ''));
+        const D = drives.find(x => x.id === d.id), left = items.filter(it => it.drive === d.id && !it.removed_at);
+        openDrive(D, P && left.some(it => under(it, P)) ? P : '');
+      });
     }
     function removeItem(it, d, parent) {
       const bg = W.sheet('<h3>Remove from ' + esc(d.name) + '</h3><p class="sub"><b>' + esc(it.title) + '</b> · ' + esc(whatLabel(it.what)) + '. It stays in the drive\'s history.</p><div class="form-grid"><label class="wide">Why<select class="in" id="rwhy"><option value="cleaned">Deleted / cleaned from the drive</option><option value="delivered">Given to the client</option><option value="mistake">Listed by mistake</option></select></label></div>' +

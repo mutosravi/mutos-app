@@ -98,6 +98,15 @@ function rpc(fn, a, e) {
     if (a.p_used && k.data === 'empty') Object.assign(k, { data: 'hold', data_since: now() });
     log(k.id, e, a.p_used ? 'Used: ' + a.p_shoot : 'Marked not used'); return { ok: true, id };
   }
+  if (fn === 'drive_delete_lines') {   // 033 (exact rules in rls_drive_delete.sql)
+    if (!staff(e)) return err('Only the studio or whoever has the drive can mark data deleted from it.');
+    const ids = a.p_items || [], ls = ids.map(id => T.drive_items.get(id));
+    if (ls.some(l => !l || l.drive !== a.p_drive || l.removed_at)) return err('Some of these are no longer on the drive.');
+    const last = ls.filter(l => ![...T.drive_items.values()].some(x => !ids.includes(x.id) && !x.removed_at && x.drive !== l.drive && x.title === l.title)).map(l => ({ id: l.id, title: l.title, what: l.what }));
+    if (a.p_check) return { ok: true, check: true, count: ids.length, last, cards: [] };
+    if (last.length && !a.p_last_ok) return err('Some of this is the only copy.');
+    ls.forEach(l => { l.removed_at = now(); l.removed_why = a.p_why; }); return { ok: true, deleted: ids.length, last, cards: [] };
+  }
   if (fn === 'card_copy') {
     if (!staff(e)) return err('Only the admin or the manager can mark a card copied.');
     const k = T.cards.get(a.p_card), d = T.drives.get(a.p_drive);
@@ -405,6 +414,18 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   ok(/Other data for Sharma/.test(dw) && /from the drive sheet/.test(dw), 'lines typed before the app (no wedding link) are found by the name');
   ok(/in the office/.test(dw), '… and it says where each drive is right now');
   await shot(o, 'client-data.png');
+  // "Deleted from drive" right from the client's Data window (20 Nov 2026, Ravi: "I dont want to navigate to drive everytime")
+  await o.check('.dw-pick[data-id="old1"]'); await o.waitForSelector('#dw-delbar:not([hidden])');
+  ok(/1 line selected/.test(await o.textContent('#dw-deln')), 'tick a line in Client data: "1 line selected"');
+  await o.click('#dw-del'); await o.waitForSelector('#dd-go');
+  ok(/only copy of 1 line/.test(await o.textContent('#dd-last')) && /Sharma Engagement raw/.test(await o.textContent('#dd-last')), 'it warns that this is the only copy');
+  await o.selectOption('#dd-why', 'Client delivered'); await o.click('#dd-go'); await o.waitForFunction(() => /only copy/.test((document.getElementById('sb-toast') || {}).textContent));
+  ok(!T.drive_items.get('old1').removed_at, 'not marked without "I know this is the only copy"');
+  await o.check('#dd-ok'); await o.click('#dd-go'); await o.waitForFunction(() => /1 line marked deleted from M 5/.test((document.getElementById('sb-toast') || {}).textContent));
+  await o.waitForSelector('#dw-sum');
+  ok(T.drive_items.get('old1').removed_why === 'Client delivered' && /History: 1 older line/.test(await o.textContent('#dw-body')), 'marked deleted ("Client delivered"); the Data window opens again with it under History');
+  Object.assign(T.drive_items.get('old1'), { removed_at: null, removed_why: null });
+  await o.click('#dw-back'); await o.waitForSelector('#fd-q'); await o.fill('#fd-q', 'sharma'); await o.click('[data-dw]'); await o.waitForSelector('#dw-sum');
   // ── who received it, and the client's history (admin / manager only) ──
   ok([...T.card_log.values()].some(l => /^Ravi \(admin\) received C01 for the office from Shrey/.test(l.what)), 'the card log says Ravi (admin) received C01 for the office');
   await o.click('#dw-hist'); await o.waitForSelector('.hw-row');

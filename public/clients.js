@@ -370,7 +370,9 @@
     const evOf = it => itemEv.get(it.id) || (w.events.find(ev => String(it.title || '').toLowerCase().includes(short(ev).toLowerCase())) || {}).id || null;
     const now = items.filter(i => !i.removed_at), old = items.filter(i => i.removed_at);
     const WHAT = { raw: 'Raw', backup: 'Backup', project: 'Project', render: 'Render', final: 'Final', other: 'Other' };
-    const line = it => { const d = drv(it.drive); return '<div style="font-size:12.5px;line-height:1.55"><b>' + esc(WHAT[it.what] || it.what) + '</b> · <b>' + esc(d.name) + '</b> <span class="sb-manage-sub">(' + esc(where(d)) + ')</span>' + (it.size_label ? ' · ' + esc(it.size_label) : '') + '<br><span class="sb-manage-sub">' + esc([it.title, it.note].filter(Boolean).join(' · ')) + '</span></div>'; };
+    const canDel = ['owner', 'manager'].includes(window.__mutosRole);   // "Deleted from drive" right here (033), admin + manager
+    const pickBox = it => canDel ? '<input type="checkbox" class="dw-pick" data-id="' + it.id + '" data-drive="' + it.drive + '" aria-label="Select" style="width:18px;height:18px;margin:0 6px 0 0;vertical-align:-3px">' : '';
+    const line = it => { const d = drv(it.drive); return '<div style="font-size:12.5px;line-height:1.55">' + pickBox(it) + '<b>' + esc(WHAT[it.what] || it.what) + '</b> · <b>' + esc(d.name) + '</b> <span class="sb-manage-sub">(' + esc(where(d)) + ')</span>' + (it.size_label ? ' · ' + esc(it.size_label) : '') + '<br><span class="sb-manage-sub">' + esc([it.title, it.note].filter(Boolean).join(' · ')) + '</span></div>'; };
     const today = api.todayStr(); let warn = 0, html = '';
     w.events.forEach(ev => {
       const mine = now.filter(i => evOf(i) === ev.id), raw = mine.filter(i => i.what === 'raw'), bk = mine.filter(i => i.what === 'backup');
@@ -395,7 +397,52 @@
     const head = modal.querySelector('.sb-modal-sub');
     const sub = (now.length ? now.length + ' line' + (now.length > 1 ? 's' : '') + ' on ' + drivesUsed.length + ' drive' + (drivesUsed.length > 1 ? 's' : '') + ': ' + drivesUsed.join(', ') : 'Nothing listed on any drive yet') + (warn ? ' · ' + warn + (warn > 1 ? ' functions need' : ' function needs') + ' attention' : now.length ? ' · all safe' : '');
     if (head) head.textContent = 'Every drive line for this wedding, and who has each drive now.';
-    modal.querySelector('#dw-body').innerHTML = '<div class="sb-manage-sub" id="dw-sum" style="padding:4px 8px 8px">' + esc(sub) + '</div>' + html;
+    modal.querySelector('#dw-body').innerHTML = '<div class="sb-manage-sub" id="dw-sum" style="padding:4px 8px 8px">' + esc(sub) + '</div>' + html +
+      (canDel && now.length ? '<div id="dw-delbar" hidden style="position:sticky;bottom:0;background:var(--card,#fff);padding:10px 8px;border-top:1px solid var(--line,#ddd);display:flex;gap:8px;align-items:center;justify-content:space-between"><b id="dw-deln"></b><span><button type="button" class="secondary" id="dw-delx">Clear</button> <button type="button" id="dw-del">🗑 Deleted from drive</button></span></div>' : '');
+    if (!canDel || !now.length) return;
+    const body = modal.querySelector('#dw-body'), bar = body.querySelector('#dw-delbar'), picked = () => [...body.querySelectorAll('.dw-pick:checked')];
+    const show = () => { const n = picked().length; bar.hidden = !n; bar.style.display = n ? 'flex' : 'none'; body.querySelector('#dw-deln').textContent = n + ' line' + (n === 1 ? '' : 's') + ' selected'; };
+    body.querySelectorAll('.dw-pick').forEach(x => x.addEventListener('change', show)); show();
+    body.querySelector('#dw-delx').addEventListener('click', () => { picked().forEach(x => { x.checked = false; }); show(); });
+    body.querySelector('#dw-del').addEventListener('click', () => deleteFromDrives(c, picked().map(x => ({ id: x.dataset.id, drive: x.dataset.drive })), drv, () => dataWin(w, back)));
+  }
+  // "Deleted from drive" from the client's Data window (Ravi, 20 Nov 2026: "I dont want to navigate to drive everytime"): same rules
+  // as the drive page (drive_delete_lines, 033): a check first (only copies, cards that go back on hold), a reason, a tick for the only
+  // copy. Lines on several drives are marked drive by drive.
+  async function deleteFromDrives(c, picks, drv, back) {
+    const byDrive = new Map(); picks.forEach(p => { if (!byDrive.has(p.drive)) byDrive.set(p.drive, []); byDrive.get(p.drive).push(p.id); });
+    const checks = [];
+    for (const [d, ids] of byDrive) {
+      const { data, error } = await c.rpc('drive_delete_lines', { p_drive: d, p_items: ids, p_why: 'check', p_check: true, p_last_ok: false });
+      if (error || !data || data.error) { api.toast((data && data.error) || (error && /drive_delete_lines/.test(error.message) ? 'Run supabase/033_drive_delete_folders.sql first.' : error ? error.message : 'Could not check.')); return; }
+      checks.push({ d, ids, r: data });
+    }
+    const last = checks.flatMap(x => (x.r.last || []).map(l => Object.assign({ dn: drv(x.d).name }, l))), cards = checks.flatMap(x => x.r.cards || []);
+    const WHY = ['Client delivered', 'Space needed', 'Duplicate', 'Corrupt / unreadable'];
+    const modal = api.makeModal(api.modalHead('Deleted from drive', picks.length + ' line' + (picks.length === 1 ? '' : 's') + ' on ' + checks.map(x => drv(x.d).name).join(', ') + '. Mark it here after deleting it on the drive itself; it stays in the history and can be brought back from the drive.') +
+      '<div class="sb-modal-list" style="padding:4px 8px">' +
+      (last.length ? '<div id="dd-last" style="color:#7a2d1e;font-size:13px;margin:4px 0 8px"><b>⚠ The only copy of ' + last.length + ' line' + (last.length > 1 ? 's' : '') + '</b> (no backup or copy on any other drive):<br>' + last.map(l => '• ' + esc(l.title) + ' (' + esc(l.dn) + ')').join('<br>') + '</div>'
+        : '<div id="dd-safe" style="color:#2f5f55;font-size:13px;margin:4px 0 8px">✓ Everything here has another copy on a drive.</div>') +
+      (cards.length ? '<div id="dd-cards" style="font-size:13px;margin:0 0 8px">Cards: ' + cards.map(k => '<b>' + esc(k.code) + '</b> ' + (k.after === 'hold' ? 'goes back <b style="color:#b23a26">ON HOLD</b>' : 'becomes single copy')).join(' · ') + '</div>' : '') +
+      '<label class="sb-manage-sub" style="display:block">Why<select id="dd-why" class="sb-field" style="display:block;width:100%">' + WHY.map(x => '<option>' + esc(x) + '</option>').join('') + '<option value="">Something else…</option></select></label>' +
+      '<input id="dd-other" class="sb-field" maxlength="200" placeholder="Write why" hidden style="margin-top:6px">' +
+      (last.length ? '<label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:13px"><input type="checkbox" id="dd-ok"> I know this is the only copy and it is gone</label>' : '') +
+      '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="dd-cx">Cancel</button><button type="button" id="dd-go">Mark deleted</button></div>');
+    const g = q => modal.querySelector(q);
+    g('#dd-why').addEventListener('change', () => { g('#dd-other').hidden = !!g('#dd-why').value; });
+    g('#dd-cx').addEventListener('click', back);
+    g('#dd-go').addEventListener('click', async () => {
+      const why = g('#dd-why').value || g('#dd-other').value.trim(); if (!why) { api.toast('Write why it was deleted.'); return; }
+      if (last.length && !(g('#dd-ok') && g('#dd-ok').checked)) { api.toast('Tick "I know this is the only copy" first.'); return; }
+      let n = 0; const done = [];
+      for (const x of checks) {
+        const { data, error } = await c.rpc('drive_delete_lines', { p_drive: x.d, p_items: x.ids, p_why: why, p_check: false, p_last_ok: !!(x.r.last || []).length });
+        if (error || !data || data.error) { api.toast(((data && data.error) || (error && error.message) || 'Could not save.') + (n ? ' (' + n + ' already marked on ' + done.join(', ') + ')' : '')); back(); return; }
+        n += data.deleted; done.push(drv(x.d).name);
+      }
+      api.toast(n + ' line' + (n === 1 ? '' : 's') + ' marked deleted from ' + done.join(', ') + '.' + (cards.length ? ' Cards updated: ' + cards.map(k => k.code + ' ' + (k.after === 'hold' ? 'on hold' : 'single')).join(', ') + '.' : ''));
+      back();
+    });
   }
   function answers(w) {
     const s = stateOf(w), a = (s.it && s.it.data) || {}, extra = a.extra || [];

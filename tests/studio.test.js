@@ -193,6 +193,27 @@ function rpc(fn, a, e) {
       if (fn === 'drive_no_backup') { it.no_backup = true; it.no_backup_why = a.p_why || 'No backup needed'; dlog(it.drive, e, 'No backup needed for ' + it.title); return { data: { ok: true, cards: [] }, error: null }; }
       it.no_backup = false; it.no_backup_why = null; dlog(it.drive, e, 'Backup needed again for ' + it.title); return { data: { ok: true }, error: null };
     }
+    if (fn === 'drive_delete_lines') {   // 033 (cards and the exact "only copy" rule in rls_drive_delete.sql)
+      const dr = T.drives.get(a.p_drive), me = [...T.people.values()].find(x => x.email === e), ids = a.p_items || [];
+      if (!dr || !(staff(e) || (dr.holder && me && dr.holder === me.id))) return no('Only the studio or whoever has the drive can mark data deleted from it.');
+      if (!ids.length) return no('Pick the folders that were deleted.');
+      if (ids.some(id => { const it = T.drive_items.get(id); return !it || it.drive !== dr.id || it.removed_at; })) return no('Some of these are no longer on ' + dr.name + '.');
+      const live = x => !x.removed_at || x.moved_to;
+      const last = ids.map(id => T.drive_items.get(id)).filter(l => ![...T.drive_items.values()].some(x => x.id !== l.id && !ids.includes(x.id) && live(x) && (x.from_item === l.id || x.id === l.from_item || (x.drive !== l.drive && x.title.toLowerCase() === l.title.toLowerCase()))))
+        .map(l => ({ id: l.id, title: l.title, what: l.what, path: l.path || null, no_backup: !!l.no_backup }));
+      if (a.p_check) return { data: { ok: true, check: true, count: ids.length, last, cards: [] }, error: null };
+      if (last.length && !staff(e)) return no('Some of this is the ONLY copy. Only the admin or a manager can mark it deleted.');
+      if (last.length && !a.p_last_ok) return no('Some of this is the only copy. Tick "I know this is the only copy" first.');
+      const at = new Date().toISOString(); ids.forEach(id => Object.assign(T.drive_items.get(id), { removed_at: at, removed_why: a.p_why }));
+      dlog(dr.id, e, 'Deleted from the drive (' + a.p_why + '): ' + ids.length + ' items'); return { data: { ok: true, deleted: ids.length, last, cards: [] }, error: null };
+    }
+    if (fn === 'drive_restore_lines') {   // 033
+      if (!staff(e)) return no('Only the admin or the manager can bring back removed data.');
+      if (!String(a.p_why || '').trim()) return no('Write why.');
+      const back = (a.p_items || []).map(id => T.drive_items.get(id)).filter(it => it && it.drive === a.p_drive && it.removed_at && !it.moved_to);
+      back.forEach(it => { it.removed_at = null; it.removed_why = null; }); dlog(a.p_drive, e, 'Data brought back: ' + back.length + ' items (' + a.p_why + ')');
+      return { data: { ok: true, restored: back.length }, error: null };
+    }
     if (fn === 'drive_set_paths') {   // 030
       const dr = T.drives.get(a.p_drive), me = [...T.people.values()].find(x => x.email === e);
       if (!dr || !(staff(e) || (dr.holder && me && dr.holder === me.id))) return no('Only the studio or whoever has the drive can move its folders.');
@@ -758,6 +779,20 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     await owner.waitForFunction(() => /cannot go inside itself/.test(document.getElementById('toast').textContent));
     ok(true, 'a folder cannot be moved inside itself');
     ok([...T.drive_log.values()].some(l => l.drive === d6 && /Moved Big, Latest to 2026/.test(l.what)), 'the drive history says what moved');
+    // 033: a folder deleted on the real drive → tick it, "Deleted from drive" (it is the only copy: warned, needs a tick), then bring it all back
+    await owner.click('.dcrumbs [data-cd="2026"]'); await owner.waitForSelector('.dpick[data-pk="f:2026/Latest"]');
+    await owner.check('.dpick[data-pk="f:2026/Latest"]'); await owner.click('#del-go'); await owner.waitForSelector('#dl-go');
+    ok(/only copy of 5 items/.test(await owner.textContent('#dl-last')), 'Deleted from drive: warns that the 5 lines in Latest are the only copy');
+    await owner.selectOption('#dl-why', 'Space needed'); await owner.click('#dl-go');
+    await owner.waitForFunction(() => /only copy/.test(document.getElementById('toast').textContent));
+    ok([...T.drive_items.values()].every(i => !i.removed_at), 'without the tick nothing is marked');
+    await owner.check('#dl-ok'); await owner.click('#dl-go'); await owner.waitForFunction(() => /5 items marked deleted from M 6/.test(document.getElementById('toast').textContent));
+    ok([...T.drive_items.values()].filter(i => i.drive === d6 && i.removed_at && i.removed_why === 'Space needed').length === 5, 'with the tick: the 5 lines of 2026/Latest are marked deleted ("Space needed")');
+    await owner.waitForSelector('[data-backall]', { state: 'attached' });
+    ok(/5 items deleted together/.test(await owner.textContent('#dremoved')), '"Removed from this drive" shows them as one group');
+    owner.nextPrompt = 'Wrong folder'; await owner.click('#dremoved summary'); await owner.click('[data-backall]');
+    await owner.waitForFunction(() => /5 items brought back/.test(document.getElementById('toast').textContent));
+    ok([...T.drive_items.values()].filter(i => i.drive === d6 && i.removed_at).length === 0, '"Bring back all" puts the 5 lines back in one go');
     await owner.click('#dclose');
     [...T.drive_items.values()].filter(i => i.drive === d6 || /^Old \d/.test(i.title)).forEach(i => T.drive_items.delete(i.id)); T.drives.delete(d6); }
   await kul.reload(); await kul.waitForSelector('#tab-drives [data-d]'); await kul.click('[data-d="' + DRV('M 1').id + '"]');
