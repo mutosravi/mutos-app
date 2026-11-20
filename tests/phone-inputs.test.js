@@ -6,7 +6,7 @@ const css = fs.readFileSync('public/app.css', 'utf8'), cfg = fs.readFileSync('pu
 const html = '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>' + css + '</style><style>.small{font-size:13px}</style></head><body>' +
   '<input class="in small" id="a"><input class="in" id="b" style="font-size:12px"><select id="c" class="small"><option>x</option></select><textarea id="d" class="small"></textarea>' +
   '<p id="blank" style="height:200px">blank</p><input id="venue" list="vl"><datalist id="vl"><option value="Taj Mahal Hotel"><option value="Clarks Avadh"><option value="Taj Palace"></datalist><input id="cam"><input type="search" id="sq"><span id="got"></span>' +
-  '<input class="in codein" id="code" autocomplete="one-time-code" style="font:700 30px sans-serif"><input type="checkbox" id="e"><script>' + cfg + '</script></body></html>';
+  '<input class="in codein" id="code" autocomplete="one-time-code" style="font:700 30px sans-serif"><input type="checkbox" id="e"><script>window.MUTOS_TEST_STANDALONE = 1;</script><script>' + cfg + '</script></body></html>';
 (async () => {
   let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
   const b = await chromium.launch();
@@ -36,6 +36,17 @@ const html = '<!doctype html><html><head><meta name="viewport" content="width=de
   ok(await ph.textContent('#mutos-suggest') === 'Z9 Saif', 'a plain box suggests what was typed in it before (kept on this phone)');
   await ph.tap('#blank'); await ph.tap('#sq'); await ph.waitForTimeout(50);
   ok(await ph.isHidden('#mutos-suggest'), 'search boxes get no suggestions');
+  // iPhone Home Screen app: the screen stays "shrunk" after the keyboard closes → the page is measured again (20 Nov 2026, Ravi)
+  { await ph.evaluate(() => { document.body.insertAdjacentHTML('beforeend', '<div style="height:3000px"></div><nav id="bar" style="position:fixed;bottom:0;left:0;right:0;height:60px">bar</nav>'); window.scrollTo(0, 500); });
+    const vp = ph.viewportSize(), n0 = await ph.evaluate(() => window.MUTOS_VIEWPORT_HEALS || 0);
+    await ph.tap('#blank'); await ph.waitForTimeout(300);
+    ok((await ph.evaluate(() => window.MUTOS_VIEWPORT_HEALS || 0)) === n0, 'keyboard closes and the screen is the right size: nothing happens');
+    // what iOS reports in that state: the window stays short by the keyboard's height after the keyboard has gone
+    await ph.evaluate(() => { const h = window.innerHeight - 300; Object.defineProperty(window, 'innerHeight', { configurable: true, get: () => h }); document.getElementById('cam').focus(); document.getElementById('cam').blur(); window.scrollTo(0, 500); });
+    await ph.waitForTimeout(400);
+    const after = await ph.evaluate(() => ({ n: window.MUTOS_VIEWPORT_HEALS || 0, y: Math.round(window.scrollY) }));
+    ok(after.n === n0 + 1 && after.y === 500, 'keyboard closed but the screen stayed short: the page is measured again once, and stays where it was scrolled');
+    await ph.setViewportSize(vp); }
   const pc = await (await b.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); await pc.setContent(html);
   ok(await size(pc, 'a') === 13, 'computer: sizes stay as designed');
   ok(await pc.getAttribute('#venue', 'list') === 'vl' && await pc.getAttribute('#a', 'autocomplete') === null, 'computer: the browser\'s own list under the box, as before');

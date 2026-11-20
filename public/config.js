@@ -97,3 +97,32 @@ if (/\.workers\.dev$/i.test(location.hostname)) location.replace(window.MUTOS_CO
   if (!(window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches)) return;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
+
+// iPhone Home Screen app: after the keyboard closes, iOS can keep the screen "shrunk" by the keyboard's height, so the bottom bar
+// floats in the middle of the page and the top bar slips away (20 Nov 2026, Ravi's screenshot). Known WebKit bug in standalone
+// apps; the cure is to make WebKit measure the screen again by hiding and showing the page for one frame once the keyboard is
+// gone (scroll position kept). Phones only; nothing happens when the height is already right.
+(function () {
+  if (!(window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches)) return;
+  // only the Home Screen app: in Safari itself the height changes all the time with its address bar, and that is fine
+  if (!(navigator.standalone === true || matchMedia('(display-mode: standalone)').matches || window.MUTOS_TEST_STANDALONE)) return;
+  let maxH = window.innerHeight, t = 0;
+  const typing = () => { const a = document.activeElement; return !!(a && (a.matches('input, textarea, select') || a.isContentEditable)); };
+  function heal() {
+    if (typing()) return;
+    const vv = window.visualViewport, h = window.innerHeight;
+    if (maxH - h <= 4 && !(vv && vv.offsetTop > 1)) return;   // already right
+    const x = window.scrollX, y = window.scrollY, b = document.body; if (!b) return;
+    b.style.display = 'none'; void b.offsetHeight; b.style.display = '';
+    window.scrollTo(x, y);
+    window.MUTOS_VIEWPORT_HEALS = (window.MUTOS_VIEWPORT_HEALS || 0) + 1;
+  }
+  const later = ms => { clearTimeout(t); t = setTimeout(heal, ms); };
+  window.addEventListener('resize', () => { if (!typing()) maxH = Math.max(maxH, window.innerHeight); });
+  window.addEventListener('orientationchange', () => { maxH = 0; setTimeout(() => { maxH = window.innerHeight; }, 400); });
+  document.addEventListener('focusout', e => { if (e.target && e.target.matches && e.target.matches('input, textarea, select, [contenteditable]')) later(160); }, true);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (!typing()) later(120); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') later(200); });
+  window.addEventListener('pageshow', () => later(200));
+  window.MUTOS_VIEWPORT = { heal, _max: () => maxH };
+})();
