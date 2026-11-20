@@ -382,6 +382,35 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.screenshot({ path: path.join(SHOTS, 'clients-window.png') });
   await owner.keyboard.press('Escape');
 
+  // ── 20 Nov 2026 (Ravi): sort clients, a top bar that stays, desks in the bar, Back that only goes back ──
+  { await owner.evaluate(() => window.MUTOS_CLIENTS.open()); await owner.waitForSelector('#cl-sort');
+    const names = () => owner.$$eval('#cl-list .cl-row b', bs => bs.map(b => b.textContent.trim().toLowerCase()));
+    await owner.selectOption('#cl-sort', 'za'); await owner.waitForTimeout(300); const za = await names();
+    ok(za.length > 1 && za.every((n, i) => !i || za[i - 1].localeCompare(n) >= 0), 'Clients → Sort: Name Z–A puts ' + za[0] + ' first');
+    await owner.selectOption('#cl-sort', 'az'); await owner.waitForTimeout(300); const az = await names();
+    ok(az.every((n, i) => !i || az[i - 1].localeCompare(n) <= 0) && await owner.evaluate(() => localStorage.getItem('mutos-sort-clients')) === 'az', 'Name A–Z, and the choice is remembered on this device');
+    await owner.fill('#cl-q', az[0].slice(0, 4)); await owner.waitForTimeout(150);
+    ok((await owner.$$eval('#cl-list .cl-row', rs => rs.filter(r => r.style.display !== 'none').length)) >= 1, 'a search box on Coming up too');
+    await owner.selectOption('#cl-sort', 'date'); await owner.waitForTimeout(200);
+    for (let i = 0; i < 3 && await owner.$('.sb-modal-overlay'); i++) { await owner.keyboard.press('Escape'); await owner.waitForTimeout(150); }
+    // the top bar stays on top of the board while scrolling, the date bar under it
+    await owner.click('#mutos-bar [data-mh-view="board"]'); await owner.waitForTimeout(400);
+    await owner.evaluate(() => window.scrollTo(0, 4000)); await owner.waitForTimeout(200);
+    const tops = await owner.evaluate(() => { const b = document.getElementById('mutos-bar').getBoundingClientRect(), g = document.querySelector('.sb-gobar'); return { bar: b.top, h: b.height, gobar: g ? g.getBoundingClientRect().top : null }; });
+    ok(tops.bar === 0 && tops.gobar !== null && Math.abs(tops.gobar - tops.h) <= 2, 'scrolled down the board: the top bar stays at the top, the date bar right under it');
+    // desks in the top bar
+    await owner.click('#mutos-bar [data-open-desk="work"]'); await owner.waitForSelector('#mh-desk a.tile[href="/desk.html"]');
+    ok(/Work desk/.test(await owner.textContent('#mh-desk')), 'the top bar has the desks: Work opens the Work desk');
+    // a page opened from a desk: Back comes back to that desk, not to Home
+    await owner.click('#mh-desk a.tile[href="/desk.html?tab=drives"]'); await owner.waitForSelector('#mutos-back:not([hidden])', { timeout: 20000 });
+    ok(await owner.evaluate(() => getComputedStyle(document.querySelector('header.hdr')).position) === 'sticky', 'Work desk: the top bar sticks and has "‹ Back"');
+    await owner.click('#mutos-back'); await owner.waitForURL('**/board.html**'); await owner.waitForSelector('#mh-desk', { timeout: 10000 });
+    ok(/Work desk/.test(await owner.textContent('#mh-desk')), 'Back from the Work desk page: the studio opens again with the Work desk open (not just Home)');
+    // the phone's / browser's Back closes the open window and stays on the page
+    const before = owner.url(); await owner.goBack(); await owner.waitForTimeout(400);
+    ok(!(await owner.$('#mh-desk')) && owner.url() === before, 'browser Back with a desk open: the desk closes, the page stays');
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); }
+
   // ── 2. the family signs in with their Gmail and fills it in ──
   const visitor = await as(null);
   await visitor.goto(B + '/client.html?k=' + link.token); await visitor.waitForSelector('#gsign');

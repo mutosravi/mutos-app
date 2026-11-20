@@ -211,3 +211,6 @@ select.pick { min-height: 40px; border-radius: 12px; background: var(--surface);
 @media (hover: none) and (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not(.codein), select, textarea { font-size: 16px !important; }   /* .codein = the big office-code box (30px) */
 }
+
+/* The top bar stays on top while scrolling (20 Nov 2026, Ravi: "The top row … vanishes when scrolled. That must stick to the top") */
+body > header.hdr, .wrap > header.hdr, header.hdr.topbar { position: sticky; top: 0; z-index: 40; background: var(--bg); padding-top: max(6px, env(safe-area-inset-top)); box-shadow: 0 6px 10px -10px rgba(90,50,60,.25); }

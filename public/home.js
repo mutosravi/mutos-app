@@ -39,8 +39,11 @@
         '<button type="button" class="mh-t mh-desk" data-mh-view="home">' + ICON('home') + 'Home</button>' +
         '<button type="button" class="mh-t mh-desk" data-mh-view="board">' + ICON('board') + 'Board</button>' +
         '<button type="button" class="mh-t mh-bell" id="mutos-updates" aria-label="Team updates">' + ICON('bell') + '<span class="mh-desk-l">Team updates</span><b id="mutos-upd-n" class="mh-n" hidden></b></button>' +
-        '<a class="mh-t mh-desk" href="/desk.html">' + ICON('film') + 'Work desk</a>' +
-        '<a class="mh-t mh-desk" href="/gear.html">' + ICON('box') + 'Gear desk</a>' +
+        // the desks (20 Nov 2026, Ravi: "navigate to various desks without any hassle"): each opens its tools, like on Home
+        '<button type="button" class="mh-t mh-desk" data-open-desk="work">' + ICON('film') + 'Work</button>' +
+        '<button type="button" class="mh-t mh-desk" data-open-desk="gear">' + ICON('box') + 'Gear</button>' +
+        '<button type="button" class="mh-t mh-desk" data-open-desk="clients">' + ICON('heart') + 'Clients</button>' +
+        '<button type="button" class="mh-t mh-desk" data-open-desk="people">' + ICON('idcard') + 'People</button>' +
         '<button type="button" class="mh-t mh-desk" id="mutos-settings">' + ICON('settings') + 'Settings</button>' +
         '<button type="button" class="mh-t mh-desk mh-out" id="mutos-out" aria-label="Sign out" title="Sign out">' + ICON('logout') + '</button>' +
       '</nav>' +
@@ -51,8 +54,11 @@
     bar.querySelector('#mutos-updates').addEventListener('click', openUpdates);
     bar.querySelector('#mutos-settings').addEventListener('click', openMore);
     bar.querySelector('[data-mh-home]').addEventListener('click', e => { e.preventDefault(); show('home'); });
-    if (sup()) { bar.querySelector('#mutos-updates').remove(); bar.querySelector('a[href="/gear.html"]').remove(); } // day-off approvals and gear are not his
+    if (sup()) { bar.querySelector('#mutos-updates').remove(); bar.querySelectorAll('[data-open-desk="gear"], [data-open-desk="people"]').forEach(x => x.remove()); } // day-off approvals, gear and people are not his
     document.body.insertBefore(bar, document.body.firstChild);
+    // the bar sticks to the top; the board's date bar and rail sit under it
+    const setH = () => document.documentElement.style.setProperty('--mh-bar-h', bar.offsetHeight + 'px');
+    setH(); if (window.ResizeObserver) new ResizeObserver(setH).observe(bar); window.addEventListener('resize', setH);
 
     const home = document.createElement('main');
     home.id = 'mutos-home'; home.className = 'mh-home';
@@ -61,16 +67,19 @@
 
     const nav = document.createElement('nav');
     nav.className = 'bnav mh-bnav'; nav.setAttribute('aria-label', 'Main');
+    // phones: Home, Board and the desks at the bottom (20 Nov 2026, Ravi); People, Team updates and Settings under More
     nav.innerHTML = '<button type="button" class="tab" data-mh-view="home">' + ICON('home') + 'Home</button>' +
       '<button type="button" class="tab" data-mh-view="board">' + ICON('board') + 'Board</button>' +
-      (sup() ? '<a class="tab" href="/desk.html">' + ICON('film') + 'Work</a>' : '<button type="button" class="tab" id="mh-nav-upd">' + ICON('bell') + 'Updates<b class="dot" id="mh-nav-n" hidden></b></button>') +
-      '<button type="button" class="tab" id="mh-nav-more">' + ICON('settings') + (sup() ? 'Me' : 'Settings') + '</button>';
+      '<button type="button" class="tab" data-open-desk="work">' + ICON('film') + 'Work</button>' +
+      (sup() ? '' : '<button type="button" class="tab" data-open-desk="gear">' + ICON('box') + 'Gear</button>') +
+      '<button type="button" class="tab" data-open-desk="clients">' + ICON('heart') + 'Clients</button>' +
+      '<button type="button" class="tab" id="mh-nav-more">' + ICON('settings') + (sup() ? 'Me' : 'More') + '<b class="dot" id="mh-nav-n" hidden></b></button>';
     document.body.appendChild(nav);
     document.querySelectorAll('[data-mh-view]').forEach(b => b.addEventListener('click', () => show(b.dataset.mhView)));
-    nav.querySelector('#mh-nav-more').addEventListener('click', openMore);
+    document.querySelectorAll('[data-open-desk]').forEach(b => b.addEventListener('click', () => openDesk(b.dataset.openDesk)));
+    nav.querySelector('#mh-nav-more').addEventListener('click', () => openMore(true));
     if (!sup()) {
-      nav.querySelector('#mh-nav-upd').addEventListener('click', openUpdates);
-      // keep the phone badge in step with the header badge
+      // keep the phone badge (on More, which has Team updates) in step with the header badge
       const n = bar.querySelector('#mutos-upd-n'), m = nav.querySelector('#mh-nav-n');
       new MutationObserver(() => { m.textContent = n.textContent; m.hidden = n.hidden; }).observe(n, { attributes: true, childList: true, characterData: true, subtree: true });
     }
@@ -79,10 +88,15 @@
   function toast(m) { const a = api(); if (a) a.toast(m); }
 
   // "More" on phones; "Settings" tile everywhere
-  function openMore() {
+  function openMore(phone) {
     closeMore();
     const owner = who.role === 'owner';
-    const rows = sup() ? [['#out', 'logout', 'Sign out', who.email]] : [
+    const upd = document.getElementById('mutos-upd-n'), nUpd = upd && !upd.hidden ? upd.textContent : '';
+    const deskRows = phone === true ? (sup() ? [['#desk-shoots', 'board', 'Shoots desk', 'Add shoots, call sheet, history']] : [
+      ['#updates', 'bell', 'Team updates' + (nUpd ? ' (' + nUpd + ')' : ''), 'Days off, can\'t make it, to confirm'],
+      ['#desk-shoots', 'board', 'Shoots desk', 'Crew, rentals, call sheet, billing'],
+      ['#desk-people', 'idcard', 'People', 'Everyone at Muto\'s' + (owner ? ', attendance, salaries' : '')]]) : [];
+    const rows = deskRows.concat(sup() ? [['#out', 'logout', 'Sign out', who.email]] : [
       owner && ['#logins', 'key', 'Team logins', 'Managers, gear desk, who can sign in'],
       owner && ['#backups', 'cloud', 'Backups', 'Nightly copies, download or back up now'],
       owner && ['#gdrive', 'cloud', 'Photos on Google Drive', 'Where card and family photos are kept'],
@@ -91,7 +105,7 @@
       ['#load', 'upload', 'Load backup file', 'Bring back a saved backup'],
       ['#excel', 'table', 'Export to Excel', 'All shoots in a spreadsheet'],
       ['#out', 'logout', 'Sign out', who.email]
-    ].filter(Boolean);
+    ]).filter(Boolean);
     const ov = document.createElement('div'); ov.className = 'sb-modal-overlay mh-sheet-bg'; ov.id = 'mh-more';
     ov.innerHTML = '<div class="sb-modal mh-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="mh-sheet-head"><b>Settings</b><button type="button" class="mh-x" aria-label="Close">✕</button></div>' +
       rows.map(([href, ic, label, sub]) => (href.startsWith('/') ? '<a class="mh-row" href="' + href + '">' : '<button type="button" class="mh-row" data-act="' + href.slice(1) + '">') + '<span class="mh-ic">' + ICON(ic) + '</span><span><b>' + esc(label) + '</b><small>' + esc(sub) + '</small></span>' + (href.startsWith('/') ? '</a>' : '</button>')).join('') + '</div>';
@@ -100,7 +114,8 @@
     ov.querySelector('.mh-x').addEventListener('click', closeMore);
     ov.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
       const a = b.dataset.act; closeMore();
-      if (a === 'logins') { if (window.MUTOS_APP) window.MUTOS_APP.openLogins(); } else if (a === 'backups') { if (window.MUTOS_APP) window.MUTOS_APP.openBackups(); }
+      if (a === 'updates') openUpdates(); else if (a.startsWith('desk-')) openDesk(a.slice(5));
+      else if (a === 'logins') { if (window.MUTOS_APP) window.MUTOS_APP.openLogins(); } else if (a === 'backups') { if (window.MUTOS_APP) window.MUTOS_APP.openBackups(); }
       else if (a === 'gdrive') { if (window.MutosPhotos) app.client().then(c => window.MutosPhotos.settings(c)); }
       else if (a === 'logs') { if (window.MUTOS_APP && window.MUTOS_APP.downloadLogs) window.MUTOS_APP.downloadLogs(); }
       else if (a === 'save') click('sb-backup'); else if (a === 'load') click('sb-restore'); else if (a === 'excel') click('sb-export');
@@ -146,8 +161,16 @@
     return 'Logins, backups, export';
   }
   function deskCount(d, ctx) { return d.k === 'work' ? (cardSum && !sup() ? cardSum.hold + cardSum.toOffice : 0) : d.k === 'shoots' ? ctx.short + ctx.inbox : d.k === 'gear' ? ctx.rent : d.k === 'clients' && ctx.cs ? ctx.cs.toCheck + ctx.cs.overdue : 0; }
+  // going back to the desk a tool was opened from (20 Nov 2026, Ravi: "No page should take to home … It must always go back only")
+  let curDesk = null, returnDesk = null, returnArmed = false, returnT = 0;
+  const watchReturn = () => new MutationObserver(() => {
+    if (!returnDesk) return;
+    const open = document.querySelector('.sb-modal-overlay:not(#mh-desk), .sheet-bg');
+    if (open) { returnArmed = true; return; }
+    if (returnArmed) { const k = returnDesk; returnDesk = null; returnArmed = false; setTimeout(() => { if (!document.querySelector('.sb-modal-overlay, .sheet-bg')) openDesk(k); }, 60); }
+  }).observe(document.body, { childList: true });
   function openDesk(k) {
-    closeDesk();
+    closeDesk(); curDesk = k;
     const d = desks().find(x => x.k === k); if (!d) return;
     if (k === 'settings') { openMore(); return; }
     const a = api(), rent = a ? a.rentalsToBook().length : 0, inbox = a ? a.inboxCount() : 0, cs = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
@@ -160,7 +183,12 @@
     document.body.appendChild(ov);
     ov.addEventListener('click', e => { if (e.target === ov) closeDesk(); });
     ov.querySelector('.mh-x').addEventListener('click', closeDesk);
-    ov.querySelectorAll('[data-tile]').forEach(b => b.addEventListener('click', () => { closeDesk(); runTile(b.dataset.tile); }));
+    ov.querySelectorAll('[data-tile]').forEach(b => b.addEventListener('click', () => {
+      const t = b.dataset.tile; closeDesk();
+      if (!['board', 'mine', 'sync'].includes(t)) { returnDesk = k; returnArmed = false; clearTimeout(returnT); returnT = setTimeout(() => { if (!returnArmed) returnDesk = null; }, 8000); }
+      runTile(t);
+    }));
+    ov.querySelectorAll('a.tile').forEach(a => a.addEventListener('click', () => { if (window.MUTOS_NAV) window.MUTOS_NAV.deskLeft(k); }));
   }
   function closeDesk() { const o = document.getElementById('mh-desk'); if (o) o.remove(); }
   function runTile(k) {
@@ -294,7 +322,10 @@
     try { who = await app.me(); } catch (e) { return; }
     if (!who || !['owner', 'manager', 'supervisor'].includes(who.role)) return; // shim.js sends everyone else away
     buildChrome();
+    watchReturn();
     apply();
+    // Back from a page opened from a desk: that desk opens again
+    { const k = window.MUTOS_NAV && window.MUTOS_NAV.deskBack(); if (k) setTimeout(() => openDesk(k), 200); }
     // redraw Home when the board changes (its summary line is redrawn on every change) and when Team updates change
     const watch = () => { const s = document.getElementById('sb-summary'); if (s) new MutationObserver(render).observe(s, { childList: true, subtree: true }); };
     watch();

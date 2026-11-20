@@ -26,6 +26,7 @@ head = '''<!doctype html>
 <link rel="stylesheet" href="/app.css">
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
+<script src="/nav.js"></script>
 <script src="/shim.js"></script>
 <script src="/crew-sync.js"></script>
 <script src="/supervisor.js"></script>

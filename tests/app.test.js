@@ -277,7 +277,11 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const mirrored = await owner.evaluate(() => window.__boardApi.state().unavailability.filter(u => String(u.id).startsWith('crew-')).map(u => u.date));
   ok(mirrored.length === 1 && mirrored[0] === free, 'auto date copied to the board away list: ' + mirrored.join(','));
   ok((await owner.textContent('#mutos-upd-n')) === '3', 'Team updates badge shows 3 (2 requests + 1 can\'t make it)');
-  await owner.keyboard.press('Escape'); await owner.click('#mutos-updates'); await owner.waitForSelector('.tu-ok');
+  // a tool opened from a desk closes back to that desk (20 Nov 2026, Ravi: "It must always go back only")
+  await owner.keyboard.press('Escape'); await owner.waitForSelector('#mh-desk', { timeout: 3000 }).catch(() => {});
+  ok(!!(await owner.$('#mh-desk')) && /Shoots desk/.test(await owner.textContent('#mh-desk')), 'after the Crew window (opened from the Shoots desk) closed, the Shoots desk is open again');
+  for (let i = 0; i < 4 && await owner.$('.sb-modal-overlay'); i++) { await owner.keyboard.press('Escape'); await owner.waitForTimeout(150); }
+  await owner.click('#mutos-updates'); await owner.waitForSelector('.tu-ok');
   const panel = await owner.textContent('.sb-modal');
   ok(panel.includes('Sister wedding') && panel.includes('Booked on') && panel.includes('Exam that day') && panel.includes('2 cards to Ravi') === false, 'panel lists requests and can\'t-make-it');
   ok(gearBtn ? panel.includes('Studio gear with crew (1)') : true, 'panel lists gear out');
@@ -328,11 +332,14 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const oph = await as(OWNER, { width: 390, height: 844 });
   await oph.goto(B + '/'); await oph.waitForURL('**/board.html'); await oph.waitForSelector('#mh-desks .desk', { timeout: 20000 });
   await oph.waitForTimeout(600);
+  ok((await oph.$$eval('.mh-bnav .tab', ts => ts.map(t => t.textContent.replace(/\d+/g, '').trim()).join(','))) === 'Home,Board,Work,Gear,Clients,More', 'owner phone bottom bar: Home, Board, Work, Gear, Clients, More');
+  await oph.click('.mh-bnav [data-open-desk="clients"]'); await oph.waitForSelector('#mh-desk [data-tile="clientdata"]'); ok(true, 'Clients at the bottom opens the Clients desk');
+  await oph.click('#mh-desk .mh-x'); await oph.waitForTimeout(200);
   ok(await oph.isVisible('.mh-bnav') && await oph.isHidden('#mutos-settings') && !(await oph.evaluate(() => document.documentElement.scrollWidth > innerWidth)), 'owner phone: bottom bar, no sideways scroll');
   await oph.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-home-phone.png') });
   await oph.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-home-phone-full.png'), fullPage: true });
   await oph.click('#mh-nav-more'); await oph.waitForSelector('#mh-more');
-  ok((await oph.textContent('#mh-more')).includes('Team logins') && (await oph.textContent('#mh-more')).includes('Export to Excel'), 'Settings sheet has logins, backups and files');
+  ok((await oph.textContent('#mh-more')).includes('Team logins') && (await oph.textContent('#mh-more')).includes('Export to Excel') && /Team updates/.test(await oph.textContent('#mh-more')) && /People/.test(await oph.textContent('#mh-more')), 'More has Team updates, Shoots desk, People, logins, backups and files');
   await oph.screenshot({ path: path.join(process.env.SHOTS || '.', 'owner-more-phone.png') });
   await oph.click('#mh-more [data-act="logins"]'); await oph.waitForSelector('#lg-email'); ok(true, 'Team logins opens from Settings');
   await oph.keyboard.press('Escape'); await oph.waitForTimeout(300);

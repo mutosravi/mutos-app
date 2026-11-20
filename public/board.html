@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="/app.css">
 <script src="/config.js"></script>
 <script src="/app-core.js"></script>
+<script src="/nav.js"></script>
 <script src="/shim.js"></script>
 <script src="/crew-sync.js"></script>
 <script src="/supervisor.js"></script>
@@ -467,6 +468,11 @@ body.mh-view-board #mutos-home { display: none; }
 .desk:hover { transform: translateY(-1px); }
 .mh-desksheet { max-width: 520px; }
 .mh-desksheet .tiles { padding: 4px 6px 8px; }
+
+/* Home bar stays on top while scrolling (20 Nov 2026); the board's own date bar and side rail sit right under it */
+.mh-bar { position: sticky; top: 0; z-index: 60; box-shadow: 0 6px 12px -12px rgba(90,50,60,.3); }
+.sb-gobar { top: var(--mh-bar-h, 0px) !important; }
+.sb-rail { top: calc(var(--mh-bar-h, 0px) + var(--gobar-h, 58px) + 12px) !important; max-height: calc(100vh - var(--mh-bar-h, 0px) - var(--gobar-h, 58px) - 24px) !important; }
 </style>
 
 <div class="sb-root" id="sb-root">

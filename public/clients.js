@@ -95,20 +95,33 @@
     return api.state().events.filter(e => api.isActive(e) && e.date && e.date >= today && !mine.has(e.id) && ph.has(digits(e.contactPhone)));
   }
   let clientsTab = 'coming';
+  // sort clients (20 Nov 2026, Ravi: "An option needed to sort client name by date, alphabet, etc."); remembered on this device
+  const SORTS = [['date', 'Date'], ['dater', 'Date, other way'], ['az', 'Name A–Z'], ['za', 'Name Z–A'], ['kind', 'Kind of client'], ['fns', 'Most functions']];
+  const getSort = k => { try { return localStorage.getItem('mutos-sort-' + k) || 'date'; } catch (e) { return 'date'; } };
+  const setSort = (k, v) => { try { localStorage.setItem('mutos-sort-' + k, v); } catch (e) {} };
+  // date: coming = soonest first; past / all = most recent first
+  function sortWs(list, mode, newestFirst) {
+    const name = w => String(w.title || '').toLowerCase(), byDate = (a, b) => newestFirst ? String(b.last).localeCompare(String(a.last)) : String(a.first).localeCompare(String(b.first));
+    const f = { date: byDate, dater: (a, b) => -byDate(a, b), az: (a, b) => name(a).localeCompare(name(b)), za: (a, b) => name(b).localeCompare(name(a)),
+      kind: (a, b) => String(a.occasion || 'wedding').localeCompare(String(b.occasion || 'wedding')) || byDate(a, b), fns: (a, b) => b.events.length - a.events.length || byDate(a, b) }[mode] || byDate;
+    return list.slice().sort(f);
+  }
+  const sortSel = (id, v) => '<select class="sb-field" id="' + id + '" aria-label="Sort" style="flex:0 0 auto;max-width:170px">' + SORTS.map(([k, l]) => '<option value="' + k + '"' + (k === v ? ' selected' : '') + '>Sort: ' + esc(l) + '</option>').join('') + '</select>';
   async function open() {
     if (!api) { alert('The board is still loading.'); return; }
     try { await load(); } catch (e) { api.toast('Could not load clients: ' + (e.message || e) + '. Run supabase/004_studio.sql first.'); return; }
     sync();
     // Coming up | Past (12 Nov 2026, Ravi: "what about clients? I need to see data copied"): past weddings with Data, History and payments
     const today = api.todayStr(), past = clientsTab === 'past';
-    const ws = past ? weddings(true).filter(w => w.last < today).sort((a, b) => b.last.localeCompare(a.last)) : weddings();
+    const sortMode = getSort('clients');
+    const ws = sortWs(past ? weddings(true).filter(w => w.last < today) : weddings(), sortMode, past);
     const tabs = '<div class="sb-btn-row" id="cl-tabs" style="padding:0 8px 6px"><button type="button" class="sb-btn-sm' + (past ? ' secondary' : '') + '" data-cltab="coming">Coming up</button><button type="button" class="sb-btn-sm' + (past ? '' : ' secondary') + '" data-cltab="past">Past</button>' +
-      (past ? '<input class="sb-field" id="cl-q" placeholder="Search a past client" style="flex:1 1 160px;min-width:0">' : '') + '</div>';
-    const pastRow = w => '<div class="sb-manage-row cl-past" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></div>' + moneyPill(w.key) + '</div>' +
+      '<input class="sb-field" id="cl-q" placeholder="' + (past ? 'Search a past client' : 'Search a client') + '" style="flex:1 1 160px;min-width:0">' + sortSel('cl-sort', sortMode) + '</div>';
+    const pastRow = w => '<div class="sb-manage-row cl-past cl-row" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></div>' + moneyPill(w.key) + '</div>' +
       '<div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm" data-data="' + esc(w.key) + '">Data copied</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>') + '</div></div>';
     const html = tabs + '<div class="sb-modal-list" id="cl-list">' + (past ? (ws.length ? ws.map(pastRow).join('') : '<p class="sb-modal-empty">No past clients on the board.</p>') : ws.length ? ws.map(w => {
       const s = stateOf(w), sx = strays(w);
-      return '<div class="sb-manage-row" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span>' +
+      return '<div class="sb-manage-row cl-row" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span>' +
         (sx.length ? '<div class="cl-stray" style="margin-top:6px;background:#f2dfa7;color:#5c4410;border-radius:10px;padding:6px 8px;font-size:12.5px;line-height:1.4">Same phone, but not under this client (the family will not see them): <b>' + esc(sx.map(e => e.name + ' (' + dayName(e.date) + ')').join(', ')) + '</b>' +
           (w.key.startsWith('w:') && !sup() ? ' <button type="button" class="sb-btn-sm" data-join="' + esc(w.key) + '" style="margin-left:4px">Join them</button>' : '') + '</div>' : '') + '</div>' +
         '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
@@ -125,7 +138,8 @@
       api.toast(sx.length + ' function' + (sx.length > 1 ? 's' : '') + ' joined to ' + name + '.'); open();
     }));
     modal.querySelectorAll('[data-cltab]').forEach(b => b.addEventListener('click', () => { clientsTab = b.dataset.cltab; open(); }));
-    { const qi = modal.querySelector('#cl-q'); if (qi) qi.addEventListener('input', () => { const v = qi.value.trim().toLowerCase(); modal.querySelectorAll('.cl-past').forEach(r => { r.style.display = !v || r.dataset.q.includes(v) ? 'block' : 'none'; }); }); }
+    { const qi = modal.querySelector('#cl-q'); if (qi) qi.addEventListener('input', () => { const v = qi.value.trim().toLowerCase(); modal.querySelectorAll('.cl-row').forEach(r => { r.style.display = !v || r.dataset.q.includes(v) ? 'block' : 'none'; }); }); }
+    modal.querySelector('#cl-sort').addEventListener('change', e => { setSort('clients', e.target.value); open(); });
     const byKey = k => ws.find(w => w.key === k);
     modal.querySelectorAll('[data-make], [data-mails]').forEach(b => b.addEventListener('click', () => gmails(byKey(b.dataset.make || b.dataset.mails))));
     modal.querySelectorAll('[data-wa]').forEach(a => {
@@ -303,10 +317,12 @@
     const all = weddings(true);
     const row = w => '<button type="button" class="sb-manage-row" data-dw="' + esc(w.key) + '" style="display:block;width:100%;text-align:left;padding:10px 8px;background:none;border:0;border-bottom:1px solid var(--line,#eee);cursor:pointer;font:inherit;color:inherit"><b>' + esc(w.title) + '</b><br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></button>';
     const modal = api.makeModal(api.modalHead('Find client data', 'Type the client or wedding name. Past weddings are here too.') +
-      '<div style="padding:0 2px 8px"><input class="sb-input" id="fd-q" type="search" placeholder="e.g. Sharma" style="width:100%;min-height:42px;border-radius:12px;border:1px solid var(--line,#ddd);padding:8px 12px;font:inherit;box-sizing:border-box"></div><div class="sb-modal-list" id="fd-list"></div>' +
+      '<div style="padding:0 2px 8px;display:flex;gap:8px;flex-wrap:wrap"><input class="sb-input" id="fd-q" type="search" placeholder="e.g. Sharma" style="flex:1 1 180px;min-width:0;min-height:42px;border-radius:12px;border:1px solid var(--line,#ddd);padding:8px 12px;font:inherit;box-sizing:border-box">' + sortSel('fd-sort', getSort('data')) + '</div><div class="sb-modal-list" id="fd-list"></div>' +
       '<div class="sb-modal-foot"><button type="button" class="secondary" id="fd-back">' + (back ? '← Back' : 'Close') + '</button></div>', true);
     const list = modal.querySelector('#fd-list'), q = modal.querySelector('#fd-q');
-    const draw = () => { const t = q.value.trim().toLowerCase(), hit = all.filter(w => !t || w.title.toLowerCase().includes(t) || w.events.some(e => String(e.name).toLowerCase().includes(t))).slice(0, 40);
+    const so = modal.querySelector('#fd-sort');
+    so.addEventListener('change', () => { setSort('data', so.value); draw(); });
+    const draw = () => { const t = q.value.trim().toLowerCase(), hit = sortWs(all.filter(w => !t || w.title.toLowerCase().includes(t) || w.events.some(e => String(e.name).toLowerCase().includes(t))), so.value, true).slice(0, t ? 200 : 60);
       list.innerHTML = hit.length ? hit.map(row).join('') : '<p class="sb-modal-empty">No wedding with that name on the board.</p>';
       list.querySelectorAll('[data-dw]').forEach(b => b.addEventListener('click', () => dataWin(all.find(w => w.key === b.dataset.dw), () => findData(back)))); };
     q.addEventListener('input', draw); draw(); setTimeout(() => q.focus(), 50);
