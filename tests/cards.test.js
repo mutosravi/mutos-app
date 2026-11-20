@@ -20,6 +20,9 @@ T.docs.set('events/' + ev.id, { collection: 'events', id: ev.id, data: ev });
 [{ id: 'ev-gupta', name: 'Gupta Mehndi', wedding: 'Gupta', date: istDay(20), slot: 'Evening', contactName: 'Neha Gupta', contactPhone: '9876511111', location: 'Taj Mahal Hotel' },
  { id: 'ev-verma', name: 'Verma Wedding', wedding: 'Verma', date: istDay(-40), slot: 'Evening', contactName: 'Amit Verma' },
  { id: 'ev-x', name: 'Cancelled shoot', date: istDay(2), status: 'cancelled' }].forEach(x => T.docs.set('events/' + x.id, { collection: 'events', id: x.id, data: Object.assign({ status: 'confirmed', assignments: [], equipmentIds: [], assistantIds: [] }, x) }));
+// board crew list: Shrey is on People (by name), Naveen is not (has a Login Gmail), a team and someone who left are never listed
+[{ id: 'sh-shrey', name: 'Shrey', role: 'Photo' }, { id: 'sh-naveen', name: 'Naveen', role: 'Cine', email: 'Naveen@x.com' }, { id: 'sh-naveen2', name: 'naveen ', role: 'Drone' },
+ { id: 'sh-team', name: 'Team Alpha', role: 'Team' }, { id: 'sh-left', name: 'Old Guy', role: 'Photo', left: true }].forEach(x => T.docs.set('shooters/' + x.id, { collection: 'shooters', id: x.id, data: x }));
 T.crew_feed.set('shrey', { person_key: 'shrey', name: 'Shrey', data: { shoots: [{ id: ev.id, date: ev.date, shoot: ev.name, wedding: 'Sharma' }] } });
 
 // ── rules (same as 014_cards.sql) ──
@@ -142,6 +145,11 @@ function handle(e, d) {
     d.rows.forEach(r => { const id = uid(); t.set(id, Object.assign({ id, holder: null, data: 'empty', data_since: null, condition: 'ok', errors: 0, cycle: 1, with_team: false, notes: null }, r, { code: r.code.trim() })); log(id, e, 'Added'); });
     return { data: null, error: null };
   }
+  if (d.table === 'people' && d.op === 'insert') {
+    if (!staff(e)) return { data: null, error: { message: 'row-level security' } };
+    d.rows.forEach(r => { const id = r.id || uid(); T.people.set(id, Object.assign({ code: 'M0' + (T.people.size + 1), email: null, crew_keys: [], skills: [], active: true }, r, { id })); });
+    return { data: null, error: null };
+  }
   if (d.table === 'cards' && d.op === 'update') { if (!staff(e)) return { data: null, error: null }; [...t.values()].filter(match).forEach(k => Object.assign(k, d.rows[0])); return { data: null, error: null }; }
   return { data: null, error: { message: 'not allowed in this test: ' + d.op + ' ' + d.table } };
 }
@@ -205,6 +213,15 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   // ── bulk to the supervisor ──
   for (const c of ['C01', 'C02', 'C03', 'C04']) await pick(o, c);
   ok(/4 picked/.test(await o.textContent('#selbar')), 'four cards picked');
+  // a shooter on the board but not on People can be added right from the Give window (20 Nov 2026, Ravi: "Few of the shooters are not listed in card handover list")
+  await o.click('#sel-give'); await o.waitForSelector('#g-miss [data-addp]');
+  const missT = await o.textContent('#g-miss');
+  ok(/On the board but not on People \(1\)/.test(missT) && /Naveen/.test(missT) && !/Shrey|Team Alpha|Old Guy/.test(missT), 'Give window: "On the board but not on People (1)" lists Naveen (not Shrey, a team or someone who left)');
+  await o.click('#g-miss [data-addp]'); await o.waitForFunction(() => !document.getElementById('g-miss'));
+  const nv = [...T.people.values()].find(x => x.name === 'Naveen');
+  ok(nv && nv.email === 'naveen@x.com' && nv.crew_keys.join() === 'sh-naveen,sh-naveen2' && nv.active, 'one tap adds Naveen to People with his board Gmail and both board names');
+  ok(await o.inputValue('#g-to') === nv.id, 'and picks him as the receiver');
+  await o.click('#g-cx');
   await o.click('#sel-give'); await o.selectOption('#g-to', P.Vikas); await o.fill('#g-note', 'weekend shoots'); await o.click('#g-go');
   await o.waitForFunction(() => /waiting for them to accept/.test(document.getElementById('inbox').textContent));
   ok([...T.card_moves.values()].filter(m => m.status === 'pending').length === 4 && new Set([...T.card_moves.values()].map(m => m.batch)).size === 1 && !K('C01').holder, 'one handover of four cards; still in the office until he accepts');

@@ -418,6 +418,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       '<label class="wide">Note (optional)<input class="in" id="g-note" maxlength="300" placeholder="e.g. Sharma wedding, 14–16 Nov"></label></div>' +
       '<div class="pillrow"><button type="button" class="pillbtn light" id="g-cx">Cancel</button><button type="button" class="pillbtn" id="g-go">Give</button></div>');
     bg.querySelector('#g-cx').addEventListener('click', () => bg.remove());
+    if (staff) missingCrew(bg, list);
     bg.querySelector('#g-go').addEventListener('click', async () => {
       const v = bg.querySelector('#g-to').value; if (!v) { toast('Pick who gets them.', true); return; }
       const r = await rpc('card_give', { p_cards: list.map(k => k.id), p_to: v === 'office' ? null : v, p_note: bg.querySelector('#g-note').value.trim() || null });
@@ -426,6 +427,50 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       sel.clear(); bg.remove(); await refresh();
       toast('Given. Waiting for ' + (v === 'office' ? 'the admin or manager' : nameOf(v)) + ' to accept.');
     });
+  }
+
+  // board shooters who are not on People cannot receive cards (they need a person to accept): list them in the Give window and
+  // let the admin / manager add them in one tap (20 Nov 2026, Ravi: "Few of the shooters are not listed in card handover list")
+  async function missingCrew(bg, list) {
+    const host = document.createElement('div'); host.id = 'g-miss';
+    bg.querySelector('#g-to').closest('label').after(host);
+    let shooters = [], people = [];
+    try {
+      const [sr, pr] = await Promise.all([pageAll(() => c.from('docs').select('id, data').eq('collection', 'shooters')), pageAll(() => c.from('people').select('id, name, email, crew_keys, active'))]);
+      shooters = (sr.data || []).map(r => Object.assign({ id: r.id }, r.data || {})); people = pr.data || [];
+    } catch (e) { return; }
+    const norm = n => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const byKey = new Map(); people.forEach(p => (p.crew_keys || []).forEach(k => byKey.set(k, p)));
+    const byName = new Map(); people.forEach(p => byName.set(norm(p.name), p));
+    const groups = new Map();
+    shooters.filter(s => s.name && !s.left && !/team/i.test(s.role || '')).forEach(s => { const k = norm(s.name); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); });
+    const miss = [];
+    groups.forEach((recs, k) => {
+      const linked = recs.map(s => byKey.get(s.id)).find(Boolean) || byName.get(k);
+      if (linked && linked.active) return;
+      miss.push({ name: recs[0].name, ids: recs.map(s => s.id), email: (recs.map(s => String(s.email || '').trim().toLowerCase()).find(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) || null), off: linked || null });
+    });
+    if (!miss.length) return;
+    miss.sort((a, b) => a.name.localeCompare(b.name));
+    host.innerHTML = '<div class="ans wait" style="margin:4px 0 10px"><b>On the board but not on People (' + miss.length + ')</b>: they cannot receive cards yet. Add them here (name and board name; their Gmail from the board if it is there), then pick them above.' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + miss.map((m, i) => '<button type="button" class="pillbtn light" data-addp="' + i + '" style="min-height:34px">＋ ' + esc(m.name) + (m.off ? ' (inactive: turn on)' : '') + (m.email ? '' : ' · no Gmail') + '</button>').join('') + '</div></div>';
+    host.querySelectorAll('[data-addp]').forEach(btn => btn.addEventListener('click', async () => {
+      const m = miss[+btn.dataset.addp]; btn.disabled = true;
+      let id = m.off && m.off.id, error = null;
+      if (m.off) ({ error } = await c.from('people').update({ active: true, crew_keys: [...new Set([...(m.off.crew_keys || []), ...m.ids])] }).eq('id', m.off.id));
+      else {
+        id = crypto.randomUUID();
+        const email = m.email && !people.some(p => p.email === m.email) ? m.email : null;
+        ({ error } = await c.from('people').insert({ id, name: m.name, email, crew_keys: m.ids }));
+      }
+      if (error) { btn.disabled = false; toast('Could not add: ' + error.message, true); return; }
+      const d = await c.rpc('people_directory'); if (d && !d.error) dir = d.data || [];
+      const selEl = bg.querySelector('#g-to');
+      if (!selEl.querySelector('option[value="' + id + '"]')) { const o = document.createElement('option'); o.value = id; o.textContent = m.name; selEl.appendChild(o); }
+      selEl.value = id; btn.remove();
+      if (!host.querySelector('[data-addp]')) host.remove();
+      toast(m.name + ' added to People' + (m.off ? ' again' : '') + '. ' + (m.email || (m.off && m.off.email) ? 'They accept the cards in the app with their Gmail.' : 'Add their Gmail on People so they can sign in and accept.'));
+    }));
   }
 
   // ---------- the team leader's notes ----------
