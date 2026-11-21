@@ -66,10 +66,19 @@
         const cur = new Map(rows.map(r => [r.email, r])), desired = new Map();
         want.forEach(p => p.emails.forEach(e => desired.set(e, p)));
         const ups = [];
-        desired.forEach((p, e) => { const r = cur.get(e); if (r && r.role !== 'crew') return; if (!r || r.person_key !== p.key || r.display_name !== p.name) ups.push({ email: e, role: 'crew', person_key: p.key, display_name: p.name }); });
+        // an office employee ('staff' login, made from People / Attendance) who is also on the board's crew list becomes crew:
+        // same team home and attendance, plus his shoots (21 Nov 2026, Ravi: "Rishu Shukla is unable to see his shoots")
+        desired.forEach((p, e) => { const r = cur.get(e); if (r && !['crew', 'staff'].includes(r.role)) return; if (!r || r.role !== 'crew' || r.person_key !== p.key || r.display_name !== p.name) ups.push({ email: e, role: 'crew', person_key: p.key, display_name: p.name }); });
         if (ups.length) { const { error: e2 } = await c.from('members').upsert(ups); if (e2) throw e2; }
         const gone = rows.filter(r => r.role === 'crew' && !desired.has(r.email)).map(r => r.email);
-        if (gone.length) { const { error: e3 } = await c.from('members').delete().in('email', gone); if (e3) throw e3; }
+        if (gone.length) {
+          // off the board's crew list: someone still on People keeps an office login ('staff'); the rest lose the crew login
+          const pr = await c.from('people').select('email, active').in('email', gone);
+          const office = new Set(((pr && pr.data) || []).filter(x => x.active).map(x => x.email));
+          const keep = gone.filter(e => office.has(e)), drop = gone.filter(e => !office.has(e));
+          if (keep.length) { const { error: e4 } = await c.from('members').update({ role: 'staff', person_key: null }).in('email', keep); if (e4) throw e4; }
+          if (drop.length) { const { error: e3 } = await c.from('members').delete().in('email', drop); if (e3) throw e3; }
+        }
       }
       // 3. the Gear desk's view: items and who carries what (no client details)
       await pushGear(c);

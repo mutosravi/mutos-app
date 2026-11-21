@@ -178,12 +178,14 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.waitForSelector('.sb-modal .ed-email');
   pick.id = (await owner.getAttribute('.sb-modal .ed-email', 'id')).replace('ed-email-', '');
   ok(true, 'Login Gmail field shown in the app board');
+  // this person already has an office login ('staff', made from People): it must become crew and see the shoots (21 Nov 2026, Rishu)
+  db.members.set(CREW, { email: CREW, role: 'staff', person_key: null, display_name: 'Office login' });
   await owner.fill('#ed-email-' + pick.id, 'Crew.Member@Gmail.com ');
   await owner.evaluate(id => { const f = document.getElementById('ed-email-' + id).parentElement; const b = [...f.querySelectorAll('button')].find(x => x.textContent.trim() === 'Save'); b.click(); }, pick.id);
   await owner.waitForTimeout(5500);
   const saved = [...db.docs.values()].find(r => r.collection === 'shooters' && r.id === pick.id);
   ok(saved && saved.data.email === CREW, 'email saved lowercase on the shooter doc: ' + (saved && saved.data.email));
-  ok(db.members.get(CREW) && db.members.get(CREW).role === 'crew', 'crew login created: ' + JSON.stringify(db.members.get(CREW)));
+  ok(db.members.get(CREW) && db.members.get(CREW).role === 'crew' && !!db.members.get(CREW).person_key, 'an office (staff) login with the same Gmail became crew with his board name, so he sees his shoots: ' + JSON.stringify(db.members.get(CREW)));
   const pkey = db.members.get(CREW) && db.members.get(CREW).person_key;
   const feed = db.crew_feed.get(pkey);
   ok(feed && feed.data.shoots.filter(x => x.date >= dday(0)).length === pick.n && feed.data.shoots.some(x => x.id === pastId), 'crew page written with ' + pick.n + ' upcoming shoots + the recent one');
