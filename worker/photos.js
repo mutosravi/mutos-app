@@ -67,7 +67,7 @@ async function rowGet(env, fetchFn, id) {
 
 // ---------- Google sign-in of the studio Gmail ----------
 let tokenCache = null;   // { token, exp }
-async function auth(env) { const raw = env.BACKUPS && await env.BACKUPS.get('gdrive:auth'); try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+export async function auth(env) { const raw = env.BACKUPS && await env.BACKUPS.get('gdrive:auth'); try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 export async function driveToken(env, fetchFn = fetch) {
   if (tokenCache && tokenCache.exp > Date.now() + 60e3) return tokenCache.token;
   const a = await auth(env);
@@ -86,7 +86,7 @@ async function gdrive(env, fetchFn, url, init = {}) {
   return fetchFn(url, Object.assign({}, init, { headers: Object.assign({ Authorization: 'Bearer ' + t }, init.headers || {}) }));
 }
 // a folder path under the app's root folder (made once, ids remembered in KV)
-async function folderFor(env, fetchFn, path) {
+export async function folderFor(env, fetchFn, path) {
   const a = await auth(env); let parent = a && a.root;
   if (!parent) throw new Error('Google Drive is not connected yet.');
   for (let i = 0; i < path.length; i++) {
@@ -108,7 +108,7 @@ async function folderFor(env, fetchFn, path) {
   return parent;
 }
 // put bytes on Drive (resumable session, then one PUT); returns the Drive file
-async function putFile(env, fetchFn, meta, mime, bytes) {
+export async function putFile(env, fetchFn, meta, mime, bytes) {
   const init = await gdrive(env, fetchFn, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id', {
     method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': mime, 'X-Upload-Content-Length': String(bytes.byteLength) }, body: JSON.stringify(meta) });
   const at = init.headers.get('Location');

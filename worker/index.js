@@ -5,6 +5,7 @@ import { sendPush } from './push.js';
 import { runBackup, listAll } from './backup.js';
 import { parseServiceAccount, exportSheetXlsx } from './google.js';
 import { photosApi } from './photos.js';
+import { runDailyLogs } from './logs.js';
 
 const pad = n => String(n).padStart(2, '0');
 function istDate(offsetDays) { const d = new Date(Date.now() + 5.5 * 3600e3 + offsetDays * 864e5); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
@@ -283,6 +284,19 @@ export async function backupApi(request, env, fetchFn = fetch) {
     return Response.json({ backups: keys.map(k => ({ name: k.name, ...(k.metadata || {}) })).sort((a, b) => String(b.at || b.name).localeCompare(String(a.at || a.name))) });
   }
   if (url.pathname === '/api/backups/now' && request.method === 'POST') return Response.json(await runBackup(env, 'manual', fetchFn));
+  // daily Excel of cards and drives (21 Nov 2026, worker/logs.js)
+  if (url.pathname === '/api/backups/logs' && request.method === 'GET') {
+    const keys = [...await listAll(env, 'logs/'), ...await listAll(env, 'logs-monthly/')];
+    return Response.json({ logs: keys.map(k => ({ name: k.name, ...(k.metadata || {}) })).sort((a, b) => String(b.name).localeCompare(String(a.name))) });
+  }
+  if (url.pathname === '/api/backups/logs/now' && request.method === 'POST') return Response.json(await runDailyLogs(env, fetchFn));
+  if (url.pathname === '/api/backups/logs/file' && request.method === 'GET') {
+    const name = url.searchParams.get('name') || '';
+    if (!/^logs(-monthly)?\/[\d-]+$/.test(name)) return Response.json({ error: 'Unknown file.' }, { status: 400 });
+    const body = await env.BACKUPS.get(name, 'arrayBuffer');
+    if (body == null) return Response.json({ error: 'That file no longer exists.' }, { status: 404 });
+    return new Response(body, { headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': 'attachment; filename="mutos-cards-drives-' + name.replace(/^logs(-monthly)?\//, '') + '.xlsx"', 'Cache-Control': 'no-store' } });
+  }
   if (url.pathname === '/api/backups/file' && request.method === 'GET') {
     const name = url.searchParams.get('name') || '';
     if (!/^(photos\/)?(nightly|monthly|manual)\/[\d-]+$/.test(name)) return Response.json({ error: 'Unknown backup.' }, { status: 400 });
@@ -331,7 +345,9 @@ export default {
     }
     if (event.cron === BACKUP_CRON) {
       if (!env.SUPABASE_SECRET_KEY || !env.BACKUPS) { console.log('backup skipped: secret key or storage missing'); return; }
-      ctx.waitUntil(runBackup(env, 'nightly').then(r => console.log('backup', JSON.stringify(r))));
+      ctx.waitUntil(runBackup(env, 'nightly').then(r => console.log('backup', JSON.stringify(r)))
+        .catch(e => console.log('backup failed', e))
+        .then(() => runDailyLogs(env)).then(r => console.log('daily logs', JSON.stringify(r))).catch(e => console.log('daily logs failed', e)));
       return;
     }
     if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) { console.log('reminders skipped: secrets not set'); return; }

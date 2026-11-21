@@ -6,7 +6,7 @@ const pad = n => String(n).padStart(2, '0');
 export function istNow(ms = Date.now()) { const d = new Date(ms + 5.5 * 3600e3); return { date: d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()), time: pad(d.getUTCHours()) + pad(d.getUTCMinutes()) + pad(d.getUTCSeconds()) }; }
 
 function headersFor(env) { const k = env.SUPABASE_SECRET_KEY; return Object.assign({ apikey: k }, String(k).startsWith('eyJ') ? { Authorization: 'Bearer ' + k } : {}); }
-async function allRows(env, fetchFn, table, select, order) {
+export async function allRows(env, fetchFn, table, select, order) {
   const base = String(env.SUPABASE_URL).replace(/\/+$/, '') + '/rest/v1/' + table + '?select=' + select + '&order=' + order;
   const out = [];
   for (let off = 0; ; off += 1000) {

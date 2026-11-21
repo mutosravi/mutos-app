@@ -243,8 +243,10 @@
   async function openBackups() {
     if (!api) return;
     const esc = api.escapeHtml;
-    let list = [], err = '';
+    let list = [], err = '', xls = [];
     try { const r = await callApi('/api/backups'); const j = await r.json(); if (r.ok) list = j.backups; else err = j.error || ('error ' + r.status); } catch (e) { err = 'No connection.'; }
+    // daily Excel of cards and drives (21 Nov 2026, worker/logs.js)
+    try { const r = await callApi('/api/backups/logs'); const j = await r.json(); if (r.ok) xls = j.logs || []; } catch (e) {}
     const label = n => n.startsWith('nightly/') ? 'Nightly' : n.startsWith('monthly/') ? 'Monthly (kept for good)' : 'Made by hand';
     const when = b => b.at ? new Date(b.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : b.name;
     const kb = n => n ? (n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1000)) + ' KB') : '';
@@ -252,10 +254,24 @@
       '<div class="sb-modal-list">' + (err ? '<p class="sb-modal-sub" style="padding:8px;color:#9a5b00">' + esc(err) + '</p>' : '') +
       (list.length ? list.map(b => '<div class="sb-manage-row" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><b>' + esc(when(b)) + '</b><br><span class="sb-manage-sub">' + esc([label(b.name), b.shoots != null ? b.shoots + ' shoots' : '', b.rows != null ? b.rows + ' studio records' : 'board only (older copy)', kb(b.bytes)].filter(Boolean).join(' · ')) + '</span>' + (b.errors ? '<br><span class="sb-manage-sub" style="color:#9a5b00">' + b.errors + ' table(s) could not be read: see the file</span>' : '') + '</span><span style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="sb-btn-sm bk-xl" data-n="' + esc(b.name) + '">Excel</button><button type="button" class="sb-btn-sm secondary bk-dl" data-n="' + esc(b.name) + '">Download</button>' + (b.photos ? '<button type="button" class="sb-btn-sm secondary bk-dl" data-n="photos/' + esc(b.name) + '">Photos</button>' : '') + '</span></div>').join('')
         : (err ? '' : '<p class="sb-modal-empty">No backups yet. The first one is made tonight at 3 am, or tap "Back up now".</p>')) +
-      '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="bk-logs">Logs (Excel)</button><button type="button" class="secondary" id="bk-now">Back up now</button><button type="button" id="bk-done">Done</button></div>';
+      '</div><div id="bk-daily" style="padding:8px 4px 0"><b>Daily Excel · cards and drives</b><p class="sb-modal-sub" style="margin:2px 0 6px">Made every night at 3 am with the logs and where every folder is: which card and shoot it came from, its other copies and where the drive is now. Also saved on the studio\'s Google Drive (Daily logs (Excel)) when it is connected. Last 60 days are kept here.</p>' +
+        (xls.length ? xls.slice(0, 14).map(x => '<div class="sb-manage-row bk-xrow" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><b>' + esc(x.name.replace(/^logs(-monthly)?\//, '')) + '</b>' + (x.name.startsWith('logs-monthly/') ? ' · monthly, kept for good' : '') + '<br><span class="sb-manage-sub">' +
+          esc([x.folders != null ? x.folders + ' folders on ' + x.drives + ' drives' : '', x.cards != null ? x.cards + ' cards' : '', x.noBackup ? x.noBackup + ' raw without backup' : '', x.drive ? 'on Google Drive ✓' : x.driveError ? 'not on Google Drive: ' + x.driveError : ''].filter(Boolean).join(' · ')) + '</span></span>' +
+          '<button type="button" class="sb-btn-sm bk-xdl" data-n="' + esc(x.name) + '">Download</button></div>').join('') : '<p class="sb-modal-empty">No daily Excel yet. The first is made tonight at 3 am, or tap "Excel now".</p>') +
+      '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="bk-xlnow">Excel now</button><button type="button" class="secondary" id="bk-logs">Logs (Excel)</button><button type="button" class="secondary" id="bk-now">Back up now</button><button type="button" id="bk-done">Done</button></div>';
     const modal = api.makeModal(html, true);
     modal.querySelector('#bk-done').addEventListener('click', () => { api.closeModal(); api.renderBoard(); });
     modal.querySelector('#bk-logs').addEventListener('click', downloadLogs);
+    modal.querySelector('#bk-xlnow').addEventListener('click', async e => {
+      e.target.disabled = true; e.target.textContent = 'Making…';
+      const r = await callApi('/api/backups/logs/now', 'POST').catch(() => null); const j = r ? await r.json().catch(() => ({})) : {};
+      if (r && r.ok) { api.toast('Daily Excel made: ' + j.folders + ' folders, ' + j.cards + ' cards' + (j.drive ? ', saved on Google Drive.' : '.')); openBackups(); } else { api.toast('Could not make it: ' + (j.error || 'no connection')); e.target.disabled = false; e.target.textContent = 'Excel now'; }
+    });
+    modal.querySelectorAll('.bk-xdl').forEach(btn => btn.addEventListener('click', async () => {
+      const r = await callApi('/api/backups/logs/file?name=' + encodeURIComponent(btn.dataset.n)).catch(() => null);
+      if (!r || !r.ok) { api.toast('Download failed.'); return; }
+      saveBlob(await r.blob(), 'mutos-cards-drives-' + btn.dataset.n.replace(/^logs(-monthly)?\//, '') + '.xlsx');
+    }));
     modal.querySelector('#bk-now').addEventListener('click', async e => {
       e.target.disabled = true; e.target.textContent = 'Backing up…';
       const r = await callApi('/api/backups/now', 'POST').catch(() => null); const j = r ? await r.json().catch(() => ({})) : {};
