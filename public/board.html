@@ -137,12 +137,14 @@ button.sb-pill:hover { border-color: var(--gold); color: var(--gold); }
 @media (max-width: 760px) { .sb-rail { flex-direction: row; flex-wrap: wrap; } .sb-rail .sb-add-btn { width: auto; flex: 1 1 140px; } .sb-legend, .sb-rail-title { display: none; } .sb-crew-status { flex: 1 1 100%; } }
 
 .sb-board-outer { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
-.sb-date-section { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: 110px; }
+.sb-date-section { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: calc(var(--mh-bar-h, 0px) + 110px); }
 .sb-date-head { display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--board-line); padding-bottom: 8px; flex-wrap: wrap; }
 .sb-date-title { font-family: var(--font-display); font-size: 16px; color: var(--on-board); letter-spacing: -0.01em; }
 .sb-date-count { font-family: var(--font-mono); font-size: 11px; color: var(--gold); text-transform: uppercase; letter-spacing: 0.06em; }
 .sb-date-add { margin-left: auto; background: none; border: 1px solid rgba(255,255,255,0.2); color: var(--on-board-soft); border-radius: 4px; font-size: 10.5px; font-family: var(--font-mono); padding: 3px 8px; cursor: pointer; }
 .sb-date-add:hover { border-color: var(--gold); color: var(--gold); }
+.sb-day-pick { order: 9; flex: 1 1 100%; max-width: 420px; background: var(--board-raise, #2a2224); color: var(--on-board); border: 1px solid var(--board-line); border-radius: 8px; font: 13px/1.2 var(--font-body, inherit); padding: 7px 10px; }
+.sb-day-all { align-self: flex-start; background: none; border: 1px dashed var(--board-line); color: var(--gold); border-radius: 10px; padding: 10px 14px; font: 600 13px/1 var(--font-body, inherit); cursor: pointer; }
 .sb-available { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 11.5px; color: var(--on-board-soft); line-height: 1.5; }
 .sb-available > span { min-width: 0; }
 .sb-available-label { font-family: var(--font-mono); text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.05em; color: var(--gold); margin-right: 6px; }
@@ -590,6 +592,8 @@ body.mh-view-board #mutos-home { display: none; }
   let db = null, downloads = null, mcp = null, userCap = null;
   let myId = null, amOwner = false;
   let showingNewForm = false, newFormTargetKey = null;
+  // one shoot of a day at a time (21 Nov 2026, Ravi: "drop down on all dates with options to see an individual shoot as well all shoots at once")
+  const dayPick = {};
   const dayInfo = {}; // per date: who and what is free, kept from the last board draw for the day-status message
   let eventSerials = {};
   let searchText = '';
@@ -4476,6 +4480,7 @@ body.mh-view-board #mutos-home { display: none; }
   function dateStatus(evs) { const act = evs.filter(isActive); return act.some(hasConflict) ? 'clash' : act.some(isShort) ? 'short' : 'ok'; }
   function goToDate(date) {
     if (!date) return;
+    if (dayPick[date]) { delete dayPick[date]; renderBoard(); }
     const has = state.events.some(ev => ev.date === date);
     if (!has) {
       const n = allPeopleKeys().length;
@@ -4612,6 +4617,10 @@ body.mh-view-board #mutos-home { display: none; }
         dayInfo[dateKey] = { free: freeShooters.map(p => p.name), freeIn: freeShooters.filter(p => !isFreelancer(p)).map(p => p.name), freeFl: freeShooters.filter(isFreelancer).map(p => p.name + (availOf(p, dateKey) === 'yes' ? ' (✓ free)' : availOf(p, dateKey) === 'asked' ? ' (asked)' : '')), freeAsst: freeAssistants.map(p => p.name), away: awayNames, travelling: [...travelling.entries()].map(([k, pl]) => displayName(k) + ' (' + pl + ')'), bodies: bodies.map(e => e.name) };
         hh += '<button type="button" class="sb-date-add" data-action="dayaway" title="Tick everyone who is not available on this date">✋ who is away</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="daystatus" title="A summary of this day to send to a team member: shoots, crew filled, who is free">➤ send day status</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="addhere">+ add shoot on this date</button>';
       }
+      // the day's shoots in a drop-down: all at once, or one to look at on its own
+      if (dayPick[dateKey] && !evs.some(e => e.id === dayPick[dateKey])) delete dayPick[dateKey];
+      hh += '<select class="sb-day-pick" data-date="' + escapeHtml(dateKey) + '" aria-label="Show shoots of this day"><option value="">All shoots (' + evs.length + ')</option>' +
+        evs.map(e => '<option value="' + escapeHtml(e.id) + '"' + (dayPick[dateKey] === e.id ? ' selected' : '') + '>' + escapeHtml(e.name + ' · ' + e.slot + (e.location ? ' · ' + String(e.location).split(',')[0] : '')) + '</option>').join('') + '</select>';
       hh += '</div><div class="sb-available">';
       { const inH = freeShooters.filter(p => !isFreelancer(p)), fl = freeShooters.filter(isFreelancer);
         hh += '<span class="sb-free-in"><span class="sb-available-label">Free in-house</span>' + (state.shooters.length ? list(inH, "everyone's booked") : '—') + '</span>';
@@ -4628,16 +4637,21 @@ body.mh-view-board #mutos-home { display: none; }
       const awayBtn = section.querySelector('[data-action="dayaway"]'); if (awayBtn) awayBtn.addEventListener('click', () => openDayAway(dateKey));
       const askBtn = section.querySelector('[data-action="askfree"]'); if (askBtn) askBtn.addEventListener('click', () => openAskFree(dateKey));
       const dayBtn = section.querySelector('[data-action="daystatus"]'); if (dayBtn) dayBtn.addEventListener('click', () => openDayStatus(dateKey));
+      const pickSel = section.querySelector('.sb-day-pick');
+      if (pickSel) pickSel.addEventListener('change', () => { if (pickSel.value) dayPick[dateKey] = pickSel.value; else delete dayPick[dateKey]; renderBoard(); const sec = document.getElementById('sec-' + dateKey); if (sec) sec.scrollIntoView({ block: 'start' }); });
+      const shown = dayPick[dateKey] ? evs.filter(e => e.id === dayPick[dateKey]) : evs;
       const addHere = section.querySelector('[data-action="addhere"]');
       if (addHere) addHere.addEventListener('click', () => { showingNewForm = true; newFormTargetKey = dateKey; renderBoard(); });
       if (prefs.view === 'list') {
         const listEl = document.createElement('div'); listEl.className = 'sb-list';
-        evs.forEach(ev => listEl.appendChild(createRowEl(ev, eventSerials[ev.id], changedSet, dimOf(ev))));
+        shown.forEach(ev => listEl.appendChild(createRowEl(ev, eventSerials[ev.id], changedSet, dimOf(ev))));
+        if (shown.length < evs.length) { const more = document.createElement('button'); more.type = 'button'; more.className = 'sb-day-all'; more.textContent = 'Show all ' + evs.length + ' shoots of this day'; more.addEventListener('click', () => { delete dayPick[dateKey]; renderBoard(); }); listEl.appendChild(more); }
         if (showingNewForm && newFormTargetKey === dateKey) listEl.appendChild(buildNewEventForm(dateKey));
         section.appendChild(listEl);
       } else {
         const grid = document.createElement('div'); grid.className = 'sb-board';
-        evs.forEach(ev => grid.appendChild(createCardEl(ev, tilt++, eventSerials[ev.id], changedSet, { dim: dimOf(ev) })));
+        shown.forEach(ev => grid.appendChild(createCardEl(ev, tilt++, eventSerials[ev.id], changedSet, { dim: dimOf(ev) })));
+        if (shown.length < evs.length) { const more = document.createElement('button'); more.type = 'button'; more.className = 'sb-day-all'; more.textContent = 'Show all ' + evs.length + ' shoots of this day'; more.addEventListener('click', () => { delete dayPick[dateKey]; renderBoard(); }); grid.appendChild(more); }
         if (showingNewForm && newFormTargetKey === dateKey) grid.appendChild(buildNewEventForm(dateKey));
         section.appendChild(grid);
       }
