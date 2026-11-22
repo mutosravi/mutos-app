@@ -29,7 +29,8 @@ export const STUDIO_TABLES = [
   ['cards', 'id'], ['card_moves', 'id'], ['card_uses', 'id'], ['card_copies', 'id'], ['card_log', 'id'], ['client_log', 'id'],
   ['client_links', 'token'], ['client_feed', 'wedding_key'], ['client_itinerary', 'wedding_key'], ['client_apply_log', 'id'],
   ['packages', 'id'], ['bookings', 'wedding_key'], ['booking_payments', 'id'],
-  ['uploads', 'id']   // which Google Drive file each photo is (026); the photos themselves are in the studio's Drive
+  ['uploads', 'id'],   // which Google Drive file each photo is (026); the photos themselves are in the studio's Drive
+  ['client_deliveries', 'id'], ['client_pay_claims', 'id']   // after the shoot (035)
 ];
 
 export async function makeBackup(env, fetchFn = fetch) {

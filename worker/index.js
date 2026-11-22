@@ -168,6 +168,27 @@ async function phoneKeys(store, emails, personIds) {
   const members = mails.length ? await store.get('members?select=email,person_key&email=' + inListQ(mails)) : [];
   return [...new Set(people.flatMap(p => p.crew_keys || []).concat(members.map(m => m.person_key)).concat(mails.map(e => 'email:' + e)).filter(Boolean))];
 }
+// a family reported a payment (035_after_shoot.sql): tell the owner and the managers, on any phone they signed up
+export async function notifyPayApi(request, env, fetchFn = fetch) {
+  if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return Response.json({ sent: 0, note: 'Phone notifications are not set up.' });
+  const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!token) return Response.json({ error: 'Sign in first.' }, { status: 401 });
+  const u = await fetchFn(String(env.SUPABASE_URL).replace(/\/+$/, '') + '/auth/v1/user', { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token } });
+  if (!u.ok) return Response.json({ error: 'Sign in again.' }, { status: 401 });
+  const email = String((await u.json()).email || '').toLowerCase(), store = db(env, fetchFn);
+  const body = await request.json().catch(() => ({}));
+  if (!/^[0-9a-f-]{36}$/i.test(String(body.claim))) return Response.json({ error: 'Unknown payment.' }, { status: 400 });
+  const [x] = await store.get('client_pay_claims?select=id,wedding_key,amount,mode,upi_ref,status,by_email&id=eq.' + body.claim);
+  if (!x || x.status !== 'pending') return Response.json({ sent: 0 });
+  if (x.by_email !== email) return Response.json({ error: 'Only the family who reported it can send this notice.' }, { status: 403 });
+  const [l] = await store.get('client_links?select=title&wedding_key=eq.' + encodeURIComponent(x.wedding_key));
+  const office = (await store.get('members?select=email&role=' + inListQ(['owner', 'manager']))).map(m => m.email);
+  const keys = await phoneKeys(store, office, []);
+  const amt = '₹' + Math.round(Number(x.amount)).toLocaleString('en-IN');
+  const msg = { title: 'Payment to check: ' + amt, body: ((l && l.title) || 'A family') + ' says they paid ' + amt + ' by ' + x.mode + (x.upi_ref ? ' (ref ' + x.upi_ref + ')' : '') + '. Check your account, then Approve or Not received.', tag: 'pay-' + x.id, url: '/board.html' };
+  const subs = keys.length ? await store.get('push_subs?select=endpoint,person_key,p256dh,auth,fails&person_key=' + inListQ(keys)) : [];
+  return Response.json({ sent: subs.length ? await deliver(env, store, subs, msg, fetchFn) : 0 });
+}
 export async function notifyCardApi(request, env, fetchFn = fetch) {
   if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return Response.json({ sent: 0, note: 'Phone notifications are not set up.' });
   const token = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
@@ -325,6 +346,9 @@ export default {
     }
     if (url.pathname === '/api/notify-card' && request.method === 'POST') {
       try { return await notifyCardApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
+    }
+    if (url.pathname === '/api/notify-pay' && request.method === 'POST') {
+      try { return await notifyPayApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
     if (url.pathname === '/api/notify-shoots' && request.method === 'POST') {
       try { return await notifyShootsApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }

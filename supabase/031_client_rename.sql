@@ -36,6 +36,9 @@ begin
     update public.uploads set wedding_key = n where wedding_key = o; get diagnostics c = row_count; moved := moved || jsonb_build_object('photos', c);
   end if;
   if to_regclass('public.client_apply_log') is not null then update public.client_apply_log set wedding_key = n where wedding_key = o; end if;
+  -- after the shoot (035): services to deliver and the payments the family reported
+  if to_regclass('public.client_deliveries') is not null then update public.client_deliveries set wedding_key = n where wedding_key = o; end if;
+  if to_regclass('public.client_pay_claims') is not null then update public.client_pay_claims set wedding_key = n where wedding_key = o; end if;
   perform set_config('mutos.quiet', '', true);
 
   if to_regclass('public.client_log') is not null then

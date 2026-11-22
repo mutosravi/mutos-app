@@ -240,6 +240,7 @@
     const csum = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
     if (sup()) needs.length = 0; // crew, gear and day-off decisions are not his; family itineraries are (below)
     if (csum && csum.toCheck) needs.splice(Math.min(1, needs.length), 0, ['clients', 'lilac', csum.toCheck, 'Client itineraries', 'sent by families · venues already on the board']);
+    if (csum && csum.payToCheck && !sup()) needs.splice(0, 0, ['paycheck', 'lilac', csum.payToCheck, 'Payments to check', 'families said "we paid"']);
     if (csum && csum.overdue && !sup()) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
     if (csum && csum.dueSoon && !sup()) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
     if (u && u.unconf.length && !sup()) needs.push(['updates', 'sand', u.unconf.length, 'Not confirmed', 'by crew, next 7 days']);
@@ -277,7 +278,7 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'cards') location.assign(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'cards') location.assign(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });

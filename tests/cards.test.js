@@ -209,7 +209,9 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   ok((await o.$$('.crow.green')).length === 4, 'all green: free in the office');
   await o.click('#add-cards'); await o.fill('#a-txt', 'c02, SD, 64 GB'); await o.click('#a-go');
   ok(/Already in the list: c02/i.test(await o.textContent('#toast')) && T.cards.size === 4, 'a code already in the list is refused');
-  await o.click('.sheet-bg', { position: { x: 5, y: 5 } });
+  // on a phone a window is a page of its own: "‹ Back" on top closes it (23 Nov 2026)
+  ok(await o.isVisible('.sheet-bg .mutos-pageback') && (await o.evaluate(() => { const r = document.querySelector('.sheet-bg .sheet').getBoundingClientRect(); return r.width >= 389 && r.left === 0; })), 'phone: the window opens as a full page with Back');
+  await o.click('.sheet-bg .mutos-pageback'); await o.waitForSelector('.sheet-bg', { state: 'detached' });
   // ── bulk to the supervisor ──
   for (const c of ['C01', 'C02', 'C03', 'C04']) await pick(o, c);
   ok(/4 picked/.test(await o.textContent('#selbar')), 'four cards picked');
@@ -307,9 +309,21 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await o.fill('#cp-drive', 'Dibba 2'); await o.click('#cp-go'); await o.waitForFunction(() => !document.querySelector('.sheet-bg'));
   ok(K('C01').data === 'copied' && [...T.drive_items.values()].some(i => i.drive === d2.id && i.what === 'backup'), 'backup done: C01 is green');
 
+  // search keeps its box while typing (the phone keeps the number keyboard), and the copies link to the drive (23 Nov 2026)
+  await open(o, 'all');
+  await o.evaluate(() => { window.__cq = document.getElementById('cq'); });
+  await o.focus('#cq'); await o.keyboard.type('C0', { delay: 60 }); await o.waitForTimeout(400); await o.keyboard.type('1'); await o.waitForTimeout(400);
+  ok(await o.evaluate(() => document.getElementById('cq') === window.__cq && document.activeElement === window.__cq && window.__cq.value === 'C01') && (await o.$$('#all-body .crow')).length === 1, 'card search: the box is never redrawn while typing (C01 found, still typing in the same box)');
+  await o.fill('#cq', ''); await o.waitForTimeout(400);
+  await o.click('[data-c="' + K('C01').id + '"]'); await o.waitForSelector('#k-hist .rep');
+  const links = await o.$$eval('.sheet-bg a.k-open', as => as.map(a => a.getAttribute('href')));
+  ok(links.length >= 4 && links.every(h => /^desk\.html\?tab=drives&drive=[^&]+&item=/.test(h)) && links.some(h => h.includes(m5.id)) && links.some(h => h.includes(d2.id)), 'card sheet: Copied to and the copy lines of its History have "Open in drive ›" (' + links.length + ')');
+  await o.click('#k-close');
+
   // ── Shrey checks ──
   await open(sh, 'mine');
   const used = await sh.textContent('#used-list');
+  ok((await sh.$$eval('#used-list a.k-open', as => as.map(a => a.getAttribute('href')))).every(h => /^mywork\.html\?tab=drives&drive=/.test(h)) && (await sh.$$('#used-list a.k-open')).length === 2, 'Shrey: his copies link to the drive in his own Drives tab');
   ok(/C01/.test(used) && /Copied to M 5/.test(used) && /812 files/.test(used) && /Backup on Dibba 2/.test(used) && /C02[\s\S]*Not copied yet/.test(used), 'Shrey sees where C01 went (M 5 + backup Dibba 2) and that C02 is not copied yet');
   await shot(sh, 'cards-check.png');
 

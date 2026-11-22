@@ -237,6 +237,8 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
   // 5b. crew actions: confirm, can't make it, calendar, gear, data handover
   await crew.goto(B + '/crew.html'); await crew.click('.tab[data-tab="shoots"]'); await crew.waitForSelector('#list .shoot');
+  { const w = await crew.$eval('.shoot[data-id="' + target.id + '"] .ww', x => ({ t: x.querySelector('.ww-time b').textContent, l: x.querySelector('.ww-loc b').textContent, fs: parseFloat(getComputedStyle(x.querySelector('.ww-time b')).fontSize) }));
+    ok(/^Report |to be confirmed/.test(w.t) && w.l.length > 0 && w.fs >= 18, 'crew shoot card: time and place in big bold boxes (' + w.t + ' · ' + w.l + ')'); }
   const second = upcoming[1];
   await crew.click('.shoot[data-id="' + target.id + '"] [data-act="yes"]');
   await crew.waitForTimeout(400);

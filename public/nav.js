@@ -78,6 +78,41 @@
   const style = document.createElement('style');
   style.textContent = '.mutos-back{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 12px 0 8px;margin-right:6px;border:0;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(42,30,34,.12);color:#2a1e22;font:600 14px/1 inherit;cursor:pointer;flex:0 0 auto}.mutos-back span{font-size:22px;line-height:1;margin-top:-2px}.mutos-back[hidden]{display:none}';
   document.head.appendChild(style);
+  // On a phone every window opens as its own page with "‹ Back" on top, not as a pop-up over the page
+  // (23 Nov 2026, Ravi: "Do not open anything as pop up. Open them as the next page with back option.")
+  // The bar sits in the window's backdrop before the window itself, so nothing inside the window changes; computers keep pop-ups.
+  const PAGE_W = 700;
+  const isPhone = () => window.matchMedia('(max-width: ' + PAGE_W + 'px)').matches;
+  const panelOf = el => el.querySelector(':scope > .sheet, :scope > .sb-modal, :scope > [role=dialog]') || [...el.children].find(c => !c.classList.contains('mutos-pagebar'));
+  const titleOf = p => { const h = p && p.querySelector('.sb-modal-title, .mh-sheet-head b, h3, h2, h1'); return h ? h.textContent.replace(/\s+/g, ' ').trim().slice(0, 60) : ''; };
+  function pages() {
+    document.querySelectorAll('.sheet-bg, .sb-modal-overlay').forEach(ov => {
+      if (!ov.isConnected) return;
+      let bar = ov.querySelector(':scope > .mutos-pagebar');
+      if (!bar) {
+        bar = document.createElement('div'); bar.className = 'mutos-pagebar';
+        bar.innerHTML = '<button type="button" class="mutos-back mutos-pageback" aria-label="Back"><span aria-hidden="true">‹</span> Back</button><b class="mutos-pagetitle"></b>';
+        bar.querySelector('button').addEventListener('click', e => { e.stopPropagation(); const list = openOnes(); if (list[list.length - 1] === ov) closeTop(); else ov.remove(); });
+        bar.addEventListener('click', e => e.stopPropagation());
+        ov.insertBefore(bar, ov.firstChild);
+      }
+      const t = titleOf(panelOf(ov)), tb = bar.querySelector('.mutos-pagetitle');
+      if (tb.textContent !== t) tb.textContent = t;
+    });
+  }
+  const pstyle = document.createElement('style');
+  pstyle.textContent = '.mutos-pagebar{display:none}' +
+    '@media (max-width:' + PAGE_W + 'px){' +
+    '.sheet-bg,.sb-modal-overlay{display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;padding:0!important;background:var(--bg,#fbf6f3)!important;z-index:1200!important;animation:mutosPageIn .18s ease-out}' +
+    '.mutos-pagebar{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding:max(8px,env(safe-area-inset-top)) 12px 8px;background:var(--bg,#fbf6f3);border-bottom:1px solid rgba(42,30,34,.08);position:relative;z-index:3}' +
+    '.mutos-pagetitle{font:700 16px/1.2 inherit;color:#2a1e22;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.sheet-bg>.sheet,.sb-modal-overlay>.sb-modal,.sheet-bg>:not(.mutos-pagebar),.sb-modal-overlay>:not(.mutos-pagebar){flex:1 1 auto!important;width:100%!important;max-width:none!important;max-height:none!important;min-height:0!important;height:auto!important;margin:0!important;border-radius:0!important;box-shadow:none!important;overflow:auto;-webkit-overflow-scrolling:touch}' +
+    '.sheet-bg>.sheet{padding-bottom:max(24px,env(safe-area-inset-bottom))!important}' +
+    '}' +
+    '@keyframes mutosPageIn{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}';
+  document.head.appendChild(pstyle);
+  new MutationObserver(() => { clearTimeout(pages.t); pages.t = setTimeout(pages, 0); }).observe(document.documentElement, { childList: true, subtree: true });
+
   function start() { if (!mount()) { let n = 0; const iv = setInterval(() => { if (mount() || ++n > 100) clearInterval(iv); }, 100); } }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   if (window.mutosApp) window.mutosApp.me().then(m => { role = m && m.role; paint(); }).catch(() => {});
@@ -85,7 +120,7 @@
   // desks on the studio Home: remember the desk a page was opened from, reopen it when coming Back
   const KEY = 'mutos-desk-return';
   window.MUTOS_NAV = {
-    back, canBack,
+    back, canBack, pages, isPhone,
     deskLeft(k) { try { sessionStorage.setItem(KEY, JSON.stringify({ k, at: Date.now() })); } catch (e) {} },
     deskBack() {
       try {

@@ -9,7 +9,7 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history'].forEach(t => { T[t] = new Map(); });
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims'].forEach(t => { T[t] = new Map(); });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
@@ -56,6 +56,8 @@ function canWrite(t, r, e) {
   if (['packages', 'bookings', 'booking_payments'].includes(t)) return staff(e);
   if (t === 'salary_history') return isOwner(e);
   if (t === 'drive_moves' || t === 'drive_log') return false;
+  if (t === 'client_pay_claims') return false;   // 035: only through client_pay_claim / client_pay_decide
+  if (t === 'client_deliveries') { if (!staff(e)) return false; if (r.link && !/^https?:\/\//i.test(r.link)) return false; r.id = r.id || crypto.randomUUID(); r.updated_by = e; r.updated_at = new Date().toISOString(); r.created_at = r.created_at || r.updated_at; return true; }
   if (t === 'work_jobs' || t === 'work_reports') return staff(e) || (t === 'work_jobs' ? r.assignee && r.assignee === myPerson(e) : r.person === myPerson(e));
   return staff(e);
 }
@@ -135,6 +137,34 @@ function bookingSummary(key) {
 function rpc(fn, a, e) {
   // same rules as 005_client_login.sql
   if (fn.startsWith('client_') && !e) return { data: null, error: { message: 'permission denied for function ' + fn, code: '42501' } };
+  // after the shoot: same rules as 035_after_shoot.sql
+  if (['client_after', 'client_pay_claim', 'client_pay_decide', 'client_deliveries_set_open'].includes(fn)) {
+    const paidOf = k => [...T.booking_payments.values()].filter(p => p.wedding_key === k).reduce((n, p) => n + Number(p.amount), 0);
+    const openOf = k => { const l = T.client_links.get(k); if (l && l.deliveries_open != null) return l.deliveries_open; const b = T.bookings.get(k); return !!(b && b.total > 0 && paidOf(k) >= b.total * 0.9); };
+    if (fn === 'client_pay_decide') {
+      if (!staff(e)) return { data: { error: 'Only the admin or the manager can approve a payment.' }, error: null };
+      const x = T.client_pay_claims.get(a.p_claim); if (!x) return { data: { error: 'Unknown payment.' }, error: null };
+      if (x.status !== 'pending') return { data: { error: 'Already ' + x.status + '.' }, error: null };
+      if (a.p_approve) { const id = crypto.randomUUID(), amt = a.p_amount || x.amount; T.booking_payments.set(id, { id, wedding_key: x.wedding_key, amount: amt, paid_on: x.paid_on, mode: x.mode, note: 'Family reported' + (x.upi_ref ? ' · ref ' + x.upi_ref : ''), by_email: e, at: new Date().toISOString() }); Object.assign(x, { status: 'approved', decided_by: e, payment: id }); }
+      else { if (!a.p_why || a.p_why.trim().length < 3) return { data: { error: 'Write why, so the family knows.' }, error: null }; Object.assign(x, { status: 'rejected', decided_by: e, why: a.p_why }); }
+      return { data: { ok: true, open: openOf(x.wedding_key) }, error: null };
+    }
+    if (fn === 'client_deliveries_set_open') { if (!staff(e)) return { data: { error: 'Only the admin or the manager can do this.' }, error: null }; const l = T.client_links.get(a.p_key); if (!l) return { data: { error: 'Add the family\'s Gmail first.' }, error: null }; l.deliveries_open = a.p_open; return { data: { ok: true, open: openOf(a.p_key) }, error: null }; }
+    const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active); if (!l) return { data: { error: 'This page is not active.' }, error: null };
+    const fam = l.emails.includes(e), k = l.wedding_key, b = T.bookings.get(k);
+    if (fn === 'client_after') {
+      if (!fam && !staff(e) && role(e) !== 'supervisor') return { data: { error: 'Only the family\'s registered Gmail can see this.' }, error: null };
+      const open = openOf(k), paid = paidOf(k);
+      return { data: { open, total: b ? b.total : 0, paid, need: b && b.total > 0 ? Math.max(Math.ceil(b.total * 0.9) - paid, 0) : null, can_claim: fam && !!b,
+        deliveries: [...T.client_deliveries.values()].filter(d => d.wedding_key === k).sort((x, y) => x.sort - y.sort).map(d => ({ id: d.id, title: d.title, kind: d.kind, status: d.status, note: d.note, has_link: !!d.link, link: open || !fam ? d.link || null : null })),
+        claims: [...T.client_pay_claims.values()].filter(x => x.wedding_key === k).reverse() }, error: null };
+    }
+    if (!fam) return { data: { error: 'Only the family\'s registered Gmail can report a payment.' }, error: null };
+    if (!b) return { data: { error: 'Muto\'s has not added your package yet. Please call us.' }, error: null };
+    if (!(a.p_amount > 0)) return { data: { error: 'Type the amount you paid.' }, error: null };
+    const id = crypto.randomUUID(); T.client_pay_claims.set(id, { id, wedding_key: k, amount: a.p_amount, paid_on: a.p_paid_on, mode: a.p_mode, upi_ref: a.p_ref || null, note: a.p_note || null, photo: a.p_photo, status: 'pending', by_email: e, at: new Date().toISOString() });
+    return { data: { ok: true, id, title: l.title }, error: null };
+  }
   if (fn === 'client_list') return { data: [...T.client_links.values()].filter(l => l.active && l.emails.includes(e)).map(l => ({ token: l.token, title: l.title })), error: null };
   if (fn === 'client_get' || fn === 'client_save') {
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active);
@@ -915,7 +945,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   [['Basic (edit me)', 0, [{ kind: 'top', per: 'wedding' }, { kind: 'lr', per: 'wedding' }]], ['Premium (edit me)', 0, [{ kind: 'reel', per: 'function' }, { kind: 'trailer', per: 'wedding' }, { kind: 'album', per: 'wedding', note: '40 sheets' }]]].forEach(([name, price, items]) => { const id = crypto.randomUUID(); T.packages.set(id, { id, name, price, items, active: true }); });
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
   await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-book="' + wed.key + '"]');
-  await owner.click('#cl-done'); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="packages"]'); await owner.waitForSelector('#pk-new');
+  await owner.click('#cl-done'); await owner.waitForSelector('#mh-desk [data-tile="packages"]'); await owner.click('#mh-desk [data-tile="packages"]'); await owner.waitForSelector('#pk-new');   // closing a tool window shows its desk again
   ok(await owner.$$eval('[data-pk]', x => x.length) === 2, 'Clients desk → Packages opens the package list');
   await owner.click('#pk-back'); await owner.waitForSelector('#cl-packages');
   await owner.click('#cl-packages'); await owner.waitForSelector('[data-pk]'); await owner.click('[data-pk="' + [...T.packages.values()].find(p => p.name.startsWith('Premium')).id + '"]'); await owner.waitForSelector('#pk-p');
@@ -945,6 +975,27 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   T.booking_payments.set('p2', { id: 'p2', wedding_key: wed.key, amount: 150000, paid_on: istDay(), mode: 'UPI' });
   await fam.reload(); await fam.waitForSelector('#bar:not([hidden])');
   ok(!(await fam.textContent('#top')).includes('Payment reminder') && (await fam.textContent('#list')).includes('On delivery'), 'paid: the reminder goes and the next payment shows');
+  // ── after the shoot (035): services to deliver, "We paid", approval, links open at 90 % ──
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-after="' + wed.key + '"]');
+  await owner.click('.sb-modal [data-after="' + wed.key + '"]'); await owner.waitForSelector('#af-svcs');
+  ok(/Paid ₹2,50,000 of ₹3,00,000 \(83%\)/.test(await owner.textContent('#af-state')) && /₹20,000 more opens them/.test(await owner.textContent('#af-state')) && await owner.$$eval('#af-svcs .af-svc', x => x.length) === 3, 'After shoot: 83% paid, ₹20,000 more opens the deliveries; the 3 package items are listed to tick');
+  { const r0 = '#af-svcs .af-svc[data-i="0"] '; await owner.check(r0 + '.af-on'); await owner.selectOption(r0 + '.af-st', 'ready'); await owner.fill(r0 + '.af-link', 'https://drive.google.com/reel'); await owner.fill(r0 + '.af-note', 'Haldi reel'); }
+  await owner.fill('#af-new', 'Pendrive'); await owner.click('#af-add'); await owner.click('#af-save'); await owner.waitForFunction(() => /Saved/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+  ok(T.client_deliveries.size === 2 && [...T.client_deliveries.values()].some(d => d.status === 'ready' && d.link === 'https://drive.google.com/reel'), 'owner ticks the Reel (ready, with its link) and adds a Pendrive');
+  await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
+  ok(/1 of 2 ready/.test(await fam.textContent('[data-card="deliv"]')) && await fam.$('[data-card="deliv"] .dl-go') === null && /Opens at 90% paid/.test(await fam.textContent('[data-card="deliv"]')) && /₹20,000 more/.test(await fam.textContent('[data-card="deliv"] .lock')), 'family: "Your photos & films", Reel ready but locked until 90% (₹20,000 more)');
+  await fam.click('[data-open="pkg"]'); await fam.click('#pay-open'); await fam.fill('#pay-amt', '20000'); await fam.fill('#pay-ref', '412345678901'); await fam.click('#pay-send');
+  await fam.waitForFunction(() => /checking/.test((document.getElementById('sec-pay') || {}).textContent || ''));
+  const claim = [...T.client_pay_claims.values()][0];
+  ok(claim && claim.amount === 20000 && claim.upi_ref === '412345678901' && claim.status === 'pending' && claim.by_email === FAM, 'family taps "We paid" ₹20,000 with the UPI ref: "Muto\'s is checking"');
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="paycheck"]', { timeout: 20000 });
+  ok(/Payments to check/.test(await owner.textContent('[data-need="paycheck"]')), 'Home → Needs you: "Payments to check"');
+  await owner.click('[data-need="paycheck"]'); await owner.waitForSelector('#pay-list [data-cok]');
+  await owner.click('#pay-list [data-cok="' + claim.id + '"]'); await owner.waitForFunction(() => /Deliveries are open/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+  ok(claim.status === 'approved' && [...T.booking_payments.values()].some(p => p.id === claim.payment && p.amount === 20000), 'owner approves: it becomes a payment in Package & payments, and the deliveries open (90%)');
+  await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
+  ok(await fam.getAttribute('[data-card="deliv"] .dl-go', 'href') === 'https://drive.google.com/reel' && /✓ Received/.test(await fam.textContent('#sec-pay')), 'family: the Reel link is open and the payment shows "✓ Received"');
+  if (process.env.SHOTS) await fam.screenshot({ path: path.join(SHOTS, 'client-after.png'), fullPage: true });
   // the family adds people to call and important people with a photo; the crew on that shoot see them
   await fam.click('[data-open="contacts"]'); await fam.click('#add-c'); await fam.fill('#sec-contacts [data-f="name"]', 'Rohit'); await fam.fill('#sec-contacts [data-f="rel"]', 'Bride\'s brother'); await fam.fill('#sec-contacts [data-f="phone"]', '9876500011');
   await fam.click('[data-open="vip"]'); await fam.click('#add-v'); await fam.fill('#sec-vip [data-f="name"]', 'Dadi'); await fam.fill('#sec-vip [data-f="rel"]', 'Grandmother');

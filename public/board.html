@@ -179,6 +179,11 @@ button.sb-pill:hover { border-color: var(--gold); color: var(--gold); }
 .sb-serial { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--gold); background: var(--ink); padding: 1px 6px; border-radius: 9px; vertical-align: middle; }
 .sb-card-meta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); display: flex; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 3px; }
 .sb-card-meta a { color: var(--ink); }
+.sb-card-ww { font-family: var(--font-body); font-size: 13.5px; color: var(--ink); gap: 6px; margin: 4px 0 6px; align-items: center; }
+.sb-card-ww .sb-ww-time { background: var(--ink); color: var(--card); font-weight: 700; border-radius: 6px; padding: 3px 9px; white-space: nowrap; }
+.sb-card-ww .sb-ww-loc { font-weight: 700; padding: 3px 0; }
+.sb-card-ww .tbc { background: transparent; color: #b4432f; border: 1px dashed #b4432f; font-weight: 600; padding: 2px 8px; border-radius: 6px; }
+.sb-card-ww .sb-ww-map { font-weight: 700; text-decoration: none; border: 1px solid var(--card-edge); border-radius: 6px; padding: 2px 8px; }
 .sb-card-meta a.sb-wa-link { background: #1f6b4f; color: #f1faf5; text-decoration: none; border-radius: 4px; padding: 1px 7px; font-size: 10.5px; }
 .sb-note { font-size: 11.5px; color: var(--ink-faint); font-style: italic; margin: 3px 0; overflow-wrap: anywhere; }
 .sb-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 2px; align-items: center; }
@@ -284,6 +289,9 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
 .sb-modal-foot .danger.armed { background: var(--danger); color: var(--danger-soft); }
 .sb-switch-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; cursor: pointer; background: var(--paper); border: 1px solid var(--card-edge); margin: 0 8px 6px; width: calc(100% - 16px); text-align: left; color: var(--ink); }
 .sb-switch-row:hover { border-color: var(--gold); }
+.sb-sw-gear { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; }
+.sb-sw-gear button { border: 1px solid var(--card-edge); background: var(--paper); color: var(--ink); border-radius: 999px; padding: 5px 11px; font: inherit; cursor: pointer; }
+.sb-sw-gear button.on { background: var(--gold); border-color: var(--gold); color: #fff; font-weight: 600; }
 .sb-switch-row[disabled] { opacity: 0.5; cursor: not-allowed; }
 .sb-edit-form { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; overflow-y: auto; min-height: 0; }
 .sb-edit-label { display: block; font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-muted); margin: 4px 0 -3px; }
@@ -2446,8 +2454,16 @@ body.mh-view-board #mutos-home { display: none; }
     return state.events.filter(e => e.id !== ev.id && isActive(e)).sort((a, b) => (a.date || '').localeCompare(b.date || '') || (SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot]))
       .map(e => { const n = crewNeeded(e.coverage), have = crewCount(e); return { id: e.id, name: e.name, sub: e.slot + (n !== null && have < n ? ' · needs ' + (n - have) : ''), date: e.date, detail: have ? crewSummary(e) : 'No one assigned yet', search: shootSearchText(e) + (have ? '' : ' empty unassigned') }; });
   }
+  // Switch with gear (23 Nov 2026, Ravi: "Add option to switch shooter with gears as well"): the Switch window has
+  // "Gear: stays with the slot | goes with the person". With the person, a swap swaps the two kits, swapping places on the
+  // same shoot swaps them too, and someone pulled in from another shoot at the same time brings his kit (the slot he left
+  // keeps this slot's kit). Shared gear of a shoot never moves. The choice is remembered on this device.
+  let switchGearWith = (() => { try { return localStorage.getItem('sb-switch-gear') === 'person'; } catch (e) { return false; } })();
+  function swapKits(a, b) { const g = a.gearIds || [], h = b.gearIds || []; a.gearIds = h.slice(); b.gearIds = g.slice(); delete a.kitFrom; delete b.kitFrom; }
+  function gearNames(a) { return (a.gearIds || []).map(id => { const g = state.equipment.find(x => x.id === id); return g ? g.name : ''; }).filter(Boolean).join(', '); }
   function openSwitchShooterModal(ev, memberId) {
     const assignment = ev.assignments.find(a => a.memberId === memberId); if (!assignment) return;
+    const withGear = switchGearWith, gearWord = withGear ? 'gear goes with each person' : 'gear stays with each slot';
     pinSlots(ev); // whoever comes in takes this person's place, and nobody else moves
     const person = findShooter(memberId);
     const pname = person ? person.name : 'Shooter';
@@ -2479,10 +2495,10 @@ body.mh-view-board #mutos-home { display: none; }
         const qAway = slotsOverlap(o.slot, ev.slot) ? null : unavailableKeysForDateSlot(ev.date, ev.slot).get(normalizeName(q.name));
         const meAway = slotsOverlap(o.slot, ev.slot) ? null : unavailableKeysForDateSlot(o.date, o.slot).get(normalizeName(pname));
         if (qAway || meAway) { swaps.push({ id: o.id + '|' + x.memberId, name: q.name + ' · ' + o.name, sub: o.slot, disabled: true, detail: (qAway ? q.name + ' is away for ' + ev.slot + ' (' + qAway + ')' : pname + ' is away for ' + o.slot + ' (' + meAway + ')'), search: q.name + ' ' + o.name }); return; }
-        swaps.push({ id: o.id + '|' + x.memberId, name: q.name + ' · ' + o.name, sub: o.slot, detail: pname + ' goes to ' + o.name + ', ' + q.name + ' comes here · gear stays with each slot', search: q.name + ' ' + o.name });
+        swaps.push({ id: o.id + '|' + x.memberId, name: q.name + ' · ' + o.name, sub: o.slot, detail: pname + ' goes to ' + o.name + ', ' + q.name + ' comes here · ' + gearWord + (withGear && (gearNames(x) || gearNames(assignment)) ? ' (' + (gearNames(assignment) || 'no gear') + ' ⇄ ' + (gearNames(x) || 'no gear') + ')' : ''), search: q.name + ' ' + o.name });
       });
     });
-    openSwitchModal('Switch ' + pname, pname + ' on ' + ev.name + ' (' + formatDay(ev.date) + ', ' + ev.slot + ') · gear stays with the slot', [
+    openSwitchModal('Switch ' + pname, pname + ' on ' + ev.name + ' (' + formatDay(ev.date) + ', ' + ev.slot + ') · ' + (withGear ? 'gear goes with the person' : 'gear stays with the slot'), [
       { label: 'Swap with someone on another shoot today', items: swaps, emptyText: 'No one else is on another shoot this day.',
         onPick: key => {
           const [oid, qid] = key.split('|');
@@ -2492,13 +2508,18 @@ body.mh-view-board #mutos-home { display: none; }
           pinSlots(o);
           x.memberId = memberId; assignment.memberId = qid;
           if (ka) x.ownKit = true; else delete x.ownKit; if (kx) assignment.ownKit = true; else delete assignment.ownKit;
-          setTimeout(() => toast('Swapped: ' + pname + ' → ' + o.name + ', ' + (findShooter(qid) || {}).name + ' → ' + ev.name + '.', true), 0);
+          if (withGear) swapKits(x, assignment);
+          setTimeout(() => toast('Swapped: ' + pname + ' → ' + o.name + ', ' + (findShooter(qid) || {}).name + ' → ' + ev.name + (withGear ? ', each with his gear' : '') + '.', true), 0);
         } },
       { label: 'Replace with', items: replace, emptyText: 'No one else fits this slot.',
         onPick: newId => {
           const other = ev.assignments.find(a => a.memberId === newId);
-          if (other) { const ko = !!other.ownKit, ka = !!assignment.ownKit; other.memberId = assignment.memberId; assignment.memberId = newId; if (ka) other.ownKit = true; else delete other.ownKit; if (ko) assignment.ownKit = true; else delete assignment.ownKit; return; }
+          if (other) { const ko = !!other.ownKit, ka = !!assignment.ownKit; other.memberId = assignment.memberId; assignment.memberId = newId; if (ka) other.ownKit = true; else delete other.ownKit; if (ko) assignment.ownKit = true; else delete assignment.ownKit; if (withGear) swapKits(other, assignment); return; }
           const out = outOnlyShoots(ev, newId); if (out.length) { const names = linkTravel(ev, out); setTimeout(() => toast((findShooter(newId) || {}).name + ' stays on ' + names + ' too (linked as team travels). ' + pname + ' is off this shoot.', true), 0); }
+          if (withGear && !out.length && !isQuick(ev)) {   // he brings his kit; the slot he leaves keeps this slot's kit
+            const there = state.events.filter(o => o.id !== ev.id && !isQuick(o) && isActive(o) && sameTime(o, ev)).flatMap(o => o.assignments.filter(x => x.memberId === newId));
+            if (there.length === 1) swapKits(there[0], assignment);
+          }
           const moved = out.length ? [] : pullFromSameTime(ev, newId);
           setPerson(assignment, newId);
           if (moved.length) setTimeout(() => toast((findShooter(newId) || {}).name + ' moved here from ' + moved.join(', ') + ' (their slot there is open with the gear kept). ' + pname + ' is off this shoot.', true), 0);
@@ -2510,6 +2531,17 @@ body.mh-view-board #mutos-home { display: none; }
           ev.assignments = ev.assignments.filter(a => a !== assignment); delete assignment.slot; t.assignments.push(assignment);
         } }
     ]);
+    const m = document.getElementById('sb-active-modal'), head = m && m.querySelector('.sb-modal-head');
+    if (head) {
+      const row = document.createElement('div'); row.className = 'sb-sw-gear'; row.id = 'sw-gear';
+      row.innerHTML = '<span>Gear:</span><button type="button" data-g="slot"' + (withGear ? '' : ' class="on"') + '>stays with the slot</button><button type="button" data-g="person"' + (withGear ? ' class="on"' : '') + '>goes with the person</button>';
+      row.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+        const want = b.dataset.g === 'person'; if (want === switchGearWith) return;
+        switchGearWith = want; try { localStorage.setItem('sb-switch-gear', want ? 'person' : 'slot'); } catch (e) { /* private mode */ }
+        openSwitchShooterModal(ev, memberId);
+      }));
+      head.appendChild(row);
+    }
   }
   function openSwitchAssistantModal(ev, assistantId) {
     const person = findAssistantPerson(assistantId);
@@ -4173,7 +4205,10 @@ body.mh-view-board #mutos-home { display: none; }
     else if (assistShort) h += '<div class="sb-banner assist">Short on assistant · ' + assistShortText(ev) + '</div>';
     else if (conflict) h += '<div class="sb-banner">Double-booked' + (realClash.size ? ' · ' + escapeHtml([...realClash].map(id => gName(id) + (gearQty(id) > 1 ? ' (all ' + (gearQty(id) - offUnits(id, ev.date)) + ' in use)' : '')).join(', ')) : '') + '</div>';
     h += '<div class="sb-card-name">' + (serial ? '<span class="sb-serial">#' + serial + '</span> ' : '') + escapeHtml(ev.name) + '</div>';
-    h += '<div class="sb-card-meta"><span>' + escapeHtml(formatDate(ev.date)) + '</span><span>' + escapeHtml(ev.slot) + '</span>' + (ev.callTime ? '<span>Report ' + escapeHtml(formatTime12(ev.callTime)) + '</span>' : '') + '<span>' + escapeHtml(ev.location || 'No location set') + '</span>' + (ev.mapLink ? '<a href="' + escapeHtml(ev.mapLink) + '" target="_blank" rel="noopener">Map ↗</a>' : '') + '</div>';
+    // time and place stand out (23 Nov 2026, Ravi: "Make time and location look more aggressively")
+    h += '<div class="sb-card-meta"><span>' + escapeHtml(formatDate(ev.date)) + '</span><span>' + escapeHtml(ev.slot) + '</span></div>';
+    h += '<div class="sb-card-meta sb-card-ww"><span class="sb-ww-time' + (ev.callTime ? '' : ' tbc') + '">⏰ ' + (ev.callTime ? 'Report ' + escapeHtml(formatTime12(ev.callTime)) : 'Report time not set') + '</span>' +
+      '<span class="sb-ww-loc' + (ev.location ? '' : ' tbc') + '">📍 ' + escapeHtml(ev.location || 'No location set') + '</span>' + (ev.mapLink ? '<a class="sb-ww-map" href="' + escapeHtml(ev.mapLink) + '" target="_blank" rel="noopener">Map ↗</a>' : '') + '</div>';
     { const out = isOutstation(ev), guessed = ev.outstation !== true && ev.outstation !== false, unknown = guessed && !out && guessPlace(ev.location) === 'unknown';
       h += '<div class="sb-card-meta"><button type="button" data-action="toggleout" class="sb-tag" style="cursor:pointer;' + (out ? 'background:#e8e0f3;border-color:#c9b8e0;color:#4a3470;font-weight:600' : 'background:transparent;color:var(--ink-faint);' + (unknown ? 'border-style:dashed' : '')) + '" title="' + (out ? 'Outstation: people and gear here are blocked for the whole day, morning and evening. Click if this is actually in Lucknow.' : 'In Lucknow: only the same slot counts as a clash. Click if this shoot is outside Lucknow.') + '">' +
         (out ? '✈ Outstation · whole day' : unknown ? '📍 Lucknow? (check)' : '📍 Lucknow') + (guessed && !unknown && ev.location ? ' · auto' : '') + '</button>' +

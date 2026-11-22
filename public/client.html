@@ -17,6 +17,19 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
 <link rel="stylesheet" href="/app.css">
 <style>
+.lock { background: #f7e9d0; color: #6b4a12; border-radius: 14px; padding: 10px 12px; font-size: 14px; line-height: 1.45; margin-bottom: 10px; }
+.dls { display: flex; flex-direction: column; gap: 8px; }
+.dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--bg); }
+.dl .dl-go, .dl .dl-lock { grid-column: 1 / -1; justify-self: start; }
+.dl .dl-go { min-height: 38px; padding: 0 16px; text-decoration: none; display: inline-flex; align-items: center; }
+.dst { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 9px; white-space: nowrap; background: #eee6e3; color: var(--ink); }
+.dst.editing, .dst.wait { background: #f2dfa7; color: #5c4410; }
+.dst.ready, .dst.delivered, .dst.ok { background: #d6ebd9; color: #1f5a2c; }
+.dst.no { background: #f6d5cf; color: #7a2d1e; }
+.pay { margin-top: 14px; border-top: 1px solid rgba(42,30,34,.08); padding-top: 12px; }
+.pay h3 { margin: 0 0 8px; font-size: 16px; }
+.pay .pc { padding: 6px 0; font-size: 14px; }
+#pay-form label { display: block; }
 .fn { background: var(--surface); border-radius: 20px; margin: 10px 0; box-shadow: var(--shadow); overflow: hidden; }
 /* each card is a one-line summary; tapping it opens the details (11 Nov 2026: "an easy UI with itinerary update") */
 .fn-sum { display: flex; gap: 12px; align-items: center; width: 100%; background: none; border: 0; padding: 14px 16px; text-align: left; font: inherit; color: var(--ink); cursor: pointer; }
@@ -147,6 +160,10 @@
   if (!Array.isArray(ans.vip)) ans.vip = [];
   if (!Array.isArray(ans.refs)) ans.refs = [];   // reference photos { pid, note, fn } (14 Nov 2026)
   const P = window.MutosPhotos, drv = P ? await P.status(c).catch(() => ({})) : {}, onDrive = !!drv.connected;   // photos go to the studio's Google Drive
+  // after the shoot (035_after_shoot.sql, 23 Nov 2026): what Muto's delivers, and the payments the family told us about
+  let after = null;
+  const loadAfter = async () => { try { const { data, error } = await c.rpc('client_after', { p_token: token }); after = !error && data && !data.error ? data : null; } catch (e) { after = null; } };
+  await loadAfter();
   if (!ans.couple || typeof ans.couple !== 'object') ans.couple = {};   // { bride, groom } (12 Nov 2026, Ravi)
   // a photo from the phone, shrunk to a small JPEG (about 20–40 KB) so it saves quickly
   const shrink = file => new Promise((res, rej) => {
@@ -184,6 +201,35 @@
   const fcard = (key, cls, sumInner, body) => '<article class="fn' + cls + (openKey === key ? ' open' : '') + '" data-card="' + esc(key) + '"><button type="button" class="fn-sum" data-open="' + esc(key) + '" aria-expanded="' + (openKey === key) + '">' + sumInner + chev + '</button><div class="fn-body">' + body + '</div></article>';
   const doneBtn = '<button type="button" class="pillbtn light done-btn" data-close>Done</button>';
   const coupleTitle = () => { const c2 = ans.couple || {}; return c2.bride && c2.groom ? String(c2.bride).trim().split(/\s+/)[0] + ' & ' + String(c2.groom).trim().split(/\s+/)[0] : ''; };
+  // "We paid": amount, date, how, UPI ref and a screenshot; Muto's admin / manager approves it (035)
+  function payHtml() {
+    if (!after) return '';
+    const SW = { pending: ['wait', 'Muto\'s is checking'], approved: ['ok', '✓ Received'], rejected: ['no', 'Not received'] };
+    return '<div class="pay" id="sec-pay"><h3>Payments you told us about</h3>' +
+      (after.claims.length ? after.claims.map(x => '<div class="pc"><b>' + inr(x.amount) + '</b> · ' + esc(x.mode) + ' · ' + esc(dayName(x.paid_on)) + (x.upi_ref ? ' · ref ' + esc(x.upi_ref) : '') +
+        ' <span class="dst ' + SW[x.status][0] + '">' + SW[x.status][1] + '</span>' + (x.status === 'rejected' && x.why ? '<div class="meta">' + esc(x.why) + '</div>' : '') + '</div>').join('') : '<p class="meta" style="margin:0">Paid something? Tell us here, so we can mark it and open your photos and films on time.</p>') +
+      (after.can_claim && !preview ? '<button type="button" class="pillbtn" id="pay-open" style="margin-top:10px">We paid</button><div id="pay-form" hidden>' +
+        '<div class="grid"><label><span class="meta">Amount (₹)</span><input class="in" id="pay-amt" type="number" inputmode="numeric" min="1" step="1" placeholder="e.g. 50000"></label>' +
+        '<label><span class="meta">Date paid</span><input class="in" id="pay-date" type="date" max="' + today + '" value="' + today + '"></label>' +
+        '<label><span class="meta">How</span><select class="in" id="pay-mode"><option>UPI</option><option>Bank</option><option>Cash</option><option>Cheque</option><option>Other</option></select></label>' +
+        '<label><span class="meta">UPI / transaction ref</span><input class="in" id="pay-ref" maxlength="60" placeholder="12-digit UTR" autocomplete="off"></label>' +
+        '<label class="wide"><span class="meta">Note (optional)</span><input class="in" id="pay-note" maxlength="200" placeholder="e.g. paid by Rahul\'s account"></label></div>' +
+        (onDrive ? '<label class="addrow" style="display:block;text-align:center;cursor:pointer;margin-top:8px"><span id="pay-phl">＋ Payment screenshot (optional)</span><input type="file" accept="image/*" id="pay-ph" hidden></label>' : '') +
+        '<button type="button" class="pillbtn" id="pay-send" style="width:100%;margin-top:10px">Send to Muto\'s</button></div>' : '') + '</div>';
+  }
+  async function sendPay() {
+    const amt = Number($('pay-amt').value), btn = $('pay-send');
+    if (!(amt > 0)) { toast('Type the amount you paid.', true); return; }
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      let photo = null; const f = $('pay-ph') && $('pay-ph').files && $('pay-ph').files[0];
+      if (f && P) { const r = await P.upload(c, { kind: 'client', ref: token, purpose: 'pay', note: 'Rs ' + amt }, f, { max: 2400, quality: 0.85 }); photo = r.id; }
+      const { data, error } = await c.rpc('client_pay_claim', { p_token: token, p_amount: amt, p_paid_on: $('pay-date').value || today, p_mode: $('pay-mode').value, p_ref: $('pay-ref').value.trim(), p_note: $('pay-note').value.trim(), p_photo: photo });
+      if (error || !data || data.error) throw new Error(error ? error.message : data.error);
+      try { const ss = await c.auth.getSession(); const tok = ss && ss.data && ss.data.session && ss.data.session.access_token; if (tok) fetch('/api/notify-pay', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ claim: data.id }) }).catch(() => {}); } catch (e) {}
+      await loadAfter(); openKey = 'pkg'; render(); toast('Sent. Muto\'s will check it and mark it received.');
+    } catch (e) { toast(e.message || String(e), true); btn.disabled = false; btn.textContent = 'Send to Muto\'s'; }
+  }
   function render() {
     const total = fns.length + ans.extra.length, done = fns.filter(f => filled(ans[f.id])).length + ans.extra.filter(filled).length;
     const first = fns.find(f => f.date >= today), daysTo = first ? Math.round((new Date(first.date + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5) : null;
@@ -232,10 +278,17 @@
         '<input class="in" data-k="r' + i + '" data-f="note" maxlength="120" placeholder="What about it?" value="' + esc(r.note || '') + '"><select class="in" data-k="r' + i + '" data-f="fn">' + fnOpts(r.fn) + '</select>' +
         '<button type="button" class="x" data-rmr="' + i + '" style="justify-self:start">Remove</button></div>' : '').join('') + '</div>' +
       (onDrive && ans.refs.length < 40 ? '<label class="addrow" style="display:block;text-align:center;cursor:pointer">＋ Add photos<input type="file" accept="image/*" multiple id="add-r" hidden></label><div class="upbar" id="r-bar" hidden><i></i></div>' : '') + '</div>' + doneBtn);
+    if (after && after.deliveries.length) {
+      const D = after.deliveries, ready = D.filter(d => d.status === 'ready' || d.status === 'delivered').length, SW = { waiting: 'Not started', editing: 'Being edited', ready: 'Ready', delivered: 'Delivered' };
+      h += '<div class="sechead2">After the shoot</div>' + fcard('deliv', ' sec', '<span class="txt"><h2>Your photos &amp; films</h2><span class="meta">' + (ready ? ready + ' of ' + D.length + ' ready' : D.length + ' on the way') + (after.open ? '' : ' · 🔒 links open at 90% paid') + '</span></span><span class="go' + (after.open && ready ? ' ok' : '') + '">' + (after.open && ready ? 'Open' : 'See') + '</span>',
+        (after.open ? '' : '<div class="lock">🔒 Your download links open once 90% of the package is paid' + (after.need ? ' (' + inr(after.need) + ' more)' : '') + '. Paid already? Tell us under <b>Your package → We paid</b>.</div>') +
+        '<div class="dls">' + D.map(d => '<div class="dl"><div><b>' + esc(d.title) + '</b>' + (d.note ? '<div class="meta">' + esc(d.note) + '</div>' : '') + '</div><span class="dst ' + esc(d.status) + '">' + esc(SW[d.status] || d.status) + '</span>' +
+          (d.link ? '<a class="pillbtn dl-go" href="' + esc(d.link) + '" target="_blank" rel="noopener">Open ›</a>' : d.has_link ? '<span class="meta dl-lock">🔒 Opens at 90% paid</span>' : '') + '</div>').join('') + '</div>' + doneBtn);
+    }
     if (bk) h += '<div class="sechead2">Your package</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>' + (bk.package && bk.package !== 'Custom' ? esc(bk.package) : 'Package') + '</h2><span class="meta">Paid ' + inr(bk.paid) + ' of ' + inr(bk.total) + (bk.pending > 0 ? ' · ' + inr(bk.pending) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
       ((bk.items || []).length ? '<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +
       '<div class="grid" style="margin-top:12px"><div><div class="meta">Paid</div><b>' + inr(bk.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(bk.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(bk.pending) + '</b></div>' +
-      (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div>');
+      (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div>' + payHtml());
     $('list').after($('more')); // keep the add button out of the list while it is rebuilt
     $('list').innerHTML = h;
     const slot = $('more-slot'); if (slot) slot.appendChild($('more'));
@@ -253,6 +306,9 @@
       const c2 = inp.closest('.fn'); if (!list || k[0] === 'x') { const ok = filled(obj), go = c2.querySelector('.fn-sum .go'); c2.classList.toggle('done', ok); if (go) { go.classList.toggle('ok', ok); go.textContent = ok ? 'Ready' : 'Add details'; } }
     }));
     const on = (id, fn) => { const b = $(id); if (b) b.addEventListener('click', fn); };
+    on('pay-open', () => { $('pay-form').hidden = false; $('pay-open').hidden = true; $('pay-amt').focus(); });
+    on('pay-send', sendPay);
+    { const ph = $('pay-ph'); if (ph) ph.addEventListener('change', () => { $('pay-phl').textContent = ph.files[0] ? '✓ ' + ph.files[0].name : '＋ Payment screenshot (optional)'; }); }
     on('add-c', () => { ans.contacts.push({}); openKey = 'contacts'; render(); const r = document.querySelectorAll('#sec-contacts .ppl'); r[r.length - 1].querySelector('input').focus(); });
     on('add-v', () => { ans.vip.push({}); openKey = 'vip'; render(); const r = document.querySelectorAll('#sec-vip .vip'); r[r.length - 1].scrollIntoView({ block: 'center' }); });
     $('list').querySelectorAll('[data-rmc]').forEach(b => b.addEventListener('click', () => { ans.contacts.splice(Number(b.dataset.rmc), 1); dirty = true; render(); scheduleSave(); }));

@@ -16,6 +16,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
 <link rel="stylesheet" href="/app.css">
+<style>
+.ww { display: grid; grid-template-columns: 1fr; gap: 8px; margin: 10px 0 8px; }
+@media (min-width: 520px) { .ww { grid-template-columns: auto 1fr; } }
+.ww > div, .ww > a { display: flex; align-items: center; gap: 10px; border-radius: 16px; padding: 10px 14px; text-decoration: none; min-width: 0; }
+.ww .ico { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+.ww b { display: block; font-size: 19px; line-height: 1.2; font-weight: 800; overflow-wrap: anywhere; }
+.ww small { display: block; font-size: 13px; font-weight: 600; opacity: .9; margin-top: 2px; }
+.ww-time { background: var(--rose, #9e4f62); color: #fff; }
+.ww-loc { background: var(--ink, #2a1e22); color: #fff; }
+a.ww-loc small { color: #f3d58e; }
+.ww .tbc, .ww > .tbc { background: #fff4e0; color: #8a4b12; border: 2px dashed #c9973f; }
+</style>
 <script src="/config.js"></script>
 <script src="/app-core.js"></script><script src="/nav.js"></script>
 <script src="/push-client.js"></script>
@@ -236,15 +248,23 @@
     if (viewOnly()) return '<div class="ans wait">💾 Data not handed over yet</div>';
     return '<div class="ans wait">💾 Hand over your cards / footage, then mark it here.</div><div class="acts"><input class="in" data-role="data-note" maxlength="300" placeholder="Note (optional): e.g. 2 cards to Ravi" style="flex:1 1 180px"><button type="button" class="chip yes" data-act="data">Data handed over</button></div>';
   }
+  // time and place, big and bold (23 Nov 2026, Ravi: "Make time and location look more aggressively … on shooter's side")
+  function wwBlock(s, withDay) {
+    const time = s.report ? 'Report ' + s.report : 'Report time to be confirmed';
+    return '<div class="ww">' +
+      '<div class="ww-time' + (s.report ? '' : ' tbc') + '"><span class="ico">⏰</span><div><b>' + esc(time) + '</b><small>' + esc((withDay ? s.day + ' · ' : '') + s.slot) + '</small></div></div>' +
+      (s.map ? '<a class="ww-loc" href="' + esc(s.map) + '" target="_blank" rel="noopener">' : '<div class="ww-loc' + (s.venue ? '' : ' tbc') + '">') +
+        '<span class="ico">📍</span><div><b>' + esc(s.venue || 'Venue to be confirmed') + '</b>' + (s.map ? '<small>Open map ›</small>' : '') + '</div>' + (s.map ? '</a>' : '</div>') +
+      '</div>';
+  }
   function card(s, past) {
-    const meta = [s.slot, s.report ? 'Report ' + s.report : 'Report time to be confirmed'].join(' · ');
     let h = '<article class="shoot" data-id="' + esc(s.id) + '"><h2>' + esc(s.shoot) + '</h2>' +
       (s.wedding && s.wedding.toLowerCase() !== s.shoot.toLowerCase() ? '<div class="meta">' + esc(s.wedding) + '</div>' : '') +
-      '<div class="meta">' + esc(past ? s.day + ' · ' + s.slot : meta) + '</div>' +
+      (past ? '<div class="meta">' + esc(s.day + ' · ' + s.slot) + '</div>' : wwBlock(s, true)) +
       '<span class="role">' + esc(s.role || 'Crew') + '</span>' + (s.premium ? '<span class="prem">★ Premium · shoot in 4K HDR</span>' : '');
     if (past) return h + dataBlock(s) + gearBlock(s, true) + '</article>';
     h += answerBlock(s);
-    h += '<div class="row"><span class="k">Venue</span>' + esc(s.venue || 'To be confirmed') + '<div class="acts">' + (s.map ? '<a class="chip" href="' + esc(s.map) + '" target="_blank" rel="noopener">Open map</a>' : '') +
+    h += '<div class="row"><span class="k">Add to your calendar</span><div class="acts">' +
       '<a class="chip" href="' + esc(googleCal(s)) + '" target="_blank" rel="noopener">+ Google Calendar</a><button type="button" class="chip" data-act="ics">+ Phone calendar</button></div></div>';
     if (s.clientName || s.clientPhone) h += '<div class="row"><span class="k">Client</span>' + esc(s.clientName || '') + (s.clientPhone ? ' <span class="meta" style="display:inline">' + esc(s.clientPhone) + '</span><div class="acts"><a class="chip" href="' + tel(s.clientPhone) + '">Call</a><a class="chip wa" href="' + wa(s.clientPhone) + '" target="_blank" rel="noopener">WhatsApp</a></div>' : '') + '</div>';
     if (s.gear && s.gear.length) h += '<div class="row"><span class="k">Your gear</span>' + esc(s.gear.join(', ')) + '</div>' + gearBlock(s, false);
@@ -422,7 +442,7 @@
       else if (viewOnly()) btns = '<div class="ans wait" style="margin:0">Not confirmed yet</div>';
       else btns = '<div class="pillrow"><button type="button" class="pillbtn" data-act="yes">I\'ll be there</button><button type="button" class="pillbtn light" data-act="open">Can\'t make it</button></div>';
       $('next').innerHTML = '<div class="hero" data-id="' + esc(s.id) + '"><div class="hero-top"><span class="k">Next shoot</span><span class="badge-w">' + esc(when) + '</span></div>' +
-        '<h2>' + esc(s.shoot) + '</h2><p>' + esc([s.slot, s.report ? 'Report ' + s.report : 'Report time to be confirmed'].join(' · ')) + (s.venue ? '<br>' + esc(s.venue) : '') + '</p>' +
+        '<h2>' + esc(s.shoot) + '</h2>' + wwBlock(s, false) +
         '<div class="chipset"><span class="dark">' + esc(s.role || 'Crew') + '</span>' + (gear.length ? '<span>' + esc(gear.join(' · ')) + '</span>' : '') + (s.premium ? '<span>★ Premium · 4K HDR</span>' : '') + '</div>' + btns +
         '<div class="acts" style="margin:0">' + (s.map ? '<a class="chip" href="' + esc(s.map) + '" target="_blank" rel="noopener">Open map</a>' : '') + '<button type="button" class="chip" data-act="open">All details</button></div></div>';
     }

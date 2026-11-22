@@ -2,7 +2,7 @@
 // time, venue, address, contact and notes (public/client.html). The board keeps their function list up to date (client_feed).
 (function () {
   const app = window.mutosApp;
-  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [];
+  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [], claims = [], dels = [];
   const sup = () => window.__mutosRole === 'supervisor'; // supervisor: Gmails, WhatsApp, answers, editing the form; no money
   const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const KIND_LABELS = [['reel', 'Reel'], ['teaser', 'Teaser'], ['trailer', 'Trailer'], ['highlight', 'Highlight film'], ['full', 'Full film'], ['top', 'Top selection'], ['lr', 'LR edit'], ['album_sel', 'Album selection'], ['album', 'Album design'], ['other', 'Other']];
@@ -55,6 +55,9 @@
     // packages and payments (009_bookings.sql); fine if not set up yet
     const [b, p, k] = await Promise.all([c.from('bookings').select('*'), c.from('booking_payments').select('*').order('paid_on'), c.from('packages').select('*').order('name')]);
     bookings = b.error ? [] : (b.data || []); payments = p.error ? [] : (p.data || []); packages = k.error ? [] : (k.data || []);
+    // after the shoot (035_after_shoot.sql): payments the families reported, services to deliver; fine if not set up yet
+    if (!sup()) { try { const [x, d] = await Promise.all([c.from('client_pay_claims').select('*').order('at', { ascending: false }).limit(1000), c.from('client_deliveries').select('*').order('sort').limit(1000)]);
+      claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); } catch (e) { claims = []; dels = []; } }
   }
   // keep each linked wedding's function list fresh for the family
   async function sync() {
@@ -83,7 +86,7 @@
   function summary() {
     if (!api) return null; const ws = weddings(), keys = new Set(ws.map(w => w.key));
     const all = bookings.map(b => money(b.wedding_key)).filter(Boolean);
-    return { toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
+    return { payToCheck: claims.filter(x => x.status === 'pending').length, toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
   }
 
   // shoots of the same family left out of a wedding (12 Nov 2026, Ravi: "I filled the Gmail … but it only shows in a single
@@ -118,18 +121,18 @@
     const tabs = '<div class="sb-btn-row" id="cl-tabs" style="padding:0 8px 6px"><button type="button" class="sb-btn-sm' + (past ? ' secondary' : '') + '" data-cltab="coming">Coming up</button><button type="button" class="sb-btn-sm' + (past ? '' : ' secondary') + '" data-cltab="past">Past</button>' +
       '<input class="sb-field" id="cl-q" placeholder="' + (past ? 'Search a past client' : 'Search a client') + '" style="flex:1 1 160px;min-width:0">' + sortSel('cl-sort', sortMode) + '</div>';
     const pastRow = w => '<div class="sb-manage-row cl-past cl-row" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '')) + '</span></div>' + moneyPill(w.key) + '</div>' +
-      '<div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm" data-data="' + esc(w.key) + '">Data copied</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>') + '</div></div>';
+      '<div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm" data-data="' + esc(w.key) + '">Data copied</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button><button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button><button type="button" class="sb-btn-sm secondary" data-after="' + esc(w.key) + '">After shoot' + (claims.some(x => x.wedding_key === w.key && x.status === 'pending') ? ' · ₹ to check' : '') + '</button>') + '</div></div>';
     const html = tabs + '<div class="sb-modal-list" id="cl-list">' + (past ? (ws.length ? ws.map(pastRow).join('') : '<p class="sb-modal-empty">No past clients on the board.</p>') : ws.length ? ws.map(w => {
       const s = stateOf(w), sx = strays(w);
       return '<div class="sb-manage-row cl-row" data-q="' + esc((w.title + ' ' + w.events.map(e => e.name).join(' ')).toLowerCase()) + '" style="display:block;padding:10px 8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><b style="font-size:14px">' + esc(w.title) + '</b>' + occTag(w) + '<br><span class="sb-manage-sub">' + esc(dayName(w.first) + (w.last !== w.first ? ' – ' + dayName(w.last) : '') + ' · ' + w.events.length + ' function' + (w.events.length > 1 ? 's' : '') + (w.phone ? ' · ' + w.phone : '')) + '</span>' +
         (sx.length ? '<div class="cl-stray" style="margin-top:6px;background:#f2dfa7;color:#5c4410;border-radius:10px;padding:6px 8px;font-size:12.5px;line-height:1.4">Same phone, but not under this client (the family will not see them): <b>' + esc(sx.map(e => e.name + ' (' + dayName(e.date) + ')').join(', ')) + '</b>' +
           (w.key.startsWith('w:') && !sup() ? ' <button type="button" class="sb-btn-sm" data-join="' + esc(w.key) + '" style="margin-left:4px">Join them</button>' : '') + '</div>' : '') + '</div>' +
-        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button>' +
+        '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + s.cls + '" style="font-size:11px;white-space:nowrap">' + esc(s.label) + '</span>' + moneyPill(w.key) + '</span></div><div class="sb-btn-row" style="margin-top:8px"><button type="button" class="sb-btn-sm secondary" data-data="' + esc(w.key) + '">Data</button>' + (sup() ? '' : '<button type="button" class="sb-btn-sm secondary" data-ren="' + esc(w.key) + '">Rename</button><button type="button" class="sb-btn-sm secondary" data-hist="' + esc(w.key) + '">History</button>') + '<button type="button" class="sb-btn-sm secondary" data-book="' + esc(w.key) + '">' + (bookings.some(b => b.wedding_key === w.key) ? 'Package & payments' : 'Add package') + '</button><button type="button" class="sb-btn-sm secondary" data-after="' + esc(w.key) + '">After shoot' + (claims.some(x => x.wedding_key === w.key && x.status === 'pending') ? ' · ₹ to check' : '') + '</button>' +
         (s.l ? (s.l.emails && s.l.emails.length ? '<a class="sb-btn-sm wa" data-wa="' + esc(w.key) + '" href="#">WhatsApp</a>' : '') + '<button type="button" class="sb-btn-sm secondary" data-mails="' + esc(w.key) + '">Gmails (' + ((s.l.emails || []).length) + ')</button><a class="sb-btn-sm secondary" href="' + esc(previewOf(s.l)) + '" target="_blank" rel="noopener">Open &amp; edit</a>' + (s.it && s.it.updated_at ? '<button type="button" class="sb-btn-sm" data-see="' + esc(w.key) + '">See answers</button>' : '')
           : '<button type="button" class="sb-btn-sm" data-make="' + esc(w.key) + '">Add client Gmail</button>') + '</div>' +
         (s.l && !(s.l.emails || []).length ? '<div class="sb-manage-sub" style="color:#7a2d1e;margin-top:4px">No Gmail yet: the family cannot sign in. Tap Gmails.</div>' : s.l ? '<div class="sb-manage-sub" style="margin-top:4px">Signs in with: ' + esc(s.l.emails.join(', ')) + '</div>' : '') + '</div>';
     }).join('') : '<p class="sb-modal-empty">No upcoming clients on the board. Past ones are under Past.</p>') + '</div>';
-    const modal = api.makeModal(api.modalHead('Clients', 'Add the family\'s Gmail(s) to a client (wedding, birthday, anniversary, event…). They sign in at ' + location.host + '/client with that Gmail and fill time, venue, address and contact for every function. Nobody else can open it.') + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="cl-find">Find client data</button><button type="button" class="secondary" id="cl-packages">Packages</button><button type="button" id="cl-done">Done</button></div>', true);
+    const modal = api.makeModal(api.modalHead('Clients', 'Add the family\'s Gmail(s) to a client (wedding, birthday, anniversary, event…). They sign in at ' + location.host + '/client with that Gmail and fill time, venue, address and contact for every function. Nobody else can open it.') + html + '<div class="sb-modal-foot"><button type="button" class="secondary" id="cl-find">Find client data</button><button type="button" class="secondary" id="cl-joinsel">Join shoots into one client</button><button type="button" class="secondary" id="cl-packages">Packages</button><button type="button" id="cl-done">Done</button></div>', true);
     modal.querySelector('#cl-done').addEventListener('click', api.closeModal);
     modal.querySelectorAll('[data-join]').forEach(b => b.addEventListener('click', () => {
       const w = ws.find(x => x.key === b.dataset.join), name = w.events[0].wedding, sx = strays(w); if (!w || !name || !sx.length) return;
@@ -149,12 +152,180 @@
     });
     modal.querySelectorAll('[data-see]').forEach(b => b.addEventListener('click', () => answers(byKey(b.dataset.see))));
     modal.querySelectorAll('[data-book]').forEach(b => b.addEventListener('click', () => booking(byKey(b.dataset.book))));
+    modal.querySelectorAll('[data-after]').forEach(b => b.addEventListener('click', () => afterWin(byKey(b.dataset.after))));
     modal.querySelectorAll('[data-data]').forEach(b => b.addEventListener('click', () => dataWin(byKey(b.dataset.data), open)));
     modal.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => histWin(byKey(b.dataset.hist), open)));
     modal.querySelectorAll('[data-ren]').forEach(b => b.addEventListener('click', () => renameWin(b.dataset.ren)));
     modal.querySelector('#cl-find').addEventListener('click', () => findData(open));
+    { const j = modal.querySelector('#cl-joinsel'); if (sup()) j.remove(); else j.addEventListener('click', () => joinWin()); }
     const pk = modal.querySelector('#cl-packages'); if (pk) pk.addEventListener('click', () => packagesWin());
-    if (sup()) modal.querySelectorAll('[data-book], #cl-packages').forEach(x => x.remove());
+    if (sup()) modal.querySelectorAll('[data-book], [data-after], #cl-packages').forEach(x => x.remove());
+  }
+  // ---------- after the shoot (23 Nov 2026, Ravi; 035_after_shoot.sql) ----------
+  // Services to deliver (ticked from the package items, or typed) with status + link; the family sees the status any time and the
+  // links once approved payments reach 90 % of the package (or when opened by hand). Payments the family reports wait here for the
+  // admin / manager: Approve (it becomes a payment in Package & payments) or Not received (with a reason the family sees).
+  const DSTAT = [['waiting', 'Not started'], ['editing', 'Editing'], ['ready', 'Ready'], ['delivered', 'Delivered']];
+  const claimRow = (x, withName) => '<div class="sb-manage-row af-claim" data-claim="' + esc(x.id) + '" style="display:block;padding:9px 8px">' +
+    (withName ? '<b>' + esc((links.find(l => l.wedding_key === x.wedding_key) || {}).title || x.wedding_key.replace(/^w:/, '')) + '</b><br>' : '') +
+    '<b>' + inr(x.amount) + '</b> · ' + esc(x.mode) + ' · paid ' + esc(dayName(x.paid_on)) + (x.upi_ref ? ' · ref ' + esc(x.upi_ref) : '') + (x.note ? '<br><span class="sb-manage-sub">' + esc(x.note) + '</span>' : '') +
+    '<br><span class="sb-manage-sub">Reported by ' + esc(x.by_email) + ' · ' + esc(new Date(x.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '</span>' +
+    (x.status === 'pending' ? '<div class="sb-btn-row" style="margin-top:6px;align-items:center">' + (x.photo ? '<button type="button" class="sb-btn-sm secondary" data-cph="' + esc(x.photo) + '">See screenshot</button>' : '<span class="sb-manage-sub">No screenshot</span>') +
+      '<input class="sb-field" type="number" min="1" step="1" data-camt="' + esc(x.id) + '" value="' + esc(String(Math.round(x.amount))) + '" style="width:110px" aria-label="Amount received">' +
+      '<button type="button" class="sb-btn-sm" data-cok="' + esc(x.id) + '">Approve</button><button type="button" class="sb-btn-sm secondary" data-cno="' + esc(x.id) + '">Not received</button></div>'
+      : '<br><span class="pill ' + (x.status === 'approved' ? 'ok' : 'no') + '" style="font-size:11px">' + (x.status === 'approved' ? 'Approved' : 'Not received') + '</span>' + (x.why ? ' <span class="sb-manage-sub" style="display:inline">' + esc(x.why) + '</span>' : '') + (x.photo ? ' <button type="button" class="sb-btn-sm secondary" data-cph="' + esc(x.photo) + '">Screenshot</button>' : '')) + '</div>';
+  function wireClaims(modal, after) {
+    modal.querySelectorAll('[data-cph]').forEach(b => b.addEventListener('click', () => { if (window.MutosPhotos) app.client().then(c => window.MutosPhotos.view(c, [{ pid: b.dataset.cph, title: 'Payment screenshot', sub: '' }], 0)); else api.toast('Photos are not set up here.'); }));
+    const decide = async (id, ok) => {
+      const why = ok ? '' : prompt('Why is it not received? The family sees this.', 'Not received in our account yet'); if (!ok && !why) return;
+      const amtEl = modal.querySelector('[data-camt="' + id + '"]'), amt = amtEl ? Number(amtEl.value) : null;
+      const c = await app.client(), { data, error } = await c.rpc('client_pay_decide', { p_claim: id, p_approve: ok, p_why: why || null, p_amount: ok && amt > 0 ? amt : null });
+      if (error || !data || data.error) { api.toast(error ? error.message : data.error); return; }
+      api.toast(ok ? 'Approved: added to Package & payments.' + (data.open ? ' Deliveries are open for the family.' : '') : 'Marked not received. The family sees why.');
+      await load(); after();
+    };
+    modal.querySelectorAll('[data-cok]').forEach(b => b.addEventListener('click', () => decide(b.dataset.cok, true)));
+    modal.querySelectorAll('[data-cno]').forEach(b => b.addEventListener('click', () => decide(b.dataset.cno, false)));
+  }
+  async function afterWin(w) {
+    if (!w || sup()) return;
+    try { await load(); } catch (e) { api.toast('Could not load: ' + (e.message || e)); return; }
+    const m = money(w.key), l = links.find(x => x.wedding_key === w.key), bk = bookings.find(b => b.wedding_key === w.key);
+    const total = m ? Number(m.b.total) : 0, paid = m ? m.paid : 0, need = total > 0 ? Math.max(0, Math.ceil(total * 0.9) - paid) : null;
+    const hand = l ? l.deliveries_open : null, auto = total > 0 && paid >= total * 0.9, isOpen = hand === true || (hand !== false && auto);
+    const mine = dels.filter(d => d.wedding_key === w.key), cl = claims.filter(x => x.wedding_key === w.key);
+    // services: what is already listed, then the package items not listed yet (unticked)
+    const fromPkg = ((bk && bk.items) || []).map(it => ({ kind: it.kind, title: (kindLabel(it.kind) + (it.per === 'function' ? ' (each function)' : '') + (it.note ? ' · ' + it.note : '')).slice(0, 80) }));
+    const rows = mine.map(d => ({ id: d.id, on: true, kind: d.kind, title: d.title, status: d.status, link: d.link || '', note: d.note || '' }))
+      .concat(fromPkg.filter(f => !mine.some(d => d.title === f.title)).map(f => ({ on: false, kind: f.kind, title: f.title, status: 'waiting', link: '', note: '' })));
+    const svc = (r, i) => '<div class="sb-manage-row af-svc" data-i="' + i + '" style="display:block;padding:8px">' +
+      '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" class="af-on" ' + (r.on ? 'checked' : '') + ' style="width:18px;height:18px"><b>' + esc(r.title) + '</b></label>' +
+      '<div class="af-more" style="display:' + (r.on ? 'grid' : 'none') + ';grid-template-columns:auto 1fr;gap:6px;margin-top:6px"><select class="sb-field af-st">' + DSTAT.map(([k, t]) => '<option value="' + k + '"' + (r.status === k ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>' +
+      '<input class="sb-field af-link" type="url" placeholder="Link (Drive, gallery…) when ready" value="' + esc(r.link) + '" data-nosuggest>' +
+      '<input class="sb-field af-note" placeholder="Note for the family (optional)" maxlength="300" value="' + esc(r.note) + '" style="grid-column:1/-1" data-nosuggest></div></div>';
+    const pend = cl.filter(x => x.status === 'pending'), done = cl.filter(x => x.status !== 'pending');
+    const rule = '<div class="sb-btn-row" id="af-rule" style="margin:6px 0 0">' + [['auto', 'By payment (90%)'], ['open', 'Open now'], ['closed', 'Keep closed']].map(([k, t]) =>
+      '<button type="button" class="sb-btn-sm' + ((k === 'auto' && hand == null) || (k === 'open' && hand === true) || (k === 'closed' && hand === false) ? '' : ' secondary') + '" data-rule="' + k + '">' + t + '</button>').join('') + '</div>';
+    const modal = api.makeModal(api.modalHead('After shoot · ' + w.title, 'Tick what you deliver. The family sees the status any time; the links open when approved payments reach 90% of the package, or when you open them by hand.') +
+      '<div class="sb-modal-list" id="af-list">' +
+      '<div class="sb-manage-sub" id="af-state" style="margin:4px 8px 8px;padding:8px 10px;border-radius:10px;background:' + (isOpen ? '#e1efe4' : '#f7e9d0') + ';color:var(--ink)">' +
+        (total > 0 ? 'Paid <b>' + inr(paid) + '</b> of ' + inr(total) + ' (' + Math.floor(paid / total * 100) + '%). ' : 'No package yet: add it in Package & payments. ') +
+        (isOpen ? '<b>Deliveries are open</b> for the family' + (hand === true ? ' (opened by hand)' : '') + '.' : '<b>Deliveries are closed</b>' + (hand === false ? ' (kept closed by hand)' : need != null ? ': ' + inr(need) + ' more opens them.' : '.')) +
+        (l ? rule : '<br>Add the family\'s Gmail first: then they can see this on their page.') + '</div>' +
+      '<p class="sb-modal-group">Payments the family reported' + (pend.length ? ' · ' + pend.length + ' to check' : '') + '</p>' +
+        (cl.length ? pend.map(x => claimRow(x)).join('') + done.slice(0, 10).map(x => claimRow(x)).join('') : '<p class="sb-modal-empty">None yet. The family taps "We paid" on their page.</p>') +
+      '<p class="sb-modal-group">Services to deliver</p><div id="af-svcs">' + (rows.length ? rows.map(svc).join('') : '<p class="sb-modal-empty">No package items. Add a service below.</p>') + '</div>' +
+      '<div class="sb-btn-row" style="padding:4px 8px"><input class="sb-field" id="af-new" placeholder="Another service, e.g. Pendrive" maxlength="80" style="flex:1 1 160px" data-nosuggest><button type="button" class="sb-btn-sm secondary" id="af-add">＋ Add</button></div>' +
+      '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="af-back">Back</button>' + (l && (l.emails || []).length ? '<a class="sb-btn-sm wa" id="af-wa" href="#" style="align-self:center">WhatsApp</a>' : '') + '<button type="button" id="af-save">Save</button></div>', true);
+    const q = x => modal.querySelector(x);
+    modal.querySelectorAll('.af-on').forEach(cb => cb.addEventListener('change', () => { cb.closest('.af-svc').querySelector('.af-more').style.display = cb.checked ? 'grid' : 'none'; }));
+    q('#af-add').addEventListener('click', () => { const t = q('#af-new').value.trim(); if (!t) return; rows.push({ on: true, kind: null, title: t.slice(0, 80), status: 'waiting', link: '', note: '' }); q('#af-svcs').insertAdjacentHTML('beforeend', svc(rows[rows.length - 1], rows.length - 1)); const cb = q('#af-svcs .af-svc:last-child .af-on'); cb.addEventListener('change', () => { cb.closest('.af-svc').querySelector('.af-more').style.display = cb.checked ? 'grid' : 'none'; }); q('#af-new').value = ''; const em = q('#af-svcs .sb-modal-empty'); if (em) em.remove(); });
+    q('#af-back').addEventListener('click', open);
+    modal.querySelectorAll('[data-rule]').forEach(b => b.addEventListener('click', async () => {
+      const v = { auto: null, open: true, closed: false }[b.dataset.rule], c = await app.client();
+      const { data, error } = await c.rpc('client_deliveries_set_open', { p_key: w.key, p_open: v });
+      if (error || !data || data.error) { api.toast(error ? (/client_deliveries_set_open/.test(error.message) ? 'Run supabase/035_after_shoot.sql first.' : error.message) : data.error); return; }
+      api.toast(data.open ? 'Deliveries are open for the family.' : 'Deliveries are closed for the family.'); afterWin(w);
+    }));
+    wireClaims(modal, () => afterWin(w));
+    const wa = q('#af-wa'); if (wa) {
+      const ready = mine.filter(d => d.status === 'ready' || d.status === 'delivered').map(d => d.title);
+      const msg = 'Namaste! This is Muto\'s. ' + (ready.length ? 'Ready for ' + w.title + ': ' + ready.join(', ') + '. ' : 'Updates for ' + w.title + ' are on your page. ') +
+        (isOpen ? 'Open ' + linkOf() + ' and sign in with ' + l.emails.join(' or ') + ' to see and download them.' : 'They open on your page at ' + linkOf() + ' once ' + (need != null ? inr(need) + ' more is paid' : 'the payment is done') + '. You can tell us there when you pay.') + ' Thank you!';
+      wa.href = 'https://wa.me/' + (digits(w.phone) || '') + '?text=' + encodeURIComponent(msg); wa.target = '_blank'; wa.rel = 'noopener';
+    }
+    q('#af-save').addEventListener('click', async () => {
+      const c = await app.client(), btn = q('#af-save'); btn.disabled = true; btn.textContent = 'Saving…';
+      const errs = [];
+      const els = [...modal.querySelectorAll('.af-svc')];
+      for (const [n, el] of els.entries()) {
+        const r = rows[+el.dataset.i], on = el.querySelector('.af-on').checked, link = el.querySelector('.af-link').value.trim();
+        if (on && link && !/^https?:\/\//i.test(link)) { errs.push(r.title + ': the link must start with https://'); continue; }
+        const row = { wedding_key: w.key, kind: r.kind || null, title: r.title, status: el.querySelector('.af-st').value, link: link || null, note: el.querySelector('.af-note').value.trim() || null, sort: n };
+        const res = on ? (r.id ? await c.from('client_deliveries').update(row).eq('id', r.id) : await c.from('client_deliveries').insert(row)) : r.id ? await c.from('client_deliveries').delete().eq('id', r.id) : { error: null };
+        if (res.error) errs.push(r.title + ': ' + (/client_deliveries/.test(res.error.message) ? 'run supabase/035_after_shoot.sql first' : res.error.message));
+      }
+      if (errs.length) { api.toast(errs[0]); btn.disabled = false; btn.textContent = 'Save'; return; }
+      api.toast('Saved. The family sees it on their page.'); afterWin(w);
+    });
+  }
+  // every payment the families reported and not checked yet (Home → Needs you → Payments to check)
+  async function payWin() {
+    if (!api || sup()) return;
+    try { await load(); } catch (e) { api.toast('Could not load: ' + (e.message || e)); return; }
+    const pend = claims.filter(x => x.status === 'pending');
+    const modal = api.makeModal(api.modalHead('Payments to check', 'Families tapped "We paid". Check your account, then Approve (it goes into Package & payments) or Not received.') +
+      '<div class="sb-modal-list" id="pay-list">' + (pend.length ? pend.map(x => claimRow(x, true) + '<div style="padding:0 8px 8px"><button type="button" class="sb-btn-sm secondary" data-paf="' + esc(x.wedding_key) + '">Open After shoot</button></div>').join('') : '<p class="sb-modal-empty">Nothing to check. 🎉</p>') + '</div>' +
+      '<div class="sb-modal-foot"><button type="button" id="pay-done">Done</button></div>', true);
+    modal.querySelector('#pay-done').addEventListener('click', api.closeModal);
+    wireClaims(modal, payWin);
+    modal.querySelectorAll('[data-paf]').forEach(b => b.addEventListener('click', () => afterWin(weddings(true).find(w => w.key === b.dataset.paf) || { key: b.dataset.paf, title: b.dataset.paf.replace(/^w:/, ''), events: [], phone: '' })));
+  }
+
+  // join shoots into one client (23 Nov 2026, Ravi: "a select option on client page which allows selecting further events where
+  // clients' are not named or assigned and the events are split and let them give a client's name to make it one")
+  // Tick the shoots, type (or pick) the client's name, Join: every ticked shoot gets that name (ev.wedding). A client whose shoots
+  // ALL move and who already has a family login / form / package is renamed with 031 client_rename, so that stays with them.
+  let joinShow = 'none';
+  function joinWin(picked) {
+    if (sup()) return;
+    const today = api.todayStr(), from = addDaysStr(today, -60), sel = new Set(picked || []);
+    const all = api.state().events.filter(e => api.isActive(e) && e.date && (joinShow === 'past' ? true : e.date >= from)).sort((a, b) => a.date.localeCompare(b.date) || String(a.slot).localeCompare(String(b.slot)));
+    const keyOf = ev => ev.wedding ? 'w:' + api.normalizeName(ev.wedding) : ev.contactPhone ? 'p:' + digits(ev.contactPhone) : 'n:' + api.normalizeName(ev.name);
+    const ws = weddings(true), wOf = new Map(); ws.forEach(w => w.events.forEach(e => wOf.set(e.id, w)));
+    const list = all.filter(e => joinShow !== 'none' || !e.wedding || sel.has(e.id));
+    const names = [...new Set(ws.filter(w => w.key.startsWith('w:')).map(w => w.events.find(e => e.wedding).wedding))].sort((a, b) => a.localeCompare(b));
+    const chip = (k, l) => '<button type="button" class="sb-btn-sm' + (joinShow === k ? '' : ' secondary') + '" data-jshow="' + k + '">' + esc(l) + '</button>';
+    const row = e => { const w = wOf.get(e.id), who = e.wedding ? e.wedding : 'No client name' + (e.contactName ? ' · ' + e.contactName : '');
+      return '<label class="sb-manage-row jn-row" data-q="' + esc((e.name + ' ' + (e.wedding || '') + ' ' + (e.contactName || '') + ' ' + (e.contactPhone || '') + ' ' + (e.location || '')).toLowerCase()) + '" style="display:flex;gap:10px;align-items:flex-start;padding:9px 8px;cursor:pointer">' +
+        '<input type="checkbox" class="jn-pick" value="' + esc(e.id) + '"' + (sel.has(e.id) ? ' checked' : '') + ' style="margin-top:3px;width:18px;height:18px;flex:0 0 auto">' +
+        '<span style="min-width:0"><b>' + esc(e.name) + '</b> <span class="sb-manage-sub" style="display:inline">' + esc(dayName(e.date) + ' · ' + e.slot) + '</span><br>' +
+        '<span class="sb-manage-sub"' + (e.wedding ? '' : ' style="color:#7a2d1e"') + '>' + esc(who + (w && w.events.length > 1 ? ' (' + w.events.length + ' shoots)' : '') + (e.contactPhone ? ' · ' + e.contactPhone : '') + (e.location ? ' · ' + e.location : '')) + '</span></span></label>'; };
+    const modal = api.makeModal(api.modalHead('Join shoots into one client', 'Tick the shoots of one client, give the client\'s name and press Join. The family then sees all of them on their page.') +
+      '<div class="sb-btn-row" style="padding:0 8px 6px">' + chip('none', 'No client name') + chip('all', 'All shoots') + chip('past', 'Older too') +
+      '<input class="sb-field" id="jn-q" type="search" placeholder="Search name, phone, venue" style="flex:1 1 160px;min-width:0" data-nosuggest></div>' +
+      '<div class="sb-modal-list" id="jn-list">' + (list.length ? list.map(row).join('') : '<p class="sb-modal-empty">No shoots without a client name. Tap All shoots to see every shoot.</p>') + '</div>' +
+      '<div class="sb-edit-form" style="border-top:1px solid var(--card-edge)"><label class="sb-edit-label" for="jn-name">Client name for the ticked shoots (<span id="jn-n">0</span>)</label>' +
+      '<input id="jn-name" class="sb-field" maxlength="120" list="jn-names" placeholder="e.g. Sharma wedding"><datalist id="jn-names">' + names.map(n => '<option value="' + esc(n) + '">').join('') + '</datalist>' +
+      '<p class="sb-manage-sub" id="jn-note" style="margin:6px 0 0"></p></div>' +
+      '<div class="sb-modal-foot"><button type="button" class="secondary" id="jn-back">Back</button><button type="button" id="jn-go">Join</button></div>', true);
+    const q = s2 => modal.querySelector(s2), picks = () => [...modal.querySelectorAll('.jn-pick:checked')].map(i => i.value);
+    const note = () => {
+      const ids = picks(), nm = q('#jn-name').value.trim(); q('#jn-n').textContent = ids.length;
+      const evs = ids.map(id => all.find(e => e.id === id)).filter(Boolean), olds = [...new Set(evs.filter(e => e.wedding && e.wedding !== nm).map(e => e.wedding))];
+      const ex = nm && ws.find(w => w.key === 'w:' + api.normalizeName(nm));
+      q('#jn-note').textContent = (ex ? nm + ' already has ' + ex.events.length + ' shoot' + (ex.events.length > 1 ? 's' : '') + ': these join them. ' : '') + (olds.length ? 'Moves them out of: ' + olds.join(', ') + '.' : '');
+      if (!nm && evs.length) { const g = evs.find(e => e.wedding); if (g) q('#jn-name').placeholder = g.wedding; }
+    };
+    modal.querySelectorAll('.jn-pick').forEach(i => i.addEventListener('change', note));
+    q('#jn-name').addEventListener('input', note);
+    modal.querySelectorAll('[data-jshow]').forEach(b => b.addEventListener('click', () => { joinShow = b.dataset.jshow; joinWin(picks()); }));
+    q('#jn-q').addEventListener('input', () => { const v = q('#jn-q').value.trim().toLowerCase(); modal.querySelectorAll('.jn-row').forEach(r => { r.style.display = !v || r.dataset.q.includes(v) ? 'flex' : 'none'; }); });
+    q('#jn-back').addEventListener('click', open);
+    q('#jn-go').addEventListener('click', async () => {
+      const ids = picks(); let name = q('#jn-name').value.trim().replace(/\s+/g, ' ');
+      if (!name) { const g = ids.map(id => all.find(e => e.id === id)).find(e => e && e.wedding); if (g) name = g.wedding; }
+      if (ids.length < 1) { api.toast('Tick the shoots first.'); return; }
+      if (!name) { api.toast('Type the client\'s name.'); return; }
+      const evs = ids.map(id => api.state().events.find(e => e.id === id)).filter(Boolean), nk = 'w:' + api.normalizeName(name);
+      if (!confirm(evs.length + ' shoot' + (evs.length > 1 ? 's' : '') + ' become the client "' + name + '":\n' + evs.map(e => '· ' + e.name + ' (' + dayName(e.date) + ')').join('\n'))) return;
+      const btn = q('#jn-go'); btn.disabled = true; btn.textContent = 'Joining…';
+      try {
+        const c = await app.client();
+        // a client that moves whole and has a family login / form / package keeps them under the new name
+        const groups = new Map(); evs.forEach(e => { const k = keyOf(e); if (k !== nk) { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); } });
+        for (const [k, g] of groups) {
+          const w = ws.find(x => x.key === k); if (!w || w.events.length !== g.length) continue;
+          if (!links.some(l => l.wedding_key === k) && !itin.some(i => i.wedding_key === k) && !bookings.some(b => b.wedding_key === k)) continue;
+          const { data, error } = await c.rpc('client_rename', { p_old: k, p_new: nk, p_title: name, p_events: g.map(e => e.id) });
+          if (error || !data || data.error) { api.toast('Could not join ' + w.title + ': ' + (error ? error.message : data.error)); btn.disabled = false; btn.textContent = 'Join'; return; }
+        }
+        evs.forEach(e => { e.wedding = name; }); api.save(); if (window.MUTOS_APP && window.MUTOS_APP.changed) window.MUTOS_APP.changed(); api.renderBoard();
+        lastSig.delete(nk); await load(); await sync();
+        api.toast(evs.length + ' shoot' + (evs.length > 1 ? 's are' : ' is') + ' now under ' + name + '.'); open();
+      } catch (e) { api.toast('Could not join: ' + (e.message || e)); btn.disabled = false; btn.textContent = 'Join'; }
+    });
+    note();
   }
   // rename a client (20 Nov 2026, Ravi): every shoot of the client gets the new name, and 031 client_rename moves what hangs on the
   // old name (family login and answers, package & payments, Work desk jobs, drive data, family photos) to the new one
@@ -490,7 +661,7 @@
   window.MUTOS_CLIENTS = {
     attach(a) { const first = !api; api = a; if (first) { load().then(() => { sync(); document.dispatchEvent(new Event('mutos:updates')); }).catch(() => {}); setInterval(() => load().then(sync).catch(() => {}), 10 * 60 * 1000); } },
     changed() { clearTimeout(this._t); this._t = setTimeout(sync, 3500); },
-    open, summary, money, data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
+    open, summary, money, payments: () => payWin(), _afterWin: k => afterWin(weddings(true).find(w => w.key === k)), data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
     packages() { if (!api) { alert('The board is still loading.'); return; } load().then(packagesWin).catch(e => api.toast('Could not load packages: ' + (e.message || e))); }
   };
 })();

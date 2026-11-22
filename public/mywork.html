@@ -275,6 +275,8 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
   try { await load(); } catch (e) { $('tab-jobs').innerHTML = '<div class="empty">Could not load your jobs (' + esc(e.message || e) + ').</div>'; return; }
   const first = new URLSearchParams(location.search).get('tab');
   showTab(['jobs', 'rep', 'drives', 'me'].includes(first) ? first : 'jobs');
+  // mywork.html?tab=drives&drive=<id>&item=<id> (from a card's history): open that drive at that folder
+  { const qs = new URLSearchParams(location.search); if (first === 'drives' && qs.get('drive')) { try { await drv.refresh(); await drv.openAt({ drive: qs.get('drive'), item: qs.get('item') }); } catch (e) {} } }
   try { c.channel('my-drives').on('postgres_changes', { event: '*', schema: 'public', table: 'drive_moves' }, () => { if (!document.querySelector('.sheet-bg')) drv.refresh().catch(() => {}); }).subscribe(); } catch (e) {}
   try { c.channel('my-work').on('postgres_changes', { event: '*', schema: 'public', table: 'work_jobs', filter: 'assignee=eq.' + person.id }, () => { clearTimeout(window.__mw); window.__mw = setTimeout(async () => { if (document.activeElement && document.activeElement.matches('input')) return; await load(); if (!$('tab-jobs').hidden) renderJobs(); }, 800); }).subscribe(); } catch (e) {}
 })();

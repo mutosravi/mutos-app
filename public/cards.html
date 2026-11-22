@@ -54,6 +54,7 @@
 .sheet { background: var(--surface); width: 100%; max-width: 620px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
 @media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
 .sheet h3 { margin: 0 0 6px; font-size: 19px; }
+.k-open { display: inline-block; margin-left: 6px; font-weight: 600; color: var(--gold-ink, #8a6a2a); white-space: nowrap; text-decoration: none; }
 .sheet h4 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .sheet .sub { margin: 0 0 10px; }
 .rep { border-top: 1px dashed var(--sand); padding: 7px 0; font-size: 13.5px; line-height: 1.45; }
@@ -293,7 +294,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
         const k = cards.find(x => x.id === u.card) || { code: '?' }, cp = copies.filter(x => x.card === u.card && x.cycle === u.cycle);
         const first = cp.find(x => !x.backup), bk = cp.find(x => x.backup);
         return '<div class="card"><b>' + esc(k.code) + '</b> · ' + esc(u.shoot || '') + ' <span class="meta" style="display:inline">(' + esc(useText(u).replace((u.shoot || '') + ' · ', '')) + ')</span><div class="meta" style="margin-top:4px">' +
-          (first ? '✓ Copied to <b>' + esc(first.drive_name) + '</b> / ' + esc(first.folder || '') + ' · ' + first.files + ' files · ' + esc(when(first.at)) + (bk ? '<br>✓ Backup on <b>' + esc(bk.drive_name) + '</b>' : '<br>Backup not done yet') : '<span class="old">Not copied yet</span>') + '</div></div>';
+          (first ? '✓ Copied to <b>' + esc(first.drive_name) + '</b> / ' + esc(first.folder || '') + ' · ' + first.files + ' files · ' + esc(when(first.at)) + openLink(first) + (bk ? '<br>✓ Backup on <b>' + esc(bk.drive_name) + '</b>' + openLink(bk) : '<br>Backup not done yet') : '<span class="old">Not copied yet</span>') + '</div></div>';
       }).join('') + '</div>';
     }
     $('tab-mine').innerHTML = h + selBar('mine');
@@ -309,13 +310,18 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     const inF = k => (RULE[filt] || RULE.all)(k);
     const list = cards.filter(k => s ? (k.code + ' ' + (k.serial || '') + ' ' + (k.brand || '') + ' ' + nameOf(k.holder)).toLowerCase().includes(s) : inF(k));
     const n = f => cards.filter(RULE[f]).length;
-    $('tab-all').innerHTML = '<div class="tools"><input class="in" type="search" id="cq" placeholder="Find a card (code, serial, person)" value="' + esc(q) + '" style="flex:1 1 200px">' + (staff ? '<button type="button" class="pillbtn" id="add-cards" style="min-height:40px">＋ Add cards</button>' : '') + '</div>' +
+    // the search box is drawn once and never redrawn while typing, so the phone keeps its keyboard (numbers stay numbers)
+    // (23 Nov 2026, Ravi: "the first number finds card and the keyboard automatically comes to alphabets")
+    if (!$('cq') || !$('all-body')) {
+      $('tab-all').innerHTML = '<div class="tools"><input class="in" type="search" id="cq" placeholder="Find a card (code, serial, person)" value="' + esc(q) + '" style="flex:1 1 200px" autocomplete="off" autocapitalize="characters" spellcheck="false">' + (staff ? '<button type="button" class="pillbtn" id="add-cards" style="min-height:40px">＋ Add cards</button>' : '') + '</div><div id="all-body"></div>';
+      const cq = $('cq'); cq.addEventListener('input', () => { q = cq.value; clearTimeout(renderAll.t); renderAll.t = setTimeout(renderAll, 200); });
+      const add = $('add-cards'); if (add) add.addEventListener('click', addCards);
+    }
+    $('all-body').innerHTML =
       (s ? '' : '<div class="chips">' + F.map(([k, l]) => '<button type="button" class="chip-b' + (filt === k ? ' on' : '') + '" data-f="' + k + '">' + esc(l) + ' ' + n(k) + '</button>').join('') + '</div>') +
       (list.length ? list.map(k => row(k, canGive(k))).join('') + legend : '<div class="empty">' + (cards.length ? 'No cards here.' : 'No cards yet.' + (staff ? ' Tap ＋ Add cards and paste your list.' : '')) + '</div>') + selBar('all');
-    $('tab-all').querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => { filt = b.dataset.f; render(); }));
-    const cq = $('cq'); cq.addEventListener('input', () => { q = cq.value; clearTimeout(renderAll.t); renderAll.t = setTimeout(() => { render(); const x = $('cq'); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 300); });
-    const add = $('add-cards'); if (add) add.addEventListener('click', addCards);
-    wire($('tab-all'));
+    $('all-body').querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => { filt = b.dataset.f; render(); }));
+    wire($('all-body'));
   }
 
   function renderCopy() {
@@ -355,6 +361,14 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
   }
   const closeSheets = () => document.querySelectorAll('.sheet-bg').forEach(x => x.remove());
 
+  // "Open in drive ›" for a card copy: the drive opened at the folder of the line the copy made
+  // (23 Nov 2026, Ravi: "Copy history in cards history must have links to navigate to data on drive")
+  function openLink(x) {
+    if (!x || !x.drive) return '';
+    const it = (x.items || [])[0], href = (desk ? 'desk.html' : 'mywork.html') + '?tab=drives&drive=' + encodeURIComponent(x.drive) + (it ? '&item=' + encodeURIComponent(it) : '');
+    return ' <a class="k-open" href="' + href + '">Open in drive ›</a>';
+  }
+
   // ---------- one card ----------
   async function openCard(k) {
     if (!k) return;
@@ -376,7 +390,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
           (x.by_email === me.email || staff ? ' <button type="button" class="x" data-phx="' + x.id + '">remove</button>' : '') + '</div>'; }).join('') + '</div>' +
         (canPhoto() ? '<label class="pillbtn light" style="display:inline-flex;cursor:pointer;margin:0 0 6px">📷 Add photos<input type="file" accept="image/*" multiple id="k-phin" hidden></label>' : '') : '') +
       (!canPhoto() && drive && !drive.connected && staff ? '<p class="sub">Card photos: connect Google Drive first (Home → Settings → Photos on Google Drive).</p>' : '') +
-      '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + x.files + ' files' + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span></div>').join('') : '<p class="sub">Not copied yet.</p>') +
+      '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + x.files + ' files' + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span>' + openLink(x) + '</div>').join('') : '<p class="sub">Not copied yet.</p>') +
       '<h4>History</h4><div id="k-hist" class="sub">Loading…</div>' +
       '<div class="acts" style="margin-top:14px">' +
         ((k.holder && k.holder === myId) || desk ? (k.condition === 'ok' ? '<button type="button" class="pillbtn light" id="k-prob">Report a problem</button>' : '') : '') +
@@ -403,7 +417,10 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     bg.querySelectorAll('[data-mvu]').forEach(b => b.addEventListener('click', () => { const u = uses.find(x => x.id === b.dataset.mvu); bg.remove(); moveForm(k, u); }));
     bg.querySelectorAll('[data-rmu]').forEach(b => b.addEventListener('click', async () => { if (await rpc('card_use_remove', { p_use: b.dataset.rmu }, 'Note removed.')) { bg.remove(); await refresh(); openCard(cards.find(x => x.id === k.id)); } }));
     const { data: log } = await c.from('card_log').select('*').eq('card', k.id).order('at', { ascending: false }).limit(40);
-    const hh = g('#k-hist'); if (hh) hh.innerHTML = (log || []).length ? log.map(l => '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + '</div>').join('') : 'Nothing yet.';
+    // a copy / backup line in the history links to that data on its drive (the copy of that drive nearest in time)
+    const copyFor = l => { if (!/cop|backup/i.test(l.what || '')) return null; const t = Date.parse(l.at);
+      return cps.filter(x => x.drive && x.drive_name && l.what.includes(x.drive_name)).sort((a, b) => Math.abs(Date.parse(a.at) - t) - Math.abs(Date.parse(b.at) - t))[0] || null; };
+    const hh = g('#k-hist'); if (hh) hh.innerHTML = (log || []).length ? log.map(l => { const x = copyFor(l); return '<div class="rep"><span class="meta" style="display:inline">' + esc(when(l.at)) + '</span> · ' + esc(l.what) + (x ? openLink(x) : '') + '</div>'; }).join('') : 'Nothing yet.';
   }
 
   // ---------- give (one or many) ----------
