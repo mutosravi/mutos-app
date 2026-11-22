@@ -249,7 +249,7 @@
     if (s.clientName || s.clientPhone) h += '<div class="row"><span class="k">Client</span>' + esc(s.clientName || '') + (s.clientPhone ? ' <span class="meta" style="display:inline">' + esc(s.clientPhone) + '</span><div class="acts"><a class="chip" href="' + tel(s.clientPhone) + '">Call</a><a class="chip wa" href="' + wa(s.clientPhone) + '" target="_blank" rel="noopener">WhatsApp</a></div>' : '') + '</div>';
     if (s.gear && s.gear.length) h += '<div class="row"><span class="k">Your gear</span>' + esc(s.gear.join(', ')) + '</div>' + gearBlock(s, false);
     if (s.shared && s.shared.length) h += '<div class="row"><span class="k">Shared on this shoot</span>' + esc(s.shared.join(', ')) + '</div>';
-    if (s.team && s.team.length) h += '<div class="row"><span class="k">Team with you</span><ul class="team">' + s.team.map(t => '<li>' + esc(t.name) + ' <span class="meta" style="display:inline">' + esc(t.role) + '</span>' + (t.phone ? ' · <a href="' + tel(t.phone) + '">call</a>' : '') + '</li>').join('') + '</ul></div>';
+    if (s.team && s.team.length) h += '<div class="row"><span class="k">Team with you</span><ul class="team">' + s.team.map(t => '<li>' + esc(t.name) + ' <span class="meta" style="display:inline">' + esc(t.role) + '</span>' + (t.phone ? ' · <a href="' + tel(t.phone) + '">call</a>' : '') + (t.gear && t.gear.length ? '<div class="meta tgear">Gear: ' + esc(t.gear.join(', ')) + '</div>' : '') + '</li>').join('') + '</ul></div>';
     (s.travel || []).forEach(t => { h += '<div class="row">' + esc(t) + '</div>'; });
     if (s.notes) { // the studio's lines and the family's "From client:" line are shown apart
       const ls = String(s.notes).split('\n'), studio = ls.filter(l => l.trim() && !l.startsWith('From client:')).join('\n'),

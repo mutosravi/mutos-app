@@ -1160,7 +1160,8 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       if (!mine) ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p && normalizeName(p.name) === key) { mine = true; role = 'Assistant'; } });
       if (!mine) return;
       const team = [];
-      ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: clientRoleOn(ev, a), phone: p.phone || '' }); });
+      // each teammate's own gear too (22 Nov 2026, Ravi: shooters on the same shoot see each other's gear; only they get this shoot)
+      ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: clientRoleOn(ev, a), phone: p.phone || '', gear: (a.gearIds || []).map(gName).concat(a.ownKit ? ['own kit'] : []) }); });
       ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p && normalizeName(p.name) !== key) team.push({ name: p.name, role: 'Assistant', phone: p.phone || '' }); });
       out.push({ id: ev.id, date: ev.date, day: formatDay(ev.date), slot: ev.slot, callTime: ev.callTime || '', report: ev.callTime ? formatTime12(ev.callTime) : '', shoot: ev.name, wedding: ev.wedding || '', occasion: occOf(ev), venue: ev.location || '', map: ev.mapLink || '',
         premium: ev.tier === 'Premium', role, gear, shared: ev.equipmentIds.map(gid => sharedLabel(ev, gid)), team, clientName: ev.contactName || '', clientPhone: ev.contactPhone || '', notes: ev.notes || '', travel: travelNotes(ev, key) });

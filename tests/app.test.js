@@ -189,6 +189,15 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   const pkey = db.members.get(CREW) && db.members.get(CREW).person_key;
   const feed = db.crew_feed.get(pkey);
   ok(feed && feed.data.shoots.filter(x => x.date >= dday(0)).length === pick.n && feed.data.shoots.some(x => x.id === pastId), 'crew page written with ' + pick.n + ' upcoming shoots + the recent one');
+  // teammates' gear on the same shoot (22 Nov 2026, Ravi): each team entry carries that person's gear, as on the board
+  { const chk = await owner.evaluate(() => { const A = window.__boardApi, st = A.state(); let tried = 0, good = 0;
+      st.events.filter(e => A.isActive(e) && e.date >= A.todayStr() && e.assignments.filter(a => a.memberId).length > 1 && e.assignments.some(a => (a.gearIds || []).length)).slice(0, 5).forEach(e => {
+        const a0 = e.assignments.find(a => a.memberId), p0 = st.shooters.find(x => x.id === a0.memberId); if (!p0) return;
+        const s = A.crewFeedFor(A.normalizeName(p0.name)).find(x => x.id === e.id); if (!s) return; tried++;
+        const ok = e.assignments.filter(a => a !== a0 && a.memberId).every(a => { const p = st.shooters.find(x => x.id === a.memberId); if (!p || A.normalizeName(p.name) === A.normalizeName(p0.name)) return true; const t = s.team.find(x => x.name === p.name); return t && Array.isArray(t.gear) && t.gear.length === (a.gearIds || []).length + (a.ownKit ? 1 : 0); });
+        if (ok) good++; });
+      return { tried, good }; });
+    ok(chk.tried > 0 && chk.good === chk.tried, 'crew pages: each teammate on the same shoot comes with his gear (' + chk.good + '/' + chk.tried + ' shoots checked)'); }
   const withClient = feed && feed.data.shoots.find(s => s.clientPhone && s.date >= dday(0));
   ok(!!withClient, 'client phone included in crew page data');
   ok(feed && feed.data.shoots.every(s => /photographer|videographer|cinematographer|director|drone|team|assistant|member/i.test(s.role)), 'roles are per-shoot jobs: ' + [...new Set(feed.data.shoots.map(s => s.role))].join(', '));
