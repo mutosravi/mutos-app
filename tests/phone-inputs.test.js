@@ -14,6 +14,11 @@ const html = '<!doctype html><html><head><meta name="viewport" content="width=de
   const ph = await (await b.newContext(devices['iPhone 13'])).newPage(); await ph.setContent(html);
   ok(await size(ph, 'a') === 16 && await size(ph, 'b') === 16 && await size(ph, 'c') === 16 && await size(ph, 'd') === 16, 'phone: every box is 16px (no zoom on tap), also over a size written on the box itself');
   ok(await size(ph, 'code') === 30, 'phone: the big office-code box keeps its 30px');
+  // fixed size + boxes in full (23 Nov 2026)
+  ok(/maximum-scale=1, user-scalable=no/.test(await ph.getAttribute('meta[name=viewport]', 'content')) && await ph.evaluate(() => getComputedStyle(document.documentElement).touchAction) === 'manipulation', 'phone: the page cannot be zoomed (fixed size, no double-tap zoom)');
+  await ph.evaluate(() => { const f = document.createElement('div'); f.innerHTML = '<div class="sb-edit-form" style="display:flex;flex-direction:column;height:120px;overflow:auto;width:300px"><select class="sb-field" id="fs"><option>Standard client</option></select><input type="date" id="fd" class="sb-field" style="width:100%"><div class="sb-seg" id="fg" style="display:flex;overflow:hidden"><button>Short</button><button>Full</button></div><input id="fx"><input id="fy"></div>'; document.body.appendChild(f); });
+  const fit = await ph.evaluate(() => ['fs', 'fd', 'fg'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return { h: r.height, w: r.width }; }));
+  ok(fit.every(x => x.h >= 44) && fit[1].w <= 300, 'phone: in a form, dropdowns, date boxes and Short/Full buttons keep their full height (the form scrolls) and the date box stays inside (' + fit.map(x => Math.round(x.h) + 'px').join(', ') + ')');
   ok(await ph.getAttribute('#a', 'autocomplete') === 'off' && await ph.getAttribute('#d', 'autocomplete') === 'off' && await ph.getAttribute('#code', 'autocomplete') === 'one-time-code', 'no browser suggestions (boxes that ask for one keep it)');
   await ph.evaluate(() => { const f = document.createElement('div'); f.innerHTML = '<input id="late"><textarea id="late2"></textarea>'; document.body.appendChild(f); });
   await ph.waitForTimeout(50);
@@ -48,6 +53,7 @@ const html = '<!doctype html><html><head><meta name="viewport" content="width=de
     ok(after.n === n0 + 1 && after.y === 500, 'keyboard closed but the screen stayed short: the page is measured again once, and stays where it was scrolled');
     await ph.setViewportSize(vp); }
   const pc = await (await b.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); await pc.setContent(html);
+  ok(!/user-scalable/.test(await pc.getAttribute('meta[name=viewport]', 'content')), 'computer: zoom left alone');
   ok(await size(pc, 'a') === 13, 'computer: sizes stay as designed');
   ok(await pc.getAttribute('#venue', 'list') === 'vl' && await pc.getAttribute('#a', 'autocomplete') === null, 'computer: the browser\'s own list under the box, as before');
   await b.close(); console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

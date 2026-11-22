@@ -126,3 +126,30 @@ if (/\.workers\.dev$/i.test(location.hostname)) location.replace(window.MUTOS_CO
   window.addEventListener('pageshow', () => later(200));
   window.MUTOS_VIEWPORT = { heal, _max: () => maxH };
 })();
+
+// Phones: a fixed-size app screen and boxes that show their text in full (23 Nov 2026, Ravi: "Look at those dropdowns. They seem
+// to be hidden and not visible enough. Also, this type of page can be zoomed in or out, which has no use. Stick it to a fixed
+// visible size.")
+//   · no pinch / double-tap zoom anywhere, except while a photo is open full screen (#photo-view), where zooming into it helps
+//   · every box and dropdown at least 44px tall with room for its 16px text; date and time boxes stay inside the screen
+//   · in windows and forms, boxes never shrink to fit: the window scrolls instead (the edit form squeezed dropdowns half-hidden)
+(function () {
+  if (typeof document === 'undefined') return;
+  const touch = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  const vp = document.querySelector('meta[name="viewport"]');
+  if (vp && touch) vp.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+  const photoOpen = () => !!document.getElementById('photo-view');
+  const stop = e => { if (!photoOpen()) e.preventDefault(); };
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('touchmove', e => { if (e.touches && e.touches.length > 1 && !photoOpen()) e.preventDefault(); }, { passive: false });
+  if (!touch) return;
+  const css = 'html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}' +
+    'select,input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not(.codein){min-height:44px;line-height:1.3;box-sizing:border-box;max-width:100%}' +
+    'select{padding-top:8px!important;padding-bottom:8px!important;height:auto!important;text-overflow:ellipsis}' +
+    'input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"]{-webkit-appearance:none;appearance:none;display:block;width:100%;min-width:0;text-align:left;background-clip:padding-box}' +
+    'input[type="date"]::-webkit-date-and-time-value,input[type="time"]::-webkit-date-and-time-value{text-align:left;margin:0}' +
+    '.sb-edit-form>*,.sb-two>div>*,.sb-modal>*:not(.sb-modal-list):not(.sb-edit-form),.sb-modal-list>*,.sheet>*{flex-shrink:0}' +
+    '.sb-seg{min-height:44px}.sb-seg button{min-height:44px;font-size:14px}';
+  const st = document.createElement('style'); st.id = 'mutos-phone-fit'; st.textContent = css;
+  (document.head || document.documentElement).appendChild(st);
+})();
