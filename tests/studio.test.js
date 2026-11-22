@@ -482,7 +482,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.click('.sb-modal [data-see="' + wed.key + '"]'); await owner.waitForSelector('.sb-modal [data-apply="' + f0 + '"]');
   await owner.click('.sb-modal [data-apply="' + f0 + '"]');
   const ev0 = await owner.evaluate(id => window.__boardApi.state().events.find(e => e.id === id), f0);
-  ok(ev0.location.includes('Taj Mahal Hotel') && ev0.mapLink === 'https://maps.app.goo.gl/abc123' && /From client: starts 19:30 · contact Rahul/.test(ev0.notes), 'Apply to board: venue, map and notes on the shoot');
+  ok(ev0.location.includes('Taj Mahal Hotel') && ev0.mapLink === 'https://maps.app.goo.gl/abc123' && /From client: starts 19:30 · contact Rahul/.test(ev0.notes) && ev0.callTime === '19:00', 'Apply to board: venue, map and notes on the shoot; report time = start 7:30 pm − 30 min = 19:00');
   const nBefore = await owner.evaluate(() => window.__boardApi.state().events.length);
   await owner.click('.sb-modal [data-add="0"]');
   ok(await owner.evaluate(([n, t, d]) => window.__boardApi.state().events.length === n + 1 && window.__boardApi.state().events.some(e => e.name === t + ' Tilak' && e.date === d && e.location === 'Home, Indira Nagar'), [nBefore, wed.title, istDay(40)]), 'new function added to the board as a shoot');

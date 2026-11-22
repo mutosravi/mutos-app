@@ -634,6 +634,8 @@
       const venue = [x.venue, x.address].filter(Boolean).join(', ');
       if (venue) ev.location = venue.slice(0, 200);
       if (x.map) ev.mapLink = x.map;
+      // report time = the family's start time − 30 minutes (23 Nov 2026, Ravi; same rule as 036 client_report)
+      if (/^([01]?\d|2[0-3]):[0-5]\d/.test(x.time || '')) { const [h, m] = x.time.split(':').map(Number), t = Math.max(0, h * 60 + m - 30); ev.callTime = String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); }
       // the family's note may have several lines: one "From client:" line on the board (020), never piled up
       const famLines = String(x.notes || '').split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
       const note = 'From client: ' + [x.time ? 'starts ' + x.time : '', x.contact || x.phone ? 'contact ' + [x.contact, x.phone].filter(Boolean).join(' ') : '', x.guests ? x.guests + ' guests' : '', famLines.join(' · ')].filter(Boolean).join(' · ');
