@@ -481,7 +481,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await st.goto(B + '/'); await st.waitForURL('**/me.html'); await st.waitForSelector('#att .att');
   ok(!(await st.$('[data-go="shoots"]')) && !!(await st.$('[data-go="att"]')) && !!(await st.$('[data-go="req"]')) && !!(await st.$('[data-go="profile"]')), 'office employee: team home with check-in, My Attendance, My Requests, My Profile and no My Shoots');
   await st.goto(B + '/work.html'); await st.waitForSelector('#today .hero');
-  ok((await st.textContent('#today')).includes('Not checked in'), 'employee lands on My work');
+  ok(/Not checked in|Weekly off today|Holiday/.test(await st.textContent('#today')), 'employee lands on My work');   // on a Sunday the day says Weekly off today
   await st.click('[data-punch="in"]'); await st.waitForSelector('.sheet #code'); await st.fill('.sheet #code', '000000'); await st.click('.sheet #go'); await st.waitForTimeout(500);
   ok((await st.textContent('#toast')).includes('Wrong or old office code') && T.att_punch.size === 0, 'wrong office code refused');
   await st.click('[data-punch="in"]'); await st.fill('.sheet #code', CODE); await st.click('.sheet #go'); await st.waitForFunction(() => /In office since/.test(document.getElementById('today').textContent));
