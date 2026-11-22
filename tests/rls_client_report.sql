@@ -22,3 +22,17 @@ select pg_temp.check(exists (select 1 from shoot_notices where person_key = 'ama
 update docs set data = data || '{"callTime":"18:15"}' where id = 'e1';
 update client_itinerary set data = jsonb_set(data, '{e1,time}', '"20:00"'), submitted_at = now() + interval '1 minute' where wedding_key = 'w:sharma';
 select pg_temp.check((select data ->> 'callTime' from docs where id = 'e1') = '19:30', 'family changes the start to 8 pm → report 7:30 pm');
+-- 037: forms sent before 036 get the rule once (future shoots only)
+insert into docs (collection, id, data) values
+  ('events', 'f1', jsonb_build_object('id','f1','name','Gupta Haldi','date', to_char(now() + interval '5 days', 'YYYY-MM-DD'),'callTime','10:00')),
+  ('events', 'f2', jsonb_build_object('id','f2','name','Gupta Old','date', '2020-01-01','callTime','10:00'));
+alter table client_itinerary disable trigger user;
+insert into client_links (wedding_key, title, emails) values ('w:gupta', 'Gupta', '{g@gmail.com}');
+insert into client_feed (wedding_key, data) values ('w:gupta', '{"functions":[{"id":"f1"},{"id":"f2"}]}');
+insert into client_itinerary (wedding_key, data, submitted_at) values ('w:gupta', '{"f1":{"time":"18:45"},"f2":{"time":"18:45"}}', now() - interval '3 days');
+alter table client_itinerary enable trigger user;
+select pg_temp.check((select data ->> 'callTime' from docs where id = 'f1') = '10:00', 'before 037: a form sent before 036 still has the old report time');
+\ir ../supabase/037_report_time_catch_up.sql
+select pg_temp.check((select data ->> 'callTime' from docs where id = 'f1') = '18:15' and (select data ->> 'callTime' from docs where id = 'f2') = '10:00', '037: coming shoot set to 6:15 pm, past shoot left alone');
+\ir ../supabase/037_report_time_catch_up.sql
+select pg_temp.check((select count(*) from client_apply_log where by_email = 'catchup-037') = 1, 'running 037 again changes nothing');
