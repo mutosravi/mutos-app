@@ -160,7 +160,7 @@
       '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="tu-crew">Crew view</button><button type="button" id="tu-done">Done</button></div>';
     const modal = api.makeModal(html, true);
     modal.querySelector('#tu-done').addEventListener('click', () => { api.closeModal(); api.renderBoard(); });
-    modal.querySelector('#tu-crew').addEventListener('click', () => { location.href = '/crew.html?preview=1'; });
+    modal.querySelector('#tu-crew').addEventListener('click', () => { if (window.MUTOS_GO) { window.MUTOS_GO('/crew.html?preview=1'); } else location.href = '/crew.html?preview=1'; });
     modal.querySelectorAll('.tu-go').forEach(b => b.addEventListener('click', () => goShoot(b.dataset.ev, b.dataset.date)));
     modal.querySelectorAll('.tu-ok').forEach(b => b.addEventListener('click', () => decide(b.dataset.id, 'approved')));
     modal.querySelectorAll('.tu-no').forEach(b => b.addEventListener('click', () => decide(b.dataset.id, 'declined')));

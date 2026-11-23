@@ -431,12 +431,36 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     // desks in the top bar
     await owner.click('#mutos-bar [data-open-desk="work"]'); await owner.waitForSelector('#mh-desk a.tile[href="/desk.html"]');
     ok(/Work desk/.test(await owner.textContent('#mh-desk')), 'the top bar has the desks: Work opens the Work desk');
-    // a page opened from a desk: Back comes back to that desk, not to Home
-    await owner.click('#mh-desk a.tile[href="/desk.html?tab=drives"]'); await owner.waitForSelector('#mutos-back:not([hidden])', { timeout: 20000 });
-    ok(await owner.evaluate(() => getComputedStyle(document.querySelector('header.hdr')).position) === 'sticky', 'Work desk: the top bar sticks and has "‹ Back"');
-    await owner.click('#mutos-back'); await owner.waitForURL('**/board.html**'); await owner.waitForSelector('#mh-desk', { timeout: 10000 });
-    ok(/Work desk/.test(await owner.textContent('#mh-desk')), 'Back from the Work desk page: the studio opens again with the Work desk open (not just Home)');
+    // computers: a page opened from a desk opens as a TAB under the top bar; the studio page stays (23 Nov 2026, Ravi: "Multiple tabs")
+    await owner.click('#mh-desk a.tile[href="/desk.html?tab=drives"]'); await owner.waitForSelector('#mutos-tabs:not([hidden]) .mt-tab.on[data-tab^="t"]');
+    const fr = () => owner.frames().find(f => /desk\.html/.test(f.url()));
+    await owner.waitForFunction(() => { const f = document.querySelector('#mutos-frames iframe:not([hidden])'); return f && f.contentDocument && f.contentDocument.querySelector('header.hdr'); }, null, { timeout: 20000 });
+    ok(/board\.html/.test(owner.url()) && /Drives/.test(await owner.textContent('#mutos-tabs .mt-tab.on')) && !!fr(), 'Work desk → Drives opens in a tab ("Drives"); the studio page stays open behind it');
+    ok(await fr().evaluate(() => getComputedStyle(document.querySelector('header.hdr')).position) === 'sticky', 'the page in the tab keeps its own sticky top bar');
+    await fr().evaluate(() => { window.__keep = 42; });
+    await owner.click('#mutos-tabs .mt-tab[data-tab="home"]');
+    ok(await owner.isHidden('#mutos-frames') && await owner.isVisible('#mutos-bar') && /Home/.test(await owner.textContent('#mutos-tabs .mt-tab.on')), 'the "Home & Board" tab shows the studio page again');
+    await owner.click('#mh-desk a.tile[href="/cards.html"]').catch(async () => { await owner.click('#mutos-bar [data-open-desk="work"]'); await owner.click('#mh-desk a.tile[href="/cards.html"]'); });
+    await owner.waitForFunction(() => document.querySelectorAll('#mutos-tabs .mt-tab[data-tab^="t"]').length === 2);
+    ok((await owner.$$eval('#mutos-tabs .mt-tab', t => t.map(x => x.textContent.replace(/[✕🏠]/g, '').trim()))).join('|') === 'Home & Board|Drives|Cards', 'Cards opens a second tab: Home & Board · Drives · Cards');
+    if (process.env.SHOTS) { await owner.waitForTimeout(1500); await owner.screenshot({ path: path.join(SHOTS, 'desktop-tabs.png') }); }
+    await owner.click('#mutos-bar [data-open-desk="gear"]'); await owner.waitForSelector('#mh-desk');
+    ok(await owner.isHidden('#mutos-frames') && /Home/.test(await owner.textContent('#mutos-tabs .mt-tab.on')), 'a top-bar desk button while a tab shows: back on Home & Board with that desk open');
+    await owner.click('#mh-desk .mh-x');
+    await owner.click('#mutos-tabs .mt-tab[data-tab="t1"]');
+    ok(await fr().evaluate(() => window.__keep) === 42, 'switching back to Drives: the same page, nothing reloaded (your place is kept)');
+    await owner.click('#mutos-tabs .mt-tab[data-tab="t1"] .mt-x'); await owner.waitForFunction(() => document.querySelectorAll('#mutos-tabs .mt-tab[data-tab^="t"]').length === 1);
+    ok(/Cards/.test(await owner.textContent('#mutos-tabs .mt-tab.on')) && !owner.frames().some(f => /desk\.html/.test(f.url())), '✕ closes the Drives tab; the next tab (Cards) shows');
+    const cf = owner.frames().find(f => /cards\.html/.test(f.url())); await cf.waitForSelector('#mutos-back');
+    await cf.click('#mutos-back'); await owner.waitForFunction(() => document.querySelector('#mutos-tabs .mt-tab.on').dataset.tab === 'home');
+    ok(true, '"‹ Back" on a page in a tab goes to the Home & Board tab (it never leaves the studio page)');
+    await owner.reload(); await owner.waitForSelector('#mutos-tabs:not([hidden]) .mt-tab[data-tab^="t"]', { timeout: 20000 });
+    ok(/Cards/.test(await owner.textContent('#mutos-tabs')), 'the open tabs come back after a reload');
+    await owner.click('#mutos-tabs .mt-tab[data-tab^="t"] .mt-x'); await owner.waitForSelector('#mutos-tabs[hidden]', { state: 'attached' });
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
+    await owner.click('#mutos-bar [data-open-desk="work"]'); await owner.waitForSelector('#mh-desk', { timeout: 10000 });
     // the phone's / browser's Back closes the open window and stays on the page
+    await owner.waitForTimeout(300);   // the open desk adds its Back step ~30 ms after it opens
     const before = owner.url(); await owner.goBack(); await owner.waitForTimeout(400);
     ok(!(await owner.$('#mh-desk')) && owner.url() === before, 'browser Back with a desk open: the desk closes, the page stays');
     await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); }

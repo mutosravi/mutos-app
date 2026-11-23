@@ -278,7 +278,7 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'cards') location.assign(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });

@@ -149,11 +149,16 @@ const srv = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p ===
   await p.waitForSelector('#mh-myday', { timeout: 8000 }).catch(() => {});
   ok(/My attendance/.test(await p.textContent('#mh-myday').catch(() => '')) && /Checked in at/.test(await p.textContent('#mh-myday').catch(() => '')) && /Check out/.test(await p.textContent('#mh-myday').catch(() => '')), 'supervisor Home: "My attendance" card (checked in, Check out)');
   if (SHOTS) await p.screenshot({ path: path.join(SHOTS, 'supervisor-home.png') });
-  await p.click('#mh-myday'); await p.waitForURL('**/me.html'); await p.waitForSelector('#to-studio');
-  await p.waitForFunction(() => /Check out/.test(document.getElementById('att').textContent), null, { timeout: 8000 }).catch(() => {});
-  ok(/Check out/.test(await p.textContent('#att')) && await p.isVisible('#to-studio'), 'it opens the team home: check in/out there, and "Studio Home" goes back');
+  // on a computer the team home opens as a tab of the studio page (tabs.js, 23 Nov 2026)
+  await p.click('#mh-myday'); await p.waitForSelector('#mutos-tabs .mt-tab.on[data-tab^="t"]');
+  await p.waitForFunction(() => { const f = document.querySelector('#mutos-frames iframe:not([hidden])'); return f && f.contentDocument && f.contentDocument.getElementById('to-studio'); }, null, { timeout: 20000 });
+  const meF = p.frames().find(f => /me\.html/.test(f.url()));
+  await meF.waitForFunction(() => /Check out/.test(document.getElementById('att').textContent), null, { timeout: 8000 }).catch(() => {});
+  ok(/Check out/.test(await meF.textContent('#att')) && await meF.isVisible('#to-studio') && /Team home/.test(await p.textContent('#mutos-tabs .mt-tab.on')), 'it opens the team home in a "Team home" tab: check in/out there, and "Studio Home" goes back');
   if (SHOTS) await p.screenshot({ path: path.join(SHOTS, 'supervisor-me.png') });
-  await p.click('#to-studio'); await p.waitForFunction(() => window.__boardApi && document.querySelector('#mh-desks'), null, { timeout: 20000 });
+  await meF.click('#to-studio'); await p.waitForFunction(() => document.querySelector('#mutos-tabs .mt-tab.on').dataset.tab === 'home' && window.__boardApi && document.querySelector('#mh-desks'), null, { timeout: 20000 });
+  ok(/board\.html/.test(p.url()), '"Studio Home" in the tab shows the studio page again (no reload)');
+  await p.click('#mutos-tabs .mt-tab[data-tab^="t"] .mt-x');
 
   // ── the board ──
   await p.evaluate(() => { location.hash = 'board'; }); await sleep(400);

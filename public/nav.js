@@ -17,7 +17,9 @@
   let moved = false;   // a step taken inside this page (Home ⇄ Board)
   const homePath = () => (window.mutosApp && role ? window.mutosApp.homeFor(role) : '/');
   const onHome = () => location.pathname === homePath() && !location.hash;
-  const canBack = () => history.length > 1 && (fromApp() || moved);
+  // inside a tab of the studio page (tabs.js, computers): the page lives in a frame
+  const shell = (() => { try { return window.parent !== window && window.parent.MUTOS_TABS ? window.parent.MUTOS_TABS : null; } catch (e) { return null; } })();
+  const canBack = () => shell ? moved : history.length > 1 && (fromApp() || moved);
 
   // close the top window / sheet the way its own buttons would
   function closeTop() {
@@ -32,6 +34,7 @@
   function back() {
     if (closeTop()) return;
     if (canBack()) { history.back(); return; }
+    if (shell) { shell.home(); return; }
     if (!onHome()) location.href = homePath();
   }
 
@@ -63,7 +66,7 @@
   // the button
   function paint() {
     const b = document.getElementById('mutos-back'); if (!b) return;
-    b.hidden = !openOnes().length && !canBack() && onHome();
+    b.hidden = !shell && !openOnes().length && !canBack() && onHome();
   }
   function mount() {
     const host = document.querySelector('#mutos-bar, header.hdr');
@@ -117,6 +120,16 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   if (window.mutosApp) window.mutosApp.me().then(m => { role = m && m.role; paint(); }).catch(() => {});
 
+  if (shell) {
+    document.addEventListener('click', e => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target.closest && e.target.closest('a[href]'); if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+      let u; try { u = new URL(a.getAttribute('href'), location.href); } catch (x) { return; }
+      if (u.origin !== location.origin || !/\.html$/.test(u.pathname) || u.pathname === location.pathname) return;
+      e.preventDefault();
+      if (/\/board\.html$/.test(u.pathname)) shell.home(); else if (!shell.open(u.pathname + u.search + u.hash)) location.href = u.href;
+    }, true);
+  }
   // desks on the studio Home: remember the desk a page was opened from, reopen it when coming Back
   const KEY = 'mutos-desk-return';
   window.MUTOS_NAV = {
