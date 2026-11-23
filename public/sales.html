@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#fbf6f2">
+<title>Sales desk · Muto's</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Muto's">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
+<link rel="stylesheet" href="/app.css">
+<style>
+.card { background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 8px 0; box-shadow: var(--shadow); }
+.row2 { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0 4px; }
+.tools .in { width: auto; min-height: 38px; padding: 6px 10px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-b { border: 0; background: var(--surface); border-radius: 999px; padding: 7px 12px; font: 600 12.5px var(--font-body); color: var(--ink); cursor: pointer; box-shadow: var(--shadow); }
+.chip-b.on { background: var(--ink); color: #fff; }
+.chip-b b { font-weight: 800; margin-left: 4px; }
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; font-size: 13px; }
+.tbl th, .tbl td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--sand); vertical-align: top; }
+.tbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: #fdfaf7; }
+.tbl td.n, .tbl th.n { text-align: right; white-space: nowrap; }
+.tbl tfoot td { font-weight: 700; background: #fdfaf7; }
+.tblwrap { overflow-x: auto; margin-top: 10px; border-radius: 18px; }
+.sheet-bg { position: fixed; inset: 0; background: rgba(42,30,34,.45); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 720px; border-radius: 24px 24px 0 0; padding: 20px 18px max(18px, env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+.sheet.wide { max-width: 900px; }
+@media (min-width: 640px) { .sheet-bg { align-items: center; } .sheet { border-radius: 24px; } }
+.sheet h3 { margin: 0 0 10px; font-size: 19px; }
+.sheet h4 { margin: 16px 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.acts .pillbtn { min-height: 42px; }
+.x { background: none; border: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: 12.5px; padding: 0; }
+.lst { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; margin-top: 10px; }
+.lrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--sand); padding: 11px 14px; font: inherit; color: inherit; cursor: pointer; }
+.lrow:first-child { border-top: 0; }
+.lrow:hover { background: #fdfaf7; }
+.lrow .nm { font-weight: 700; font-size: 14px; }
+.lrow .amt { font-weight: 700; text-align: right; white-space: nowrap; }
+.lrow .meta { margin: 0; }
+.plus { color: var(--ok-ink); } .minus { color: var(--no-ink); }
+.bank { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
+.bank button { text-align: left; background: var(--surface); border: 0; border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow); cursor: pointer; font: inherit; color: var(--ink); }
+.bank b { display: block; font-size: 19px; font-weight: 800; margin-top: 2px; }
+.bank span { font-size: 12px; color: var(--muted); }
+.line { border: 1px solid var(--sand); border-radius: 16px; padding: 10px 12px; margin: 8px 0; background: #fdfaf7; }
+.line .form-grid { margin-bottom: 4px; }
+.line-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+.line-amt { font-weight: 800; }
+.totbox { background: var(--bg); border-radius: 14px; padding: 10px 14px; margin-top: 10px; font-size: 13.5px; }
+.totbox div { display: flex; justify-content: space-between; padding: 2px 0; }
+.totbox .big { font-weight: 800; font-size: 16px; border-top: 1px solid var(--sand); margin-top: 4px; padding-top: 6px; }
+.alloc { display: grid; grid-template-columns: 1fr 120px; gap: 6px 10px; align-items: center; font-size: 13px; }
+.alloc .in { min-height: 38px; }
+.preview { background: var(--bg); border-radius: 16px; padding: 10px; margin-top: 12px; overflow-x: auto; }
+.sechead { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 4px; }
+.sechead h2 { font-size: 15px; margin: 0; }
+.qbtns { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.qbtns .pillbtn { min-height: 44px; }
+.warnbox { background: var(--honey); border-radius: 14px; padding: 9px 12px; font-size: 13px; margin: 8px 0; }
+@media (max-width: 520px) { .hdr .badge-w { display: none; } }
+.code { font: 600 11px var(--font-body); background: var(--sand); border-radius: 6px; padding: 2px 6px; margin-right: 6px; }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script><script src="/nav.js"></script>
+<script src="/icons.js"></script>
+<script src="/work-core.js"></script>
+<script src="/sales-core.js"></script>
+</head>
+<body>
+<main class="wrap wide">
+  <header class="hdr topbar">
+    <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
+    <div class="hdr-acts"><span class="badge-w" style="background:var(--surface);box-shadow:var(--shadow)">Sales desk</span><a class="btn small" href="/board.html">Home</a><button type="button" class="roundbtn" id="set" aria-label="Sales settings" title="Settings"></button><button type="button" class="roundbtn" id="out" aria-label="Sign out" title="Sign out"></button></div>
+  </header>
+  <nav class="bnav" role="tablist" aria-label="Sales">
+    <button type="button" role="tab" class="tab on" data-tab="home"><span data-ic="home"></span>Home</button>
+    <button type="button" role="tab" class="tab" data-tab="bills"><span data-ic="list"></span>Bills</button>
+    <button type="button" role="tab" class="tab" data-tab="parties"><span data-ic="crew"></span>Parties</button>
+    <button type="button" role="tab" class="tab" data-tab="money"><span data-ic="money"></span>Money</button>
+    <button type="button" role="tab" class="tab" data-tab="gst"><span data-ic="rupee"></span>GST</button>
+  </nav>
+  <p class="sub" id="who" style="margin-top:6px"></p>
+  <section id="tab-home"></section>
+  <section id="tab-bills" hidden></section>
+  <section id="tab-parties" hidden></section>
+  <section id="tab-money" hidden></section>
+  <section id="tab-gst" hidden></section>
+  <datalist id="dl-items"></datalist><datalist id="dl-parties"></datalist><datalist id="dl-cats"></datalist><datalist id="dl-clients"></datalist><datalist id="dl-states"></datalist>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script>
+(async function () {
+  const $ = id => document.getElementById(id), S = window.MutosSales, W = window.MutosWork, esc = S.esc, inr = S.inr, r2 = S.r2;
+  let toastT = null;
+  const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4500); };
+  document.querySelectorAll('[data-ic]').forEach(el => { el.outerHTML = window.MUTOS_ICON(el.dataset.ic); });
+  $('out').innerHTML = window.MUTOS_ICON('logout', 20); $('set').innerHTML = window.MUTOS_ICON('settings', 20);
+  $('out').addEventListener('click', () => window.mutosApp.signOut());
+  const app = window.mutosApp; let me, c;
+  try { me = await app.me(); } catch (e) { $('who').innerHTML = '<span class="err">Could not reach the app.</span>'; return; }
+  if (!me || !me.role) { location.replace('/'); return; }
+  if (!['owner', 'manager'].includes(me.role)) { location.replace(app.homeFor(me.role)); return; }
+  c = await app.client();
+  const owner = me.role === 'owner';
+  $('who').textContent = me.email + ' · ' + (owner ? 'admin' : 'manager');
+  const st = document.createElement('style'); st.textContent = S.CSS; document.head.appendChild(st);
+
+  // ---------- data ----------
+  let settings = {}, series = [], items = [], parties = [], docs = [], txns = [], banks = [], weddings = [];
+  const today = W.todayIST();
+  async function pageAll(table) {
+    const out = [];
+    for (let from = 0; from < 100000; from += 1000) {
+      const { data, error } = await c.from(table).select('*').order('id').range(from, from + 999);
+      if (error) throw error; out.push(...(data || [])); if (!data || data.length < 1000) break;
+    }
+    return out;
+  }
+  async function load() {
+    const [s, sr, it, pa, dc, tx, bk] = await Promise.all([c.from('sales_settings').select('*').maybeSingle(), c.from('sales_series').select('*'), pageAll('sale_items'), pageAll('parties'), pageAll('sales_docs'), pageAll('money_txns'), pageAll('bank_accounts')]);
+    if (s.error) throw s.error;
+    settings = (s.data && s.data.data) || {}; series = sr.data || []; items = it; parties = pa; docs = dc; txns = tx; banks = bk;
+    items.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+    parties.sort((a, b) => a.name.localeCompare(b.name));
+    docs.sort((a, b) => (b.doc_date || '').localeCompare(a.doc_date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
+    txns.sort((a, b) => (b.txn_date || '').localeCompare(a.txn_date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
+    banks.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+    $('dl-items').innerHTML = items.filter(i => i.active).map(i => '<option value="' + esc(i.name) + '">' + esc(inr(i.price)) + '</option>').join('');
+    $('dl-parties').innerHTML = parties.filter(p => p.active).map(p => '<option value="' + esc(p.name) + '">' + esc(p.phone || '') + '</option>').join('');
+    $('dl-cats').innerHTML = [...new Set(['Salary', 'Rent', 'Transportation & Travel', 'Food', 'Equipment repair', 'Electricity', 'Internet', 'Freelancer payment', 'Marketing', 'Office', 'Albums', 'Hard drives'].concat(txns.filter(t => t.kind === 'expense').map(t => t.category)))].filter(Boolean).sort().map(x => '<option value="' + esc(x) + '">').join('');
+    $('dl-states').innerHTML = ['Uttar Pradesh', 'Delhi', 'Uttarakhand', 'Haryana', 'Punjab', 'Jammu and Kashmir', 'Rajasthan', 'Madhya Pradesh', 'Bihar', 'Maharashtra', 'Karnataka', 'Gujarat', 'West Bengal', 'Chandigarh', 'Himachal Pradesh', 'Goa', 'Tamil Nadu', 'Kerala', 'Telangana'].map(x => '<option value="' + x + '">').join('');
+  }
+  async function loadBoard() {
+    try { weddings = W.weddingsFrom(await W.loadDocs(c, 'events')); } catch (e) { weddings = []; }
+    weddings.sort((a, b) => String(b.first).localeCompare(String(a.first)));
+    $('dl-clients').innerHTML = weddings.map(w => '<option value="' + esc(w.title) + '">' + esc(W.dayShort(w.first)) + '</option>').join('');
+  }
+  const home = () => settings.state || 'Uttar Pradesh';
+  const partyOf = id => parties.find(p => p.id === id) || { name: '(unknown party)' };
+  const bankOf = id => banks.find(b => b.id === id) || { name: '?' };
+  const itemByName = n => items.find(i => i.name.toLowerCase() === String(n || '').trim().toLowerCase());
+  const live = d => d.status !== 'cancelled';
+  const isBill = d => d.kind === 'invoice' || d.kind === 'gst_invoice';
+  const bal = d => r2(d.total - d.paid);
+  function docState(d) {
+    if (d.status === 'cancelled') return ['Cancelled', 'mute'];
+    if (d.kind === 'quotation') return d.status === 'converted' ? ['Booked', 'ok'] : d.due_date && d.due_date < today ? ['Expired', 'mute'] : ['Open', 'wait'];
+    const b = bal(d); if (b <= 0) return ['Paid', 'ok'];
+    if (d.due_date && d.due_date < today) return ['Overdue', 'no'];
+    return d.paid > 0 ? ['Part paid', 'wait'] : ['Unpaid', 'no'];
+  }
+  const pill = d => { const [t, k] = docState(d); return '<span class="pill ' + k + '">' + t + '</span>'; };
+  function partyBal(p) {
+    let b = Number(p.opening) || 0;
+    docs.forEach(d => { if (d.party === p.id && live(d)) { if (isBill(d)) b += Number(d.total); else if (d.kind === 'purchase') b -= Number(d.total); } });
+    txns.forEach(t => { if (t.party === p.id && t.status === 'ok') { if (t.kind === 'in') b -= Number(t.amount); else if (t.kind === 'out' || t.kind === 'expense') b += Number(t.amount); } });
+    return r2(b);
+  }
+  function bankBal(b) {
+    let v = Number(b.opening) || 0;
+    txns.forEach(t => { if (t.status !== 'ok' || t.txn_date < b.opening_on) return;
+      if (t.account === b.id) v += t.kind === 'in' ? Number(t.amount) : -Number(t.amount);
+      else if (t.kind === 'transfer' && t.to_account === b.id) v += Number(t.amount); });
+    return r2(v);
+  }
+  const txnSign = t => t.kind === 'in' ? 1 : t.kind === 'transfer' ? 0 : -1;
+  const txnWho = t => t.kind === 'transfer' ? bankOf(t.account).name + ' → ' + bankOf(t.to_account).name : t.party ? partyOf(t.party).name : (t.category || '');
+  function sheet(html, wide) {
+    const bg = W.sheet(html); if (wide) bg.querySelector('.sheet').classList.add('wide');
+    return bg;
+  }
+  const close = bg => { if (bg && bg.parentNode) bg.remove(); };
+  async function refresh() { try { await load(); } catch (e) { toast('Could not reload: ' + (e.message || e), true); } render(); }
+  const errMsg = e => (e && (e.message || e.details)) || String(e);
+  const phone10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
+  const shareUrl = d => location.origin + '/bill.html?t=' + d.token;
+  const docRow = d => { const p = partyOf(d.party); return '<button type="button" class="lrow" data-doc="' + d.id + '"><span class="nm">' + esc(p.name) + '</span><span class="amt">' + inr(d.total) + '</span>' +
+    '<span class="meta">' + esc(S.KIND[d.kind]) + ' ' + esc(d.number) + ' · ' + esc(S.day(d.doc_date)) + (d.title ? ' · ' + esc(d.title) : '') + '</span><span>' + pill(d) +
+    (isBill(d) && d.status !== 'cancelled' && bal(d) > 0 && d.paid > 0 ? ' <span class="meta">' + inr(bal(d)) + ' due</span>' : '') + '</span></button>'; };
+  const txnRow = t => '<button type="button" class="lrow" data-txn="' + t.id + '"' + (t.status !== 'ok' ? ' style="opacity:.55"' : '') + '><span class="nm">' + esc(txnWho(t) || S.TXN[t.kind]) + '</span><span class="amt ' + (txnSign(t) > 0 ? 'plus' : txnSign(t) < 0 ? 'minus' : '') + '">' + (txnSign(t) > 0 ? '+' : txnSign(t) < 0 ? '−' : '') + inr(t.amount, true) + '</span>' +
+    '<span class="meta">' + esc(S.TXN[t.kind]) + ' ' + esc(t.number) + ' · ' + esc(S.day(t.txn_date)) + ' · ' + esc(bankOf(t.account).name) + (t.mode ? ' · ' + esc(t.mode) : '') + (t.ref ? ' · ' + esc(t.ref) : '') + '</span>' +
+    '<span>' + (t.status !== 'ok' ? '<span class="pill mute">Cancelled</span>' : '') + '</span></button>';
+  function wire(root) {
+    root.querySelectorAll('[data-doc]').forEach(b => b.addEventListener('click', () => openDoc(docs.find(d => d.id === b.dataset.doc))));
+    root.querySelectorAll('[data-txn]').forEach(b => b.addEventListener('click', () => openTxn(txns.find(t => t.id === b.dataset.txn))));
+    root.querySelectorAll('[data-party]').forEach(b => b.addEventListener('click', () => openParty(parties.find(p => p.id === b.dataset.party))));
+    root.querySelectorAll('[data-bank]').forEach(b => b.addEventListener('click', () => openBank(banks.find(x => x.id === b.dataset.bank))));
+    root.querySelectorAll('[data-new]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.new; if (['quotation', 'invoice', 'gst_invoice', 'purchase'].includes(k)) editDoc(k); else if (k === 'party') editParty(); else if (k === 'account') editBank(); else payForm(k); }));
+  }
+
+  // ---------- Home ----------
+  function renderHome() {
+    const pb = parties.map(p => partyBal(p)), collect = pb.filter(x => x > 0).reduce((a, b) => a + b, 0), pay = -pb.filter(x => x < 0).reduce((a, b) => a + b, 0);
+    const cash = banks.filter(b => b.active).reduce((a, b) => a + bankBal(b), 0);
+    const openQ = docs.filter(d => d.kind === 'quotation' && d.status === 'open' && !(d.due_date && d.due_date < today));
+    const unpaid = docs.filter(d => isBill(d) && live(d) && bal(d) > 0).sort((a, b) => (a.due_date || a.doc_date).localeCompare(b.due_date || b.doc_date));
+    const monthStart = today.slice(0, 8) + '01';
+    const mSales = docs.filter(d => isBill(d) && live(d) && d.doc_date >= monthStart).reduce((a, d) => a + Number(d.total), 0);
+    const mIn = txns.filter(t => t.kind === 'in' && t.status === 'ok' && t.txn_date >= monthStart).reduce((a, t) => a + Number(t.amount), 0);
+    const mOut = txns.filter(t => (t.kind === 'out' || t.kind === 'expense') && t.status === 'ok' && t.txn_date >= monthStart).reduce((a, t) => a + Number(t.amount), 0);
+    $('tab-home').innerHTML = '<div class="statgrid" style="margin-top:12px">' +
+      '<button type="button" class="stat big blush" id="h-collect"><b>' + inr(collect) + '</b><span>to collect</span></button>' +
+      '<button type="button" class="stat big peach" id="h-pay"><b>' + inr(pay) + '</b><span>to pay</span></button>' +
+      '<button type="button" class="stat big honey" id="h-cash"><b>' + inr(cash) + '</b><span>cash + bank</span></button></div>' +
+      '<div class="qbtns"><button type="button" class="pillbtn" data-new="quotation">＋ Quotation</button><button type="button" class="pillbtn" data-new="invoice">＋ Bill</button>' +
+      '<button type="button" class="pillbtn light" data-new="in">＋ Payment in</button><button type="button" class="pillbtn light" data-new="expense">＋ Expense</button></div>' +
+      '<div class="sechead"><h2>Accounts</h2><button type="button" class="x" data-new="account">＋ Add account</button></div>' +
+      (banks.filter(b => b.active).length ? '<div class="bank">' + banks.filter(b => b.active).map(b => '<button type="button" data-bank="' + b.id + '"><span>' + esc(b.name) + '</span><b>' + inr(bankBal(b), true) + '</b></button>').join('') + '</div>'
+        : '<div class="empty" style="margin-top:8px">Add your bank accounts and cash with today\'s balance. Every payment recorded here then moves them.</div>') +
+      '<p class="meta" style="margin-top:10px">This month: bills ' + inr(mSales) + ' · received ' + inr(mIn) + ' · paid out ' + inr(mOut) + '</p>' +
+      '<div class="sechead"><h2>Bills to collect</h2><button type="button" class="x" id="h-allbills">All bills</button></div>' +
+      (unpaid.length ? '<div class="lst">' + unpaid.slice(0, 6).map(docRow).join('') + '</div>' : '<p class="meta">Nothing due.</p>') +
+      '<div class="sechead"><h2>Open quotations</h2><button type="button" class="x" id="h-allq">All quotations</button></div>' +
+      (openQ.length ? '<div class="lst">' + openQ.slice(0, 5).map(docRow).join('') + '</div>' : '<p class="meta">None open.</p>') +
+      '<div class="sechead"><h2>Latest money</h2><button type="button" class="x" id="h-allm">All</button></div>' +
+      (txns.length ? '<div class="lst">' + txns.slice(0, 8).map(txnRow).join('') + '</div>' : '<p class="meta">Nothing recorded yet.</p>') +
+      '<div class="tools" style="margin-top:18px"><button type="button" class="pillbtn light" id="h-items">Price list (' + items.filter(i => i.active).length + ')</button><button type="button" class="pillbtn light" id="h-log">Activity</button><button type="button" class="pillbtn light" id="h-set">Settings</button></div>';
+    wire($('tab-home'));
+    $('h-collect').addEventListener('click', () => { pf.view = 'collect'; showTab('parties'); });
+    $('h-pay').addEventListener('click', () => { pf.view = 'pay'; showTab('parties'); });
+    $('h-cash').addEventListener('click', () => showTab('money'));
+    $('h-allbills').addEventListener('click', () => { bf.kind = 'bills'; bf.view = 'due'; showTab('bills'); });
+    $('h-allq').addEventListener('click', () => { bf.kind = 'quotation'; bf.view = 'open'; showTab('bills'); });
+    $('h-allm').addEventListener('click', () => showTab('money'));
+    $('h-items').addEventListener('click', itemsSheet); $('h-log').addEventListener('click', logSheet); $('h-set').addEventListener('click', settingsSheet);
+  }
+
+  // ---------- Bills (quotations, bills, GST invoices, purchases) ----------
+  const bf = { kind: 'bills', view: 'all', q: '' };
+  const KINDS = [['quotation', 'Quotations'], ['bills', 'Bills'], ['gst_invoice', 'GST invoices'], ['purchase', 'Purchases']];
+  function renderBills() {
+    const ofKind = d => bf.kind === 'bills' ? d.kind === 'invoice' : d.kind === bf.kind;
+    const views = bf.kind === 'quotation' ? [['open', 'Open'], ['booked', 'Booked'], ['all', 'All']] : [['due', 'To collect'], ['paid', 'Paid'], ['all', 'All']];
+    if (!views.some(v => v[0] === bf.view)) bf.view = 'all';
+    const inView = d => ({ open: d.status === 'open', booked: d.status === 'converted', due: live(d) && bal(d) > 0, paid: live(d) && bal(d) <= 0, all: true })[bf.view];
+    const q = bf.q.trim().toLowerCase();
+    const list = docs.filter(d => ofKind(d) && inView(d) && (!q || (partyOf(d.party).name + ' ' + d.number + ' ' + (d.title || '') + ' ' + (partyOf(d.party).phone || '')).toLowerCase().includes(q)));
+    const sum = list.filter(live).reduce((a, d) => a + Number(d.total), 0);
+    const newKind = bf.kind === 'bills' ? 'invoice' : bf.kind;
+    $('tab-bills').innerHTML = '<div class="tools"><div class="chips">' + KINDS.map(([k, t]) => '<button type="button" class="chip-b' + (bf.kind === k ? ' on' : '') + '" data-k="' + k + '">' + t + '</button>').join('') + '</div></div>' +
+      '<div class="tools"><div class="chips">' + views.map(([k, t]) => '<button type="button" class="chip-b' + (bf.view === k ? ' on' : '') + '" data-v="' + k + '">' + t + '</button>').join('') + '</div>' +
+      '<input class="in" id="bq" type="search" placeholder="Search name, number, phone" value="' + esc(bf.q) + '" style="flex:1;min-width:170px">' +
+      '<button type="button" class="pillbtn" data-new="' + newKind + '" style="min-height:40px">＋ New ' + esc(S.KIND[newKind].toLowerCase()) + '</button></div>' +
+      '<p class="meta">' + list.length + ' · ' + inr(sum) + (bf.kind !== 'quotation' ? ' · due ' + inr(list.filter(live).reduce((a, d) => a + Math.max(0, bal(d)), 0)) : '') + '</p>' +
+      '<div id="blist">' + (list.length ? '<div class="lst">' + list.slice(0, 300).map(docRow).join('') + '</div>' + (list.length > 300 ? '<p class="meta">Showing 300 of ' + list.length + '. Search to narrow.</p>' : '') : '<div class="empty" style="margin-top:10px">Nothing here.</div>') + '</div>';
+    $('tab-bills').querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => { bf.kind = b.dataset.k; bf.view = bf.kind === 'quotation' ? 'open' : 'all'; renderBills(); }));
+    $('tab-bills').querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => { bf.view = b.dataset.v; renderBills(); }));
+    $('bq').addEventListener('input', e => { bf.q = e.target.value; clearTimeout(renderBills.t); renderBills.t = setTimeout(() => { renderBills(); const i = $('bq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); });
+    wire($('tab-bills'));
+  }
+
+  // one bill / quotation: the printable view + what you can do with it
+  function openDoc(d) {
+    if (!d) return;
+    const p = partyOf(d.party), q = d.kind === 'quotation';
+    const pays = txns.filter(t => (t.alloc || []).some(a => a.doc === d.id));
+    const from = d.from_doc && docs.find(x => x.id === d.from_doc), made = docs.filter(x => x.from_doc === d.id);
+    const bg = sheet('<h3>' + esc(S.KIND[d.kind]) + ' ' + esc(d.number) + ' ' + pill(d) + '</h3>' +
+      '<p class="sub">' + esc(p.name) + ' · ' + inr(d.total) + (isBill(d) || d.kind === 'purchase' ? ' · paid ' + inr(d.paid) + ' · due ' + inr(bal(d)) : '') + '</p>' +
+      (from ? '<p class="meta">Made from ' + esc(S.KIND[from.kind]) + ' <button type="button" class="x" data-doc="' + from.id + '">' + esc(from.number) + '</button></p>' : '') +
+      (made.length ? '<p class="meta">Made into ' + made.map(m => esc(S.KIND[m.kind]) + ' <button type="button" class="x" data-doc="' + m.id + '">' + esc(m.number) + '</button>').join(', ') + '</p>' : '') +
+      (d.status === 'cancelled' ? '<p class="warnbox">Cancelled: ' + esc(d.cancel_why) + '</p>' : '') +
+      '<div class="acts">' + (d.status !== 'cancelled' ? '<button type="button" class="pillbtn" id="dv-wa">Share on WhatsApp</button>' : '') +
+      (d.kind !== 'purchase' ? '<button type="button" class="pillbtn light" id="dv-print">Print / PDF</button><button type="button" class="pillbtn light" id="dv-copy">Copy link</button>' : '') +
+      (d.status === 'open' || (d.status !== 'cancelled' && !q) ? '<button type="button" class="pillbtn light" id="dv-edit">Edit</button>' : '') +
+      (q && d.status === 'open' ? '<button type="button" class="pillbtn rose" id="dv-bill">Booked: make bill</button><button type="button" class="pillbtn light" id="dv-gst">Make GST invoice</button>' : '') +
+      ((isBill(d) || d.kind === 'purchase') && d.status !== 'cancelled' && bal(d) > 0 ? '<button type="button" class="pillbtn rose" id="dv-pay">' + (d.kind === 'purchase' ? 'Pay this' : 'Record payment') + '</button>' : '') +
+      '<button type="button" class="pillbtn light" id="dv-copyas">Copy as new</button>' +
+      (d.status !== 'cancelled' && !(d.paid > 0) ? '<button type="button" class="pillbtn light" id="dv-cancel">Cancel…</button>' : '') + '</div>' +
+      (pays.length ? '<h4>Payments</h4><div class="lst">' + pays.map(txnRow).join('') + '</div>' : '') +
+      '<div class="preview">' + S.docHtml(d, p, Object.assign({}, settings, { gstin: settings.gstin }), banks.filter(b => b.on_bills && b.active && b.kind === 'bank')) + '</div>', true);
+    wire(bg);
+    const on = (id, f) => { const b = bg.querySelector('#' + id); if (b) b.addEventListener('click', f); };
+    on('dv-wa', () => {
+      const msg = 'Hi ' + p.name + ',\n\n' + (q ? 'Here is your quotation' : 'Here is your bill') + ' ' + d.number + ' of ' + inr(d.total) + ' from ' + (settings.name || "Muto's Films") + (isBill(d) && d.paid > 0 ? ' (received ' + inr(d.paid) + ', balance ' + inr(bal(d)) + ')' : '') + ':\n' + shareUrl(d) + '\n\nThank you,\n' + (settings.name || "Muto's Films");
+      window.open('https://wa.me/' + phone10(p.phone) + '?text=' + encodeURIComponent(msg), '_blank');
+    });
+    on('dv-print', () => window.open('/bill.html?t=' + d.token + '&print=1', '_blank'));
+    on('dv-copy', async () => { try { await navigator.clipboard.writeText(shareUrl(d)); toast('Link copied'); } catch (e) { toast(shareUrl(d)); } });
+    on('dv-edit', () => { close(bg); editDoc(d.kind, d); });
+    on('dv-bill', () => { close(bg); editDoc('invoice', null, { from: d }); });
+    on('dv-gst', () => { close(bg); editDoc('gst_invoice', null, { from: d }); });
+    on('dv-pay', () => { close(bg); payForm(d.kind === 'purchase' ? 'out' : 'in', { party: d.party, doc: d }); });
+    on('dv-copyas', () => { close(bg); editDoc(d.kind, null, { copy: d }); });
+    on('dv-cancel', () => askWhy('Cancel ' + S.KIND[d.kind].toLowerCase() + ' ' + d.number + '?', 'The number stays used; the bill shows CANCELLED.', async why => {
+      const { error } = await c.from('sales_docs').update({ status: 'cancelled', cancel_why: why }).eq('id', d.id);
+      if (error) { toast(errMsg(error), true); return false; } close(bg); toast('Cancelled'); await refresh(); return true; }));
+  }
+  function askWhy(title, sub, go) {
+    const bg = sheet('<h3>' + esc(title) + '</h3><p class="sub">' + esc(sub) + '</p><div class="form-grid"><label class="wide">Why?<input class="in" id="aw-why" maxlength="200"></label></div>' +
+      '<div class="acts"><button type="button" class="pillbtn light" id="aw-no">Back</button><button type="button" class="pillbtn rose" id="aw-go">Cancel it</button></div>');
+    bg.querySelector('#aw-no').addEventListener('click', () => close(bg));
+    bg.querySelector('#aw-go').addEventListener('click', async () => { const w = bg.querySelector('#aw-why').value.trim(); if (!w) { toast('Write why', true); return; } if (await go(w)) close(bg); });
+    bg.querySelector('#aw-why').focus();
+  }
+
+  // the editor: party, dates, one line per function / item, totals as you type
+  const OCC = [[/wedding|shaadi|phera|vivah/i, 'Wedding'], [/engagement|sangeet|reception|ring|cocktail/i, 'Engagement/Sangeet/Reception'], [/./, 'Short Event']];
+  function guessItem(ev, tier) {
+    if (ev.eventType === 'short') return 'Short Event (' + tier + ')';
+    const n = String(ev.name || '');
+    const base = OCC.find(([re]) => re.test(n))[1];
+    return base + ' (' + tier + ')';
+  }
+  function editDoc(kind, d, opt) {
+    opt = opt || {};
+    const src = d || opt.from || opt.copy;
+    const gst = kind === 'gst_invoice', pur = kind === 'purchase', q = kind === 'quotation';
+    const ser = series.find(s => s.kind === kind) || { prefix: '', next: 1 };
+    const p0 = src && src.party ? partyOf(src.party) : null;
+    let lines = src ? JSON.parse(JSON.stringify(src.lines || [])) : [];
+    if (gst) lines.forEach(l => { if (l.gst == null || l.gst === '' || l.gst === 0) { const it = itemByName(l.name); l.gst = it ? it.gst_rate : 18; } });
+    if (!lines.length) lines.push({ qty: 1 });
+    const quoteDays = Number(settings.quote_days) || 15;
+    const v = {
+      date: d ? d.doc_date : today,
+      due: d ? (d.due_date || '') : q ? W.addDays(today, quoteDays) : '',
+      title: src ? (src.title || '') : '', terms: src ? (src.terms || '') : pur ? '' : (settings.terms || ''), pay: src ? (src.pay_terms || '') : pur ? '' : (settings.pay_terms || ''),
+      notes: src ? (src.notes || '') : '', state: d ? (d.supply_state || '') : '', wk: src ? (src.wedding_key || '') : ''
+    };
+    const wTitle = k => { const w = weddings.find(x => x.key === k); return w ? w.title : ''; };
+    const bg = sheet('<h3>' + (d ? 'Edit ' : 'New ') + esc(S.KIND[kind].toLowerCase()) + (d ? ' ' + esc(d.number) : '') + '</h3>' +
+      (opt.from ? '<p class="sub">From quotation ' + esc(opt.from.number) + '. Check the lines, then save.</p>' : '') +
+      (gst ? '<p class="warnbox">GST invoice: GST is added on every line (CGST + SGST in ' + esc(home()) + ', IGST for another state).</p>' : '') +
+      '<div class="form-grid"><label class="wide">' + (pur ? 'Vendor' : 'Party') + '<input class="in" id="de-party" list="dl-parties" autocomplete="off" value="' + esc(p0 ? p0.name : '') + '" placeholder="Name (new names are added)"></label>' +
+      '<label id="de-ph-l" hidden>Phone (new party)<input class="in" id="de-phone" inputmode="tel"></label>' +
+      '<label>Date<input class="in" type="date" id="de-date" value="' + esc(v.date) + '"></label>' +
+      '<label>' + (q ? 'Valid till' : 'Due date') + '<input class="in" type="date" id="de-due" value="' + esc(v.due) + '"></label>' +
+      (owner ? '<label>Number<input class="in" id="de-no" value="' + esc(d ? d.number : '') + '" placeholder="' + esc(d ? '' : 'auto: ' + ser.prefix + ser.next) + '"></label>' : '<label>Number<input class="in" disabled value="' + esc(d ? d.number : 'auto: ' + ser.prefix + ser.next) + '"></label>') +
+      (!pur ? '<label class="wide">Client on the board<input class="in" id="de-client" list="dl-clients" autocomplete="off" value="' + esc(wTitle(v.wk)) + '" placeholder="Links payments and deliveries to the client"></label>' : '') +
+      '<label class="wide">Title (optional)<input class="in" id="de-title" maxlength="120" value="' + esc(v.title) + '" placeholder="e.g. Sharma wedding, 12–14 Feb"></label>' +
+      (gst ? '<label>Place of supply<input class="in" id="de-state" list="dl-states" value="' + esc(v.state) + '" placeholder="party\'s state"></label>' : '') + '</div>' +
+      (!pur ? '<div class="tools" style="margin:0"><button type="button" class="pillbtn light" id="de-fill" style="min-height:38px">Fill lines from the board</button><select class="in" id="de-tier" style="width:auto"><option value="Standard">Standard</option><option value="Premium">Premium</option></select></div>' : '') +
+      '<h4>Lines</h4><div id="de-lines"></div><button type="button" class="pillbtn light" id="de-add" style="min-height:40px">＋ Add line</button>' +
+      '<div class="totbox" id="de-tot"></div>' +
+      (!pur ? '<h4>Payment terms</h4><input class="in" id="de-pay" value="' + esc(v.pay) + '">' : '') +
+      '<h4>Notes</h4><textarea class="in" id="de-notes" rows="2">' + esc(v.notes) + '</textarea>' +
+      (!pur ? '<h4>Terms &amp; conditions</h4><textarea class="in" id="de-terms" rows="5">' + esc(v.terms) + '</textarea>' : '') +
+      '<div class="acts"><button type="button" class="pillbtn light" id="de-x">Close</button><button type="button" class="pillbtn rose" id="de-save">Save</button></div>', true);
+    const $b = id => bg.querySelector('#' + id);
+    const findParty = () => parties.find(p => p.name.toLowerCase() === $b('de-party').value.trim().toLowerCase());
+    const sameState = () => { const s = (gst && $b('de-state').value.trim()) || (findParty() || {}).state || home(); return s.toLowerCase() === home().toLowerCase(); };
+    function drawTot() {
+      const t = S.calc(lines, kind, sameState());
+      $b('de-tot').innerHTML = '<div><span>Sub total</span><span>' + inr(t.subtotal, true) + '</span></div>' + (t.discount ? '<div><span>Discount</span><span>− ' + inr(t.discount, true) + '</span></div>' : '') +
+        (t.cgst || t.igst ? (t.igst ? '<div><span>IGST</span><span>' + inr(t.igst, true) + '</span></div>' : '<div><span>CGST</span><span>' + inr(t.cgst, true) + '</span></div><div><span>SGST</span><span>' + inr(t.sgst, true) + '</span></div>') : '') +
+        (t.round_off ? '<div><span>Round off</span><span>' + inr(t.round_off, true) + '</span></div>' : '') + '<div class="big"><span>Total</span><span>' + inr(t.total) + '</span></div>';
+      const tiers = [...new Set(lines.map(l => l.tier).filter(Boolean))];
+      if (tiers.length > 1) $b('de-tot').insertAdjacentHTML('afterbegin', '<p class="warnbox" style="margin:0 0 6px">Standard and Premium packages cannot be on one bill.</p>');
+    }
+    function drawLines() {
+      $b('de-lines').innerHTML = lines.map((l, i) => {
+        const cc = S.lineCalc(l, kind);
+        return '<div class="line" data-i="' + i + '"><div class="line-h"><span>Line ' + (i + 1) + (l.tier ? ' <span class="pill mute">' + esc(l.tier) + '</span>' : '') + '</span><span class="line-amt">' + inr(cc.total, true) + '</span></div>' +
+          '<div class="form-grid"><label class="wide">Service / item<input class="in" data-k="name" list="dl-items" autocomplete="off" value="' + esc(l.name || '') + '" placeholder="Pick from the price list or type"></label>' +
+          (!pur ? '<label>Event<input class="in" data-k="event" value="' + esc(l.event || '') + '" placeholder="Haldi, Wedding…"></label><label>Event date<input class="in" type="date" data-k="date" value="' + esc(l.date || '') + '"></label>' +
+            '<label>Place<input class="in" data-k="place" value="' + esc(l.place || '') + '"></label><label>Hours<input class="in" data-k="hours" inputmode="decimal" value="' + esc(l.hours || '') + '"></label>' : '') +
+          '<label>Qty<input class="in" data-k="qty" inputmode="decimal" value="' + esc(l.qty == null ? 1 : l.qty) + '"></label><label>Rate ₹<input class="in" data-k="rate" inputmode="decimal" value="' + esc(l.rate == null ? '' : l.rate) + '"></label>' +
+          '<label>Discount %<input class="in" data-k="disc" inputmode="decimal" value="' + esc(l.disc || '') + '"></label>' +
+          (gst || pur ? '<label>GST %<select class="in" data-k="gst">' + (pur ? [0, 5, 12, 18, 28] : [0, 5, 12, 18, 28]).map(g => '<option' + (Number(l.gst == null ? (pur ? 0 : 18) : l.gst) === g ? ' selected' : '') + '>' + g + '</option>').join('') + '</select></label>' : '') +
+          '<label class="wide">Team / description<textarea class="in" data-k="desc" rows="2">' + esc(l.desc || '') + '</textarea></label>' +
+          (!pur ? '<label class="wide">Deliverables<textarea class="in" data-k="deliverables" rows="2">' + esc(l.deliverables || '') + '</textarea></label>' : '') + '</div>' +
+          '<button type="button" class="x" data-rm="' + i + '">Remove line</button>' + (i > 0 ? ' · <button type="button" class="x" data-up="' + i + '">Move up</button>' : '') + '</div>';
+      }).join('');
+      $b('de-lines').querySelectorAll('[data-k]').forEach(inp => {
+        const i = +inp.closest('[data-i]').dataset.i, k = inp.dataset.k;
+        inp.addEventListener('input', () => { lines[i][k] = inp.value; if (['qty', 'rate', 'disc', 'gst'].includes(k)) { inp.closest('.line').querySelector('.line-amt').textContent = inr(S.lineCalc(lines[i], kind).total, true); drawTot(); } });
+        if (k === 'name') inp.addEventListener('change', () => {
+          const it = itemByName(inp.value); if (!it) return;
+          Object.assign(lines[i], { item: it.id, name: it.name, rate: it.price, unit: it.unit, tier: it.tier || undefined, desc: it.team || lines[i].desc || '', deliverables: it.deliverables || lines[i].deliverables || '' });
+          if (it.hours && !lines[i].hours) lines[i].hours = it.hours;
+          if (gst || pur) lines[i].gst = gst ? it.gst_rate : lines[i].gst;
+          redraw();
+        });
+        if (k === 'gst') inp.addEventListener('change', () => { lines[i].gst = Number(inp.value); redraw(); });
+      });
+      $b('de-lines').querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { lines.splice(+b.dataset.rm, 1); if (!lines.length) lines.push({ qty: 1 }); drawLines(); drawTot(); }));
+      $b('de-lines').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const i = +b.dataset.up; [lines[i - 1], lines[i]] = [lines[i], lines[i - 1]]; drawLines(); }));
+    }
+    // redraw after the event that asked for it (a "change" fires on blur, while the box is being replaced)
+    let drawT = null; const redraw = () => { clearTimeout(drawT); drawT = setTimeout(() => { if (bg.isConnected) { drawLines(); drawTot(); } }, 0); };
+    drawLines(); drawTot();
+    $b('de-add').addEventListener('click', () => { lines.push({ qty: 1 }); drawLines(); drawTot(); const all = $b('de-lines').querySelectorAll('[data-k="name"]'); all[all.length - 1].focus(); });
+    $b('de-party').addEventListener('input', () => { $b('de-ph-l').hidden = !$b('de-party').value.trim() || !!findParty(); drawTot(); });
+    $b('de-party').addEventListener('change', () => { const p = findParty(); if (p && p.wedding_key && $b('de-client') && !$b('de-client').value) $b('de-client').value = wTitle(p.wedding_key); if (p && gst && $b('de-state') && !$b('de-state').value) $b('de-state').value = p.state || ''; drawTot(); });
+    if ($b('de-state')) $b('de-state').addEventListener('input', drawTot);
+    const clientKey = () => { const t = $b('de-client') ? $b('de-client').value.trim().toLowerCase() : ''; const w = t && weddings.find(x => x.title.toLowerCase() === t); return w ? w.key : (t && v.wk && wTitle(v.wk).toLowerCase() === t ? v.wk : null); };
+    if ($b('de-fill')) $b('de-fill').addEventListener('click', () => {
+      const k = clientKey(), w = weddings.find(x => x.key === k);
+      if (!w) { toast('Pick the client on the board first', true); return; }
+      const tier = $b('de-tier').value;
+      const fresh = w.events.map(ev => { const it = itemByName(guessItem(ev, tier)); return { item: it && it.id, name: it ? it.name : guessItem(ev, tier), tier: it && it.tier || undefined, event: W.fnName(ev, w), date: ev.date, place: ev.location || '', hours: ev.eventType === 'short' ? 5 : (it && it.hours) || '', qty: 1, rate: it ? it.price : 0, unit: it ? it.unit : 'SSN', desc: it ? it.team || '' : '', deliverables: it ? it.deliverables || '' : '', gst: gst ? (it ? it.gst_rate : 18) : undefined }; });
+      lines = lines.filter(l => l.name).concat(fresh); drawLines(); drawTot();
+      if (!$b('de-title').value) $b('de-title').value = w.title;
+      toast(fresh.length + ' lines from the board. Check the package of each.');
+    });
+    $b('de-x').addEventListener('click', () => close(bg));
+    $b('de-save').addEventListener('click', async () => {
+      const btn = $b('de-save'); if (btn.disabled) return;
+      const name = $b('de-party').value.trim(); if (!name) { toast('Who is it for?', true); return; }
+      const clean = lines.filter(l => String(l.name || '').trim()).map(l => { const o = {}; Object.entries(l).forEach(([k, x]) => { if (x !== '' && x != null) o[k] = ['qty', 'rate', 'disc', 'gst', 'hours'].includes(k) ? Number(x) : x; }); if (o.qty == null) o.qty = 1; if (o.rate == null) o.rate = 0; return o; });
+      if (!clean.length) { toast('Add at least one line', true); return; }
+      if (clean.some(l => !(l.qty > 0) || isNaN(l.rate))) { toast('Each line needs a quantity and a price', true); return; }
+      btn.disabled = true;
+      try {
+        let p = findParty();
+        if (!p) {
+          const { data, error } = await c.from('parties').insert({ name, phone: $b('de-phone').value.trim() || null, kind: pur ? 'vendor' : 'customer', wedding_key: clientKey(), state: gst ? ($b('de-state').value.trim() || null) : null }).select().single();
+          if (error) throw error; p = data; parties.push(p);
+        } else if (!p.wedding_key && clientKey()) { await c.from('parties').update({ wedding_key: clientKey() }).eq('id', p.id); }
+        const row = { kind, party: p.id, doc_date: $b('de-date').value || today, due_date: $b('de-due').value || null, title: $b('de-title').value.trim() || null, lines: clean,
+          notes: $b('de-notes').value.trim() || null, terms: $b('de-terms') ? $b('de-terms').value.trim() || null : null, pay_terms: $b('de-pay') ? $b('de-pay').value.trim() || null : null,
+          wedding_key: pur ? null : (clientKey() || (p.wedding_key || null)), supply_state: gst ? ($b('de-state').value.trim() || null) : null };
+        if (owner && $b('de-no').value.trim()) row.number = $b('de-no').value.trim();
+        if (opt.from) row.from_doc = opt.from.id;
+        const r = d ? await c.from('sales_docs').update(row).eq('id', d.id).select().single() : await c.from('sales_docs').insert(row).select().single();
+        if (r.error) throw r.error;
+        close(bg); toast((d ? 'Saved ' : 'Made ') + S.KIND[kind].toLowerCase() + ' ' + r.data.number);
+        await refresh(); openDoc(docs.find(x => x.id === r.data.id) || r.data);
+      } catch (e) { toast(errMsg(e), true); btn.disabled = false; }
+    });
+  }
+
+  // ---------- Parties ----------
+  const pf = { view: 'all', q: '' };
+  function renderParties() {
+    const q = pf.q.trim().toLowerCase();
+    const rows = parties.filter(p => p.active || pf.view === 'all').map(p => ({ p, b: partyBal(p) })).filter(({ p, b }) =>
+      ({ all: true, collect: b > 0, pay: b < 0, customer: p.kind !== 'vendor', vendor: p.kind !== 'customer' })[pf.view] && (!q || (p.name + ' ' + (p.phone || '') + ' ' + (p.gstin || '')).toLowerCase().includes(q)));
+    if (pf.view === 'collect') rows.sort((a, b) => b.b - a.b); else if (pf.view === 'pay') rows.sort((a, b) => a.b - b.b);
+    $('tab-parties').innerHTML = '<div class="tools"><div class="chips">' + [['all', 'All'], ['collect', 'To collect'], ['pay', 'To pay'], ['customer', 'Customers'], ['vendor', 'Vendors']].map(([k, t]) => '<button type="button" class="chip-b' + (pf.view === k ? ' on' : '') + '" data-v="' + k + '">' + t + '</button>').join('') + '</div>' +
+      '<input class="in" id="pq" type="search" placeholder="Search name, phone, GSTIN" value="' + esc(pf.q) + '" style="flex:1;min-width:170px"><button type="button" class="pillbtn" data-new="party" style="min-height:40px">＋ Party</button></div>' +
+      '<p class="meta">' + rows.length + ' parties' + (pf.view === 'collect' || pf.view === 'pay' ? ' · ' + inr(Math.abs(rows.reduce((a, x) => a + x.b, 0))) : '') + '</p>' +
+      (rows.length ? '<div class="lst">' + rows.slice(0, 400).map(({ p, b }) => '<button type="button" class="lrow" data-party="' + p.id + '"><span class="nm">' + esc(p.name) + (p.active ? '' : ' · inactive') + '</span><span class="amt ' + (b > 0 ? 'plus' : b < 0 ? 'minus' : '') + '">' + (b ? inr(Math.abs(b)) : '—') + '</span>' +
+        '<span class="meta">' + esc([p.phone, p.kind === 'vendor' ? 'vendor' : p.kind === 'both' ? 'customer + vendor' : '', p.gstin ? 'GSTIN ' + p.gstin : ''].filter(Boolean).join(' · ')) + '</span><span class="meta">' + (b > 0 ? 'to collect' : b < 0 ? 'to pay' : '') + '</span></button>').join('') + '</div>' : '<div class="empty" style="margin-top:10px">No parties here.</div>');
+    $('tab-parties').querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => { pf.view = b.dataset.v; renderParties(); }));
+    $('pq').addEventListener('input', e => { pf.q = e.target.value; clearTimeout(renderParties.t); renderParties.t = setTimeout(() => { renderParties(); const i = $('pq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); });
+    wire($('tab-parties'));
+  }
+  function openParty(p) {
+    if (!p) return;
+    const b = partyBal(p), pd = docs.filter(d => d.party === p.id), pt = txns.filter(t => t.party === p.id);
+    const bg = sheet('<h3>' + esc(p.name) + '</h3><p class="sub">' + esc([p.phone, p.email, p.gstin ? 'GSTIN ' + p.gstin : '', p.state].filter(Boolean).join(' · ')) + '</p>' +
+      '<div class="statgrid" style="margin-top:10px"><div class="stat ' + (b > 0 ? 'blush' : b < 0 ? 'peach' : 'sand') + '"><b>' + inr(Math.abs(b)) + '</b><span>' + (b > 0 ? 'to collect' : b < 0 ? 'to pay' : 'settled') + '</span></div>' +
+      '<div class="stat sand"><b>' + inr(pd.filter(d => isBill(d) && live(d)).reduce((a, d) => a + Number(d.total), 0)) + '</b><span>billed</span></div>' +
+      '<div class="stat sand"><b>' + inr(pt.filter(t => t.kind === 'in' && t.status === 'ok').reduce((a, t) => a + Number(t.amount), 0)) + '</b><span>received</span></div></div>' +
+      (p.wedding_key ? '<p class="meta">Client on the board: ' + esc((weddings.find(w => w.key === p.wedding_key) || { title: p.wedding_key }).title) + '</p>' : '') +
+      (Number(p.opening) ? '<p class="meta">Balance brought in: ' + inr(p.opening) + '</p>' : '') +
+      '<div class="acts"><button type="button" class="pillbtn" id="pp-q">＋ Quotation</button><button type="button" class="pillbtn" id="pp-b">＋ Bill</button><button type="button" class="pillbtn light" id="pp-in">＋ Payment in</button>' +
+      '<button type="button" class="pillbtn light" id="pp-out">＋ Payment out</button>' + (b > 0 && p.phone ? '<button type="button" class="pillbtn light" id="pp-wa">WhatsApp reminder</button>' : '') + '<button type="button" class="pillbtn light" id="pp-edit">Edit</button></div>' +
+      '<h4>Bills and quotations (' + pd.length + ')</h4>' + (pd.length ? '<div class="lst">' + pd.map(docRow).join('') + '</div>' : '<p class="meta">None.</p>') +
+      '<h4>Money (' + pt.length + ')</h4>' + (pt.length ? '<div class="lst">' + pt.map(txnRow).join('') + '</div>' : '<p class="meta">None.</p>'), true);
+    wire(bg);
+    const on = (id, f) => { const x = bg.querySelector('#' + id); if (x) x.addEventListener('click', () => { close(bg); f(); }); };
+    const pre = { copy: { party: p.id, lines: [], wedding_key: p.wedding_key } };
+    on('pp-q', () => editDoc('quotation', null, pre)); on('pp-b', () => editDoc('invoice', null, pre));
+    on('pp-in', () => payForm('in', { party: p.id })); on('pp-out', () => payForm('out', { party: p.id })); on('pp-edit', () => editParty(p));
+    on('pp-wa', () => window.open('https://wa.me/' + phone10(p.phone) + '?text=' + encodeURIComponent('Hi ' + p.name + ',\n\nA gentle reminder from ' + (settings.name || "Muto's Films") + ': ' + inr(b) + ' is due.\n' + docs.filter(d => d.party === p.id && isBill(d) && live(d) && bal(d) > 0).map(d => d.number + ': ' + inr(bal(d)) + ' · ' + shareUrl(d)).join('\n') + '\n\nThank you!'), '_blank'));
+  }
+  function editParty(p, after) {
+    p = p || {};
+    const bg = sheet('<h3>' + (p.id ? 'Edit party' : 'New party') + '</h3><div class="form-grid">' +
+      '<label class="wide">Name<input class="in" id="ep-name" maxlength="120" value="' + esc(p.name || '') + '"></label>' +
+      '<label>Phone<input class="in" id="ep-phone" inputmode="tel" value="' + esc(p.phone || '') + '"></label><label>Email<input class="in" id="ep-email" type="email" value="' + esc(p.email || '') + '"></label>' +
+      '<label>Type<select class="in" id="ep-kind">' + [['customer', 'Customer'], ['vendor', 'Vendor'], ['both', 'Both']].map(([k, t]) => '<option value="' + k + '"' + ((p.kind || 'customer') === k ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></label>' +
+      '<label>GSTIN<input class="in" id="ep-gstin" maxlength="15" value="' + esc(p.gstin || '') + '" placeholder="only for GST bills"></label>' +
+      '<label>State<input class="in" id="ep-state" list="dl-states" value="' + esc(p.state || '') + '"></label>' +
+      '<label class="wide">Address<textarea class="in" id="ep-addr" rows="2">' + esc(p.address || '') + '</textarea></label>' +
+      '<label class="wide">Client on the board<input class="in" id="ep-client" list="dl-clients" autocomplete="off" value="' + esc(p.wedding_key ? (weddings.find(w => w.key === p.wedding_key) || { title: '' }).title : '') + '" placeholder="their payments also show on the family page"></label>' +
+      '<label>Balance brought in ₹<input class="in" id="ep-open" inputmode="decimal" value="' + esc(p.opening || '') + '" placeholder="+ they owe, − we owe"></label>' +
+      '<label class="wide">Notes<input class="in" id="ep-notes" value="' + esc(p.notes || '') + '"></label>' +
+      (p.id ? '<label class="wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="ep-active"' + (p.active !== false ? ' checked' : '') + '> Active</label>' : '') + '</div>' +
+      '<div class="acts"><button type="button" class="pillbtn light" id="ep-x">Close</button><button type="button" class="pillbtn rose" id="ep-save">Save</button></div>');
+    const $b = id => bg.querySelector('#' + id);
+    $b('ep-x').addEventListener('click', () => close(bg));
+    $b('ep-save').addEventListener('click', async () => {
+      const t = $b('ep-client').value.trim().toLowerCase(), w = t && weddings.find(x => x.title.toLowerCase() === t);
+      const row = { name: $b('ep-name').value.trim(), phone: $b('ep-phone').value.trim() || null, email: $b('ep-email').value.trim() || null, kind: $b('ep-kind').value,
+        gstin: $b('ep-gstin').value.trim().toUpperCase() || null, state: $b('ep-state').value.trim() || null, address: $b('ep-addr').value.trim() || null,
+        wedding_key: w ? w.key : (t ? p.wedding_key || null : null), opening: Number($b('ep-open').value) || 0, notes: $b('ep-notes').value.trim() || null };
+      if (p.id) row.active = $b('ep-active').checked;
+      if (!row.name) { toast('Name?', true); return; }
+      const r = p.id ? await c.from('parties').update(row).eq('id', p.id).select().single() : await c.from('parties').insert(row).select().single();
+      if (r.error) { toast(/gstin/.test(r.error.message) ? 'GSTIN should be 15 letters/numbers, like 09ABCDE1234F1Z5' : errMsg(r.error), true); return; }
+      close(bg); toast('Saved'); await refresh(); if (after) after(r.data); else openParty(parties.find(x => x.id === r.data.id));
+    });
+    $b('ep-name').focus();
+  }
+
+  // ---------- Money ----------
+  const mf = { kind: 'all', month: '', q: '', account: '' };
+  function renderMoney() {
+    const q = mf.q.trim().toLowerCase();
+    const list = txns.filter(t => (mf.kind === 'all' || t.kind === mf.kind) && (!mf.month || t.txn_date.startsWith(mf.month)) && (!mf.account || t.account === mf.account || t.to_account === mf.account) &&
+      (!q || (txnWho(t) + ' ' + t.number + ' ' + (t.ref || '') + ' ' + (t.note || '') + ' ' + (t.category || '')).toLowerCase().includes(q)));
+    const tin = list.filter(t => t.kind === 'in' && t.status === 'ok').reduce((a, t) => a + Number(t.amount), 0), tout = list.filter(t => (t.kind === 'out' || t.kind === 'expense') && t.status === 'ok').reduce((a, t) => a + Number(t.amount), 0);
+    $('tab-money').innerHTML = '<div class="bank">' + banks.filter(b => b.active).map(b => '<button type="button" data-bank="' + b.id + '"><span>' + esc(b.name) + '</span><b>' + inr(bankBal(b), true) + '</b></button>').join('') +
+      '<button type="button" data-new="account" style="background:var(--bg);box-shadow:none;border:1.5px dashed var(--line)"><span>＋ Add account</span><b style="font-size:13px;font-weight:600">bank or cash</b></button></div>' +
+      '<div class="qbtns"><button type="button" class="pillbtn" data-new="in">＋ Payment in</button><button type="button" class="pillbtn light" data-new="out">＋ Payment out</button><button type="button" class="pillbtn light" data-new="expense">＋ Expense</button><button type="button" class="pillbtn light" data-new="transfer">⇄ Transfer</button></div>' +
+      '<div class="tools"><div class="chips">' + [['all', 'All'], ['in', 'In'], ['out', 'Out'], ['expense', 'Expenses'], ['transfer', 'Transfers']].map(([k, t]) => '<button type="button" class="chip-b' + (mf.kind === k ? ' on' : '') + '" data-k="' + k + '">' + t + '</button>').join('') + '</div>' +
+      '<input class="in" type="month" id="mm" value="' + esc(mf.month) + '"><select class="in" id="ma"><option value="">All accounts</option>' + banks.map(b => '<option value="' + b.id + '"' + (mf.account === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('') + '</select>' +
+      '<input class="in" id="mq" type="search" placeholder="Search" value="' + esc(mf.q) + '" style="flex:1;min-width:140px"></div>' +
+      '<p class="meta">' + list.length + ' · in ' + inr(tin, true) + ' · out ' + inr(tout, true) + '</p>' +
+      (list.length ? '<div class="lst">' + list.slice(0, 400).map(txnRow).join('') + '</div>' : '<div class="empty" style="margin-top:10px">Nothing recorded.</div>');
+    $('tab-money').querySelectorAll('[data-k]').forEach(b => b.addEventListener('click', () => { mf.kind = b.dataset.k; renderMoney(); }));
+    $('mm').addEventListener('change', e => { mf.month = e.target.value; renderMoney(); });
+    $('ma').addEventListener('change', e => { mf.account = e.target.value; renderMoney(); });
+    $('mq').addEventListener('input', e => { mf.q = e.target.value; clearTimeout(renderMoney.t); renderMoney.t = setTimeout(() => { renderMoney(); const i = $('mq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); });
+    wire($('tab-money'));
+  }
+  // record money: in (from a client), out (to a vendor), expense, transfer between accounts
+  function payForm(kind, pre, t0) {
+    pre = pre || {};
+    const ed = !!t0, p0 = (t0 && t0.party) || pre.party;
+    const active = banks.filter(b => b.active || (t0 && (b.id === t0.account || b.id === t0.to_account)));
+    if (!active.length) { toast('Add a bank or cash account first', true); editBank(); return; }
+    const lastAcc = (() => { try { return localStorage.getItem('mutos-sales-acc-' + kind) || ''; } catch (e) { return ''; } })();
+    const acc0 = t0 ? t0.account : (active.find(b => b.id === lastAcc) || active[0]).id;
+    const amt0 = t0 ? t0.amount : pre.doc ? bal(pre.doc) : '';
+    const bg = sheet('<h3>' + (ed ? 'Edit ' : '') + esc(S.TXN[kind]) + (t0 ? ' ' + esc(t0.number) : '') + '</h3><div class="form-grid">' +
+      (kind === 'transfer' ? '' : '<label class="wide">' + (kind === 'in' ? 'From (party)' : kind === 'out' ? 'To (party)' : 'Paid to (optional)') + '<input class="in" id="pf-party" list="dl-parties" autocomplete="off" value="' + esc(p0 ? partyOf(p0).name : '') + '"></label>') +
+      (kind === 'expense' ? '<label class="wide">For<input class="in" id="pf-cat" list="dl-cats" value="' + esc(t0 ? t0.category || '' : '') + '" placeholder="Travel, Salary, Rent…"></label>' : '') +
+      '<label>Amount ₹<input class="in" id="pf-amt" inputmode="decimal" value="' + esc(amt0) + '"></label><label>Date<input class="in" type="date" id="pf-date" value="' + esc(t0 ? t0.txn_date : today) + '"></label>' +
+      '<label>' + (kind === 'transfer' ? 'From account' : kind === 'in' ? 'Into account' : 'From account') + '<select class="in" id="pf-acc">' + active.map(b => '<option value="' + b.id + '"' + (b.id === acc0 ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('') + '</select></label>' +
+      (kind === 'transfer' ? '<label>To account<select class="in" id="pf-to">' + active.map(b => '<option value="' + b.id + '"' + (t0 && b.id === t0.to_account ? ' selected' : '') + '>' + esc(b.name) + '</option>').join('') + '</select></label>' : '') +
+      '<label>Mode<select class="in" id="pf-mode">' + ['UPI', 'Bank', 'Cash', 'Cheque', 'Card', 'Other'].map(m => '<option' + ((t0 ? t0.mode : 'UPI') === m ? ' selected' : '') + '>' + m + '</option>').join('') + '</select></label>' +
+      '<label>Reference (UTR / cheque)<input class="in" id="pf-ref" value="' + esc(t0 ? t0.ref || '' : '') + '"></label>' +
+      (kind === 'expense' ? '<label>GST in this bill ₹<input class="in" id="pf-gst" inputmode="decimal" value="' + esc(t0 && Number(t0.gst) ? t0.gst : '') + '" placeholder="0"></label>' : '') +
+      '<label class="wide">Note<input class="in" id="pf-note" value="' + esc(t0 ? t0.note || '' : '') + '"></label></div>' +
+      (kind === 'in' || kind === 'out' ? '<h4>Against bills</h4><div id="pf-bills"></div>' : '') +
+      '<div class="acts"><button type="button" class="pillbtn light" id="pf-x">Close</button><button type="button" class="pillbtn rose" id="pf-save">Save</button></div>');
+    const $b = id => bg.querySelector('#' + id);
+    let alloc = t0 ? (t0.alloc || []).map(a => ({ doc: a.doc, amount: Number(a.amount) })) : pre.doc ? [{ doc: pre.doc.id, amount: bal(pre.doc) }] : [];
+    const findParty = () => { const el = $b('pf-party'); return el ? parties.find(p => p.name.toLowerCase() === el.value.trim().toLowerCase()) : null; };
+    function drawBills() {
+      const host = $b('pf-bills'); if (!host) return;
+      const p = findParty();
+      if (!p) { host.innerHTML = '<p class="meta">Pick the party to link this to their bills.</p>'; return; }
+      const mine = docs.filter(d => d.party === p.id && live(d) && (kind === 'in' ? isBill(d) : d.kind === 'purchase') && (bal(d) > 0 || alloc.some(a => a.doc === d.id))).sort((a, b) => a.doc_date.localeCompare(b.doc_date));
+      if (!mine.length) { host.innerHTML = '<p class="meta">No open bills. It counts as an advance against the party.</p>'; return; }
+      const was = id => t0 ? Number(((t0.alloc || []).find(a => a.doc === id) || {}).amount) || 0 : 0;
+      host.innerHTML = '<div class="alloc">' + mine.map(d => { const a = alloc.find(x => x.doc === d.id); return '<span><b>' + esc(d.number) + '</b> · ' + esc(S.day(d.doc_date)) + ' · due ' + inr(bal(d) + was(d.id)) + '</span><input class="in" inputmode="decimal" data-al="' + d.id + '" value="' + (a ? a.amount : '') + '" placeholder="0">'; }).join('') + '</div>' +
+        '<button type="button" class="x" id="pf-auto" style="margin-top:6px">Fill oldest first</button>';
+      host.querySelectorAll('[data-al]').forEach(inp => inp.addEventListener('input', () => { alloc = alloc.filter(a => a.doc !== inp.dataset.al); const v = Number(inp.value); if (v > 0) alloc.push({ doc: inp.dataset.al, amount: v }); }));
+      $b('pf-auto').addEventListener('click', () => { let left = Number($b('pf-amt').value) || 0; alloc = []; mine.forEach(d => { const due = bal(d) + was(d.id); const x = Math.min(due, left); if (x > 0) { alloc.push({ doc: d.id, amount: r2(x) }); left -= x; } }); drawBills(); });
+    }
+    drawBills();
+    if ($b('pf-party')) $b('pf-party').addEventListener('change', () => { if (!t0) alloc = []; drawBills(); });
+    $b('pf-x').addEventListener('click', () => close(bg));
+    $b('pf-save').addEventListener('click', async () => {
+      const btn = $b('pf-save'); if (btn.disabled) return;
+      const amount = Number($b('pf-amt').value); if (!(amount > 0)) { toast('Amount?', true); return; }
+      let p = findParty();
+      const pname = $b('pf-party') ? $b('pf-party').value.trim() : '';
+      if ((kind === 'in' || kind === 'out') && !pname) { toast(kind === 'in' ? 'Who paid?' : 'Paid to whom?', true); return; }
+      if (kind === 'expense' && !$b('pf-cat').value.trim()) { toast('What was it for?', true); return; }
+      const sum = alloc.reduce((a, x) => a + x.amount, 0); if (sum > amount + 0.001) { toast('Bills add up to more than the amount', true); return; }
+      btn.disabled = true;
+      try {
+        if (pname && !p) { const r = await c.from('parties').insert({ name: pname, kind: kind === 'in' ? 'customer' : 'vendor' }).select().single(); if (r.error) throw r.error; p = r.data; }
+        const row = { kind, amount, txn_date: $b('pf-date').value || today, account: $b('pf-acc').value, mode: $b('pf-mode').value, ref: $b('pf-ref').value.trim() || null, note: $b('pf-note').value.trim() || null,
+          party: p ? p.id : null, alloc: kind === 'in' || kind === 'out' ? alloc : [] };
+        if (kind === 'transfer') { row.to_account = $b('pf-to').value; if (row.to_account === row.account) { toast('Pick two different accounts', true); btn.disabled = false; return; } }
+        if (kind === 'expense') { row.category = $b('pf-cat').value.trim(); row.gst = Number($b('pf-gst').value) || 0; }
+        const r = t0 ? await c.from('money_txns').update(row).eq('id', t0.id).select().single() : await c.from('money_txns').insert(row).select().single();
+        if (r.error) throw r.error;
+        try { localStorage.setItem('mutos-sales-acc-' + kind, row.account); } catch (e) {}
+        close(bg); toast('Saved ' + S.TXN[kind].toLowerCase() + ' ' + r.data.number + ' · ' + inr(amount, true)); await refresh();
+      } catch (e) { toast(errMsg(e), true); btn.disabled = false; }
+    });
+    $b('pf-amt').focus();
+  }
+  function openTxn(t) {
+    if (!t) return;
+    const ds = (t.alloc || []).map(a => ({ d: docs.find(x => x.id === a.doc), a: a.amount })).filter(x => x.d);
+    const bg = sheet('<h3>' + esc(S.TXN[t.kind]) + ' ' + esc(t.number) + (t.status !== 'ok' ? ' <span class="pill mute">Cancelled</span>' : '') + '</h3>' +
+      '<p class="sub" style="font-size:20px;font-weight:800;color:var(--ink)">' + inr(t.amount, true) + '</p>' +
+      '<p class="meta">' + esc([S.day(t.txn_date), txnWho(t), t.kind !== 'transfer' ? bankOf(t.account).name : '', t.mode, t.ref ? 'Ref ' + t.ref : '', t.note, Number(t.gst) ? 'GST ' + inr(t.gst, true) : ''].filter(Boolean).join(' · ')) + '</p>' +
+      (t.status !== 'ok' ? '<p class="warnbox">Cancelled: ' + esc(t.cancel_why) + '</p>' : '') +
+      (ds.length ? '<h4>Against</h4><div class="lst">' + ds.map(x => '<button type="button" class="lrow" data-doc="' + x.d.id + '"><span class="nm">' + esc(S.KIND[x.d.kind]) + ' ' + esc(x.d.number) + '</span><span class="amt">' + inr(x.a, true) + '</span></button>').join('') + '</div>' : '') +
+      '<p class="meta" style="margin-top:10px">Recorded by ' + esc(t.created_by) + ' · ' + esc(new Date(t.created_at).toLocaleString('en-IN')) + '</p>' +
+      (t.status === 'ok' ? '<div class="acts">' + (t.kind === 'in' ? '<button type="button" class="pillbtn light" id="tx-wa">Send receipt on WhatsApp</button>' : '') + '<button type="button" class="pillbtn light" id="tx-edit">Edit</button><button type="button" class="pillbtn light" id="tx-cancel">Cancel…</button></div>' : ''));
+    wire(bg);
+    const on = (id, f) => { const x = bg.querySelector('#' + id); if (x) x.addEventListener('click', f); };
+    on('tx-edit', () => { close(bg); payForm(t.kind, null, t); });
+    on('tx-wa', () => { const p = partyOf(t.party); window.open('https://wa.me/' + phone10(p.phone) + '?text=' + encodeURIComponent('Hi ' + p.name + ',\n\nWe received ' + inr(t.amount, true) + ' on ' + S.day(t.txn_date) + ' (' + t.mode + (t.ref ? ', ref ' + t.ref : '') + '). Receipt ' + t.number + '.' + (ds.length ? '\n' + ds.map(x => x.d.number + ': balance ' + inr(bal(x.d))).join('\n') : '') + '\n\nThank you,\n' + (settings.name || "Muto's Films")), '_blank'); });
+    on('tx-cancel', () => askWhy('Cancel ' + S.TXN[t.kind].toLowerCase() + ' ' + t.number + '?', 'Bills and the account balance go back. It stays in the list as cancelled.', async why => {
+      const { error } = await c.from('money_txns').update({ status: 'cancelled', cancel_why: why }).eq('id', t.id);
+      if (error) { toast(errMsg(error), true); return false; } close(bg); toast('Cancelled'); await refresh(); return true; }));
+  }
+  function openBank(b) {
+    if (!b) return;
+    const list = txns.filter(t => t.status === 'ok' && (t.account === b.id || t.to_account === b.id) && t.txn_date >= b.opening_on).slice().sort((x, y) => x.txn_date.localeCompare(y.txn_date) || x.created_at.localeCompare(y.created_at));
+    let run = Number(b.opening);
+    const rows = list.map(t => { const v = t.kind === 'in' || (t.kind === 'transfer' && t.to_account === b.id) ? Number(t.amount) : -Number(t.amount); run += v; return { t, v, run }; }).reverse();
+    const bg = sheet('<h3>' + esc(b.name) + '</h3><p class="sub">' + esc([b.bank, b.acc_no ? 'A/c ' + b.acc_no : '', b.ifsc, b.upi].filter(Boolean).join(' · ')) + '</p>' +
+      '<div class="statgrid" style="margin-top:10px;grid-template-columns:1fr 1fr"><div class="stat honey"><b>' + inr(bankBal(b), true) + '</b><span>balance now</span></div><div class="stat sand"><b>' + inr(b.opening, true) + '</b><span>typed on ' + esc(S.day(b.opening_on)) + '</span></div></div>' +
+      '<div class="acts"><button type="button" class="pillbtn light" id="bk-edit">Edit / set balance</button></div>' +
+      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Date</th><th>What</th><th class="n">Amount</th><th class="n">Balance</th></tr></thead><tbody>' +
+      rows.slice(0, 500).map(x => '<tr data-txn="' + x.t.id + '" style="cursor:pointer"><td>' + esc(S.day(x.t.txn_date)) + '</td><td>' + esc(S.TXN[x.t.kind]) + ' ' + esc(x.t.number) + '<div class="meta">' + esc(txnWho(x.t)) + '</div></td><td class="n ' + (x.v > 0 ? 'plus' : 'minus') + '">' + (x.v > 0 ? '+' : '−') + inr(Math.abs(x.v), true) + '</td><td class="n">' + inr(x.run, true) + '</td></tr>').join('') +
+      '<tr><td>' + esc(S.day(b.opening_on)) + '</td><td>Balance typed in</td><td></td><td class="n">' + inr(b.opening, true) + '</td></tr></tbody></table></div>', true);
+    wire(bg);
+    bg.querySelector('#bk-edit').addEventListener('click', () => { close(bg); editBank(b); });
+  }
+  function editBank(b) {
+    b = b || {};
+    const bg = sheet('<h3>' + (b.id ? 'Edit account' : 'New account') + '</h3><p class="sub">Type the balance as it is now (from your bank app). From then on every payment recorded here moves it.</p><div class="form-grid">' +
+      '<label class="wide">Name<input class="in" id="ba-name" maxlength="60" value="' + esc(b.name || '') + '" placeholder="HDFC Current, Cash in office…"></label>' +
+      '<label>Type<select class="in" id="ba-kind"><option value="bank"' + (b.kind !== 'cash' ? ' selected' : '') + '>Bank</option><option value="cash"' + (b.kind === 'cash' ? ' selected' : '') + '>Cash</option></select></label>' +
+      '<label>Balance ₹<input class="in" id="ba-open" inputmode="decimal" value="' + esc(b.id ? b.opening : '') + '"></label><label>As on<input class="in" type="date" id="ba-on" value="' + esc(b.opening_on || today) + '"></label>' +
+      '<label>Bank<input class="in" id="ba-bank" value="' + esc(b.bank || '') + '"></label><label>Account number<input class="in" id="ba-no" inputmode="numeric" value="' + esc(b.acc_no || '') + '"></label>' +
+      '<label>IFSC<input class="in" id="ba-ifsc" value="' + esc(b.ifsc || '') + '"></label><label>UPI ID<input class="in" id="ba-upi" value="' + esc(b.upi || '') + '"></label>' +
+      '<label class="wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="ba-bills"' + (b.on_bills ? ' checked' : '') + '> Print these details on bills and quotations (so families can pay)</label>' +
+      (b.id ? '<label class="wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="ba-active"' + (b.active !== false ? ' checked' : '') + '> In use</label>' : '') + '</div>' +
+      (b.id ? '<p class="meta">Changing the balance or its date is written to Activity.</p>' : '') +
+      '<div class="acts"><button type="button" class="pillbtn light" id="ba-x">Close</button><button type="button" class="pillbtn rose" id="ba-save">Save</button></div>');
+    const $b = id => bg.querySelector('#' + id);
+    $b('ba-x').addEventListener('click', () => close(bg));
+    $b('ba-save').addEventListener('click', async () => {
+      const row = { name: $b('ba-name').value.trim(), kind: $b('ba-kind').value, opening: Number($b('ba-open').value) || 0, opening_on: $b('ba-on').value || today, bank: $b('ba-bank').value.trim() || null,
+        acc_no: $b('ba-no').value.replace(/\s/g, '') || null, ifsc: $b('ba-ifsc').value.trim().toUpperCase() || null, upi: $b('ba-upi').value.trim() || null, on_bills: $b('ba-bills').checked };
+      if (b.id) row.active = $b('ba-active').checked;
+      if (!row.name) { toast('Name?', true); return; }
+      const r = b.id ? await c.from('bank_accounts').update(row).eq('id', b.id).select().single() : await c.from('bank_accounts').insert(row).select().single();
+      if (r.error) { toast(/ifsc/.test(r.error.message) ? 'IFSC looks wrong (like HDFC0001234)' : /acc_no/.test(r.error.message) ? 'Account number: digits only' : errMsg(r.error), true); return; }
+      close(bg); toast('Saved'); await refresh();
+    });
+  }
+
+  // ---------- GST view ----------
+  const gf = { month: today.slice(0, 7) };
+  function renderGst() {
+    const inMonth = x => !gf.month || String(x).startsWith(gf.month);
+    const list = docs.filter(d => d.kind === 'gst_invoice' && live(d) && inMonth(d.doc_date)).sort((a, b) => a.doc_date.localeCompare(b.doc_date) || a.number.localeCompare(b.number));
+    const sum = k => r2(list.reduce((a, d) => a + Number(d[k]), 0));
+    const exp = txns.filter(t => t.status === 'ok' && Number(t.gst) > 0 && inMonth(t.txn_date));
+    const pur = docs.filter(d => d.kind === 'purchase' && live(d) && inMonth(d.doc_date) && (Number(d.cgst) + Number(d.sgst) + Number(d.igst)) > 0);
+    const outTax = r2(sum('cgst') + sum('sgst') + sum('igst')), inTax = r2(exp.reduce((a, t) => a + Number(t.gst), 0) + pur.reduce((a, d) => a + Number(d.cgst) + Number(d.sgst) + Number(d.igst), 0));
+    $('tab-gst').innerHTML = '<div class="tools"><input class="in" type="month" id="gm" value="' + esc(gf.month) + '"><button type="button" class="pillbtn" data-new="gst_invoice" style="min-height:40px">＋ New GST invoice</button>' +
+      '<button type="button" class="pillbtn light" id="g-csv" style="min-height:40px">Download for CA (CSV)</button></div>' +
+      '<p class="sub">GST invoices only (MF/G series). Plain bills are not here. Payments against GST invoices go into the same bank accounts.' + (settings.gstin ? '' : ' <b>Add your GSTIN in Settings so it prints on GST invoices.</b>') + '</p>' +
+      '<div class="statgrid" style="margin-top:10px"><div class="stat sand"><b>' + inr(sum('taxable')) + '</b><span>taxable value</span></div><div class="stat blush"><b>' + inr(outTax, true) + '</b><span>GST on invoices</span></div><div class="stat honey"><b>' + inr(inTax, true) + '</b><span>GST on expenses / purchases</span></div></div>' +
+      (list.length ? '<div class="tblwrap"><table class="tbl"><thead><tr><th>Date</th><th>Invoice</th><th>Party</th><th>GSTIN</th><th class="n">Taxable</th><th class="n">CGST</th><th class="n">SGST</th><th class="n">IGST</th><th class="n">Total</th><th class="n">Due</th></tr></thead><tbody>' +
+        list.map(d => { const p = partyOf(d.party); return '<tr data-doc="' + d.id + '" style="cursor:pointer"><td>' + esc(S.day(d.doc_date)) + '</td><td>' + esc(d.number) + '</td><td>' + esc(p.name) + '</td><td>' + esc(p.gstin || 'B2C') + '</td><td class="n">' + inr(d.taxable, true) + '</td><td class="n">' + inr(d.cgst, true) + '</td><td class="n">' + inr(d.sgst, true) + '</td><td class="n">' + inr(d.igst, true) + '</td><td class="n">' + inr(d.total) + '</td><td class="n">' + (bal(d) > 0 ? inr(bal(d)) : '✓') + '</td></tr>'; }).join('') +
+        '</tbody><tfoot><tr><td colspan="4">' + list.length + ' invoices</td><td class="n">' + inr(sum('taxable'), true) + '</td><td class="n">' + inr(sum('cgst'), true) + '</td><td class="n">' + inr(sum('sgst'), true) + '</td><td class="n">' + inr(sum('igst'), true) + '</td><td class="n">' + inr(sum('total')) + '</td><td></td></tr></tfoot></table></div>'
+        : '<div class="empty" style="margin-top:10px">No GST invoices in this month.</div>') +
+      (exp.length || pur.length ? '<h4 style="margin-top:16px">GST you paid (keep the bills for your CA)</h4><div class="lst">' + exp.map(txnRow).join('') + pur.map(docRow).join('') + '</div>' : '');
+    $('gm').addEventListener('change', e => { gf.month = e.target.value; renderGst(); });
+    $('g-csv').addEventListener('click', () => {
+      const q = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+      const rows = [['Invoice date', 'Invoice number', 'Party', 'GSTIN', 'Place of supply', 'Taxable value', 'GST rate(s)', 'CGST', 'SGST', 'IGST', 'Invoice total']]
+        .concat(list.map(d => { const p = partyOf(d.party); return [d.doc_date, d.number, p.name, p.gstin || 'B2C', d.supply_state || '', d.taxable, [...new Set((d.lines || []).map(l => (l.gst == null ? 18 : l.gst) + '%'))].join(' '), d.cgst, d.sgst, d.igst, d.total]; }))
+        .concat([[], ['GST paid on expenses'], ['Date', 'Number', 'For', 'Paid to', 'Amount', 'GST']]).concat(exp.map(t => [t.txn_date, t.number, t.category || '', t.party ? partyOf(t.party).name : '', t.amount, t.gst]));
+      const blob = new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Muto's GST " + (gf.month || 'all') + '.csv'; a.click();
+    });
+    wire($('tab-gst'));
+  }
+
+  // ---------- price list, settings, activity ----------
+  function itemsSheet() {
+    let q = '';
+    const bg = sheet('<h3>Price list</h3><p class="sub">Prices before GST. Pick these on quotations and bills; you can still change the price on a bill.</p>' +
+      '<div class="tools"><input class="in" id="it-q" type="search" placeholder="Search" style="flex:1"><button type="button" class="pillbtn" id="it-add" style="min-height:40px">＋ Item</button></div><div id="it-list"></div>', true);
+    const draw = () => {
+      const l = items.filter(i => !q || (i.name + ' ' + (i.category || '')).toLowerCase().includes(q));
+      const cats = [...new Set(l.map(i => i.category || 'Other'))];
+      bg.querySelector('#it-list').innerHTML = cats.map(cat => '<h4>' + esc(cat) + '</h4><div class="lst">' + l.filter(i => (i.category || 'Other') === cat).map(i => '<button type="button" class="lrow" data-it="' + i.id + '"' + (i.active ? '' : ' style="opacity:.5"') + '><span class="nm">' + esc(i.name) + (i.tier ? ' <span class="pill mute">' + esc(i.tier) + '</span>' : '') + '</span><span class="amt">' + inr(i.price) + ' / ' + esc(i.unit) + '</span>' +
+        '<span class="meta">' + esc([i.team, i.hours ? i.hours + ' hrs' : ''].filter(Boolean).join(' · ')) + '</span><span class="meta">' + (i.active ? '' : 'not in use') + '</span></button>').join('') + '</div>').join('') || '<p class="meta">Nothing.</p>';
+      bg.querySelectorAll('[data-it]').forEach(b => b.addEventListener('click', () => editItem(items.find(i => i.id === b.dataset.it), () => { draw(); })));
+    };
+    draw();
+    bg.querySelector('#it-q').addEventListener('input', e => { q = e.target.value.trim().toLowerCase(); draw(); });
+    bg.querySelector('#it-add').addEventListener('click', () => editItem(null, draw));
+  }
+  function editItem(it, after) {
+    it = it || {};
+    const bg = sheet('<h3>' + (it.id ? 'Edit item' : 'New item') + '</h3><div class="form-grid">' +
+      '<label class="wide">Name<input class="in" id="ei-name" maxlength="120" value="' + esc(it.name || '') + '"></label>' +
+      '<label>Price ₹ (before GST)<input class="in" id="ei-price" inputmode="decimal" value="' + esc(it.price == null ? '' : it.price) + '"></label>' +
+      '<label>Unit<input class="in" id="ei-unit" value="' + esc(it.unit || 'SSN') + '" placeholder="SSN, PCS, HRS, DAY"></label>' +
+      '<label>Category<input class="in" id="ei-cat" value="' + esc(it.category || '') + '" list="dl-icats"></label>' +
+      '<label>Package tier<select class="in" id="ei-tier"><option value="">—</option><option value="standard"' + (it.tier === 'standard' ? ' selected' : '') + '>Standard</option><option value="premium"' + (it.tier === 'premium' ? ' selected' : '') + '>Premium</option></select></label>' +
+      '<label>GST % (GST invoices)<select class="in" id="ei-gst">' + [0, 5, 12, 18, 28].map(g => '<option' + (Number(it.gst_rate == null ? 18 : it.gst_rate) === g ? ' selected' : '') + '>' + g + '</option>').join('') + '</select></label>' +
+      '<label>SAC / HSN<input class="in" id="ei-sac" value="' + esc(it.sac || '') + '" placeholder="998383"></label><label>Hours<input class="in" id="ei-hours" inputmode="decimal" value="' + esc(it.hours || '') + '"></label>' +
+      '<label class="wide">Team<textarea class="in" id="ei-team" rows="2">' + esc(it.team || '') + '</textarea></label>' +
+      '<label class="wide">Deliverables<textarea class="in" id="ei-del" rows="3">' + esc(it.deliverables || '') + '</textarea></label>' +
+      (it.id ? '<label class="wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="ei-active"' + (it.active !== false ? ' checked' : '') + '> In use</label>' : '') + '</div>' +
+      '<datalist id="dl-icats">' + [...new Set(items.map(i => i.category).filter(Boolean))].map(x => '<option value="' + esc(x) + '">').join('') + '</datalist>' +
+      '<div class="acts"><button type="button" class="pillbtn light" id="ei-x">Close</button><button type="button" class="pillbtn rose" id="ei-save">Save</button></div>');
+    const $b = id => bg.querySelector('#' + id);
+    $b('ei-x').addEventListener('click', () => close(bg));
+    $b('ei-save').addEventListener('click', async () => {
+      const row = { name: $b('ei-name').value.trim(), price: Number($b('ei-price').value) || 0, unit: $b('ei-unit').value.trim() || 'SSN', category: $b('ei-cat').value.trim() || null, tier: $b('ei-tier').value || null,
+        gst_rate: Number($b('ei-gst').value), sac: $b('ei-sac').value.trim() || null, hours: Number($b('ei-hours').value) || null, team: $b('ei-team').value.trim() || null, deliverables: $b('ei-del').value.trim() || null };
+      if (it.id) row.active = $b('ei-active').checked;
+      if (!row.name) { toast('Name?', true); return; }
+      const r = it.id ? await c.from('sale_items').update(row).eq('id', it.id).select().single() : await c.from('sale_items').insert(row).select().single();
+      if (r.error) { toast(/unique|duplicate/.test(r.error.message) ? 'An item with this name already exists' : errMsg(r.error), true); return; }
+      close(bg); toast('Saved'); await refresh(); if (after) after();
+    });
+  }
+  function settingsSheet() {
+    const s = settings, f = (k, label, ph, wide) => '<label' + (wide ? ' class="wide"' : '') + '>' + label + '<input class="in" data-s="' + k + '" value="' + esc(s[k] || '') + '" placeholder="' + esc(ph || '') + '"></label>';
+    const bg = sheet('<h3>Sales settings</h3><h4>On every bill</h4><div class="form-grid">' + f('name', 'Business name', "Muto's Films", true) + f('address', 'Address', '', true) + f('phone', 'Phone') + f('email', 'Email') + f('website', 'Website') + f('udyam', 'UDYAM') +
+      f('gstin', 'GSTIN (GST invoices only)', '09…') + '<label>Home state<input class="in" data-s="state" list="dl-states" value="' + esc(s.state || 'Uttar Pradesh') + '"></label>' +
+      '<label>Quotations valid for (days)<input class="in" data-s="quote_days" inputmode="numeric" value="' + esc(s.quote_days || 15) + '"></label></div>' +
+      '<h4>Payment terms</h4><input class="in" data-s="pay_terms" value="' + esc(s.pay_terms || '') + '">' +
+      '<h4>Terms &amp; conditions (new quotations and bills)</h4><textarea class="in" data-s="terms" rows="10">' + esc(s.terms || '') + '</textarea>' +
+      '<h4>Number series</h4><p class="meta">' + (owner ? 'The next number of each kind. Change only when moving from another software.' : 'Only the admin can change these.') + '</p>' +
+      '<div class="tblwrap"><table class="tbl"><thead><tr><th>Kind</th><th>Prefix</th><th>Next number</th></tr></thead><tbody>' +
+      series.slice().sort((a, b) => a.kind.localeCompare(b.kind)).map(x => '<tr><td>' + esc(S.KIND[x.kind] || S.TXN[x.kind] || x.kind) + '</td><td><input class="in" data-sp="' + x.kind + '" value="' + esc(x.prefix) + '"' + (owner ? '' : ' disabled') + '></td><td><input class="in" data-sn="' + x.kind + '" inputmode="numeric" value="' + x.next + '"' + (owner ? '' : ' disabled') + '></td></tr>').join('') + '</tbody></table></div>' +
+      '<div class="acts"><button type="button" class="pillbtn light" id="st-x">Close</button><button type="button" class="pillbtn rose" id="st-save">Save</button></div>', true);
+    bg.querySelector('#st-x').addEventListener('click', () => close(bg));
+    bg.querySelector('#st-save').addEventListener('click', async () => {
+      const data = Object.assign({}, settings); bg.querySelectorAll('[data-s]').forEach(i => { data[i.dataset.s] = i.dataset.s === 'quote_days' ? (Number(i.value) || 15) : i.value.trim(); });
+      if (data.gstin && !/^[0-9]{2}[A-Z0-9]{13}$/.test(data.gstin.toUpperCase())) { toast('GSTIN should be 15 letters/numbers', true); return; }
+      if (data.gstin) data.gstin = data.gstin.toUpperCase();
+      const r = await c.from('sales_settings').update({ data }).eq('id', 1); if (r.error) { toast(errMsg(r.error), true); return; }
+      if (owner) for (const x of series) {
+        const pre = bg.querySelector('[data-sp="' + x.kind + '"]').value, nx = Number(bg.querySelector('[data-sn="' + x.kind + '"]').value);
+        if (pre !== x.prefix || (nx > 0 && nx !== Number(x.next))) { const u = await c.from('sales_series').update({ prefix: pre, next: nx > 0 ? nx : x.next }).eq('kind', x.kind); if (u.error) { toast(errMsg(u.error), true); return; } }
+      }
+      close(bg); toast('Saved'); await refresh();
+    });
+  }
+  async function logSheet() {
+    const { data, error } = await c.from('sales_log').select('*').order('id', { ascending: false }).limit(300);
+    sheet('<h3>Activity</h3><p class="sub">Everything made, changed or cancelled on the Sales desk (latest 300).</p>' + (error ? '<p class="err">' + esc(errMsg(error)) + '</p>' :
+      '<div class="lst">' + (data || []).map(l => '<div class="lrow" style="cursor:default"><span>' + esc(l.what) + '</span><span class="meta">' + esc(new Date(l.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '</span><span class="meta">' + esc(l.by_email) + '</span><span></span></div>').join('') + '</div>'), true);
+  }
+  $('set').addEventListener('click', settingsSheet);
+
+  // ---------- tabs ----------
+  const TABS = { home: renderHome, bills: renderBills, parties: renderParties, money: renderMoney, gst: renderGst };
+  let cur = 'home';
+  function render() { TABS[cur](); }
+  function showTab(t) {
+    cur = TABS[t] ? t : 'home';
+    document.querySelectorAll('.bnav .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === cur));
+    Object.keys(TABS).forEach(x => { $('tab-' + x).hidden = x !== cur; });
+    render(); window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  try { await load(); } catch (e) { $('tab-home').innerHTML = '<div class="empty">Could not load the Sales desk (' + esc(errMsg(e)) + '). Run supabase/041_sales.sql first.</div>'; return; }
+  showTab(new URLSearchParams(location.search).get('tab') || 'home');
+  loadBoard().then(() => { if (!document.querySelector('.sheet-bg')) render(); });
+  // ?new=quotation&client=<wedding_key> (from the Clients window)
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('new') && ['quotation', 'invoice', 'gst_invoice'].includes(qs.get('new'))) { await loadBoard(); const k = qs.get('client'), p = k && parties.find(x => x.wedding_key === k); editDoc(qs.get('new'), null, { copy: { party: p ? p.id : null, lines: [], wedding_key: k || null } }); }
+  // live: another person's entries show up without reloading
+  try {
+    const again = () => { clearTimeout(window.__sd); window.__sd = setTimeout(async () => { if (document.querySelector('.sheet-bg')) return; await refresh(); }, 900); };
+    let ch = c.channel('sales-desk'); ['sales_docs', 'money_txns', 'parties', 'bank_accounts', 'sale_items'].forEach(t => { ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, again); }); ch.subscribe();
+  } catch (e) {}
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.querySelector('.sheet-bg')) refresh(); });
+})();
+</script>
+</body>
+</html>

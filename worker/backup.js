@@ -32,7 +32,10 @@ export const STUDIO_TABLES = [
   ['uploads', 'id'],   // which Google Drive file each photo is (026); the photos themselves are in the studio's Drive
   ['client_deliveries', 'id'], ['client_pay_claims', 'id'],   // after the shoot (035)
   ['phone_changes', 'id'],  // numbers the team changed themselves (039)
-  ['team_photos', 'id']    // profile photos and who approved them (040)
+  ['team_photos', 'id'],   // profile photos and who approved them (040)
+  // Sales desk (041): settings, number series, price list, parties, quotations / bills / GST invoices / purchases, accounts, money, log
+  ['sales_settings', 'id'], ['sales_series', 'kind'], ['sale_items', 'id'], ['parties', 'id'], ['sales_docs', 'id'],
+  ['bank_accounts', 'id'], ['money_txns', 'id'], ['sales_log', 'id']
 ];
 
 export async function makeBackup(env, fetchFn = fetch) {

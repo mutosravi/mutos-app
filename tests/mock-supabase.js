@@ -17,6 +17,7 @@
       range(a, z) { d.range = [a, z]; return b; },
       limit(n) { d.limit = n; return b; },
       maybeSingle() { d.single = true; return b; },
+      single() { d.single = true; return b; },
       upsert(rows) { d.op = 'upsert'; d.rows = Array.isArray(rows) ? rows : [rows]; return b; },
       insert(rows) { d.op = 'insert'; d.rows = Array.isArray(rows) ? rows : [rows]; return b; },
       delete() { d.op = 'delete'; return b; },

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#F1E7CF">
+<title>Muto's Films</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap">
+<style>
+:root { color-scheme: light; }
+body { margin: 0; background: #f6f1e7; font-family: "Open Sans", system-ui, sans-serif; color: #2a1e22; padding: 16px 12px 40px; }
+.bar { max-width: 820px; margin: 0 auto 12px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.bar button, .bar a { border: 0; background: #2a1e22; color: #fff; border-radius: 999px; padding: 10px 18px; font: 600 14px "Open Sans", sans-serif; cursor: pointer; text-decoration: none; }
+.bar .light { background: #fff; color: #2a1e22; box-shadow: 0 2px 8px rgba(42,30,34,.1); }
+.msg { max-width: 520px; margin: 60px auto; text-align: center; color: #5a4a4e; }
+.mdoc td, .mdoc th { word-break: break-word; }
+</style>
+<script src="/config.js"></script>
+<script src="/app-core.js"></script>
+<script src="/sales-core.js"></script>
+</head>
+<body>
+<div class="bar noprint" id="bar" hidden><button type="button" class="light" id="share">Share</button><button type="button" id="print">Download / Print</button></div>
+<div id="doc"><p class="msg">Loading…</p></div>
+<script>
+(async function () {
+  const S = window.MutosSales, $ = id => document.getElementById(id);
+  const st = document.createElement('style'); st.textContent = S.CSS; document.head.appendChild(st);
+  const qs = new URLSearchParams(location.search), t = qs.get('t') || '';
+  let d;
+  try { const c = await window.mutosApp.client(); const r = await c.rpc('sales_doc_view', { p_token: t }); if (r.error) throw r.error; d = r.data; }
+  catch (e) { $('doc').innerHTML = '<p class="msg">Could not open this page. Please check your internet and try again.</p>'; return; }
+  if (!d || d.error) { $('doc').innerHTML = '<p class="msg">' + S.esc((d && d.error) || 'Not found.') + '</p>'; return; }
+  document.title = (d.kind === 'quotation' ? 'Quotation' : 'Bill') + ' ' + d.number + ' · ' + (d.company && d.company.name || "Muto's Films");
+  $('doc').innerHTML = S.docHtml(d, d.party, d.company, d.banks);
+  $('bar').hidden = false;
+  $('print').addEventListener('click', () => window.print());
+  $('share').addEventListener('click', async () => { try { if (navigator.share) await navigator.share({ title: document.title, url: location.href }); else { await navigator.clipboard.writeText(location.href); $('share').textContent = 'Link copied'; } } catch (e) {} });
+  if (qs.get('print')) setTimeout(() => window.print(), 600);
+})();
+</script>
+</body>
+</html>

@@ -138,7 +138,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   // the owner opens on Home: Today, Needs you, Quick menu, Coming up
   await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 });
   ok(await owner.isHidden('#sb-root'), 'owner: opens on Home with the board hidden underneath');
-  ok((await owner.$$('#mh-desks .desk')).length === 6 && (await owner.textContent('#mh-body')).includes('Coming up'), 'owner Home: six desks and the coming-up list');
+  ok((await owner.$$('#mh-desks .desk')).length === 7 && !!(await owner.$('#mh-desks [data-desk="sales"]')) && (await owner.textContent('#mh-body')).includes('Coming up'), 'owner Home: seven desks (with Sales) and the coming-up list');
   await owner.click('[data-desk="shoots"]'); await owner.waitForSelector('#mh-desk #mh-tiles .tile');
   ok((await owner.$$('#mh-desk .tile')).length >= 12 && (await owner.textContent('#mh-desk')).includes('Drones & freelancers'), 'Shoots desk opens its tools (board, crew, rentals, call sheet, billing…)');
   await owner.click('#mh-desk .mh-x');

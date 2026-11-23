@@ -228,7 +228,7 @@ const srv = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p ===
   me = OWNER;
   const o = await ctx.newPage(); o.on('pageerror', x => errs.push(String(x)));
   await o.goto(B + '/board.html'); await o.waitForFunction(() => window.__boardApi && document.querySelector('#mh-desks'), null, { timeout: 20000 });
-  ok((await o.$$eval('#mh-desks [data-desk]', x => x.length)) === 6 && !!(await o.$('#mutos-updates')), 'owner Home: all six desks and Team updates');
+  ok((await o.$$eval('#mh-desks [data-desk]', x => x.map(d => d.dataset.desk).join())) === 'shoots,work,gear,clients,people,sales,settings' && !!(await o.$('#mutos-updates')), 'owner Home: all seven desks (Sales too) and Team updates');
   await o.evaluate(() => { location.hash = 'board'; }); await sleep(300); await o.evaluate(d => window.__boardApi.goToDate(d), withCrew.date); await sleep(300);
   await o.evaluate(id => document.querySelector('#card-' + id + ' [data-action="edit"]').click(), withCrew.id); await o.waitForSelector('#ef-delete');
   ok(!(await o.$eval('#ef-coverage', x => x.disabled)) && !(await o.$eval('#ef-delete', x => x.hidden)) && !(await o.$('#ef-limits')), 'owner edit window: everything editable, Delete there');

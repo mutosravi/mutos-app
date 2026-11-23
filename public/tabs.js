@@ -13,7 +13,7 @@
   let tabs = [], active = 'home', seq = 0, strip = null, frames = null;
 
   const pageOf = u => { try { const x = new URL(u, location.href); return x.origin === location.origin && /\.html$/.test(x.pathname) ? x : null; } catch (e) { return null; } };
-  const isAppPage = x => x && !HOST.has(x.pathname) && !/\/(client|office|index)\.html$/.test(x.pathname);
+  const isAppPage = x => x && !HOST.has(x.pathname) && !/\/(client|office|index|bill)\.html$/.test(x.pathname);
   const baseName = x => NAMES[x.pathname.replace(/^\/|\.html$/g, '')] || x.pathname.replace(/^\/|\.html$/g, '');
   const label = x => { const t = new URLSearchParams(x.search).get('tab'), extra = { drives: 'Drives', today: 'Reports', month: 'Month', people: 'People', copy: 'To copy', hist: 'History', away: 'Days off' }[t];
     return x.pathname === '/desk.html' && extra ? extra : baseName(x) + (x.pathname !== '/desk.html' && extra ? ' · ' + extra : ''); };

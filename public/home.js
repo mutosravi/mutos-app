@@ -44,6 +44,7 @@
         '<button type="button" class="mh-t mh-desk" data-open-desk="gear">' + ICON('box') + 'Gear</button>' +
         '<button type="button" class="mh-t mh-desk" data-open-desk="clients">' + ICON('heart') + 'Clients</button>' +
         '<button type="button" class="mh-t mh-desk" data-open-desk="people">' + ICON('idcard') + 'People</button>' +
+        '<button type="button" class="mh-t mh-desk" data-open-desk="sales">' + ICON('rupee') + 'Sales</button>' +
         '<button type="button" class="mh-t mh-desk" id="mutos-settings">' + ICON('settings') + 'Settings</button>' +
         '<button type="button" class="mh-t mh-desk mh-out" id="mutos-out" aria-label="Sign out" title="Sign out">' + ICON('logout') + '</button>' +
       '</nav>' +
@@ -54,7 +55,7 @@
     bar.querySelector('#mutos-updates').addEventListener('click', openUpdates);
     bar.querySelector('#mutos-settings').addEventListener('click', openMore);
     bar.querySelector('[data-mh-home]').addEventListener('click', e => { e.preventDefault(); show('home'); });
-    if (sup()) { bar.querySelector('#mutos-updates').remove(); bar.querySelectorAll('[data-open-desk="gear"], [data-open-desk="people"]').forEach(x => x.remove()); } // day-off approvals, gear and people are not his
+    if (sup()) { bar.querySelector('#mutos-updates').remove(); bar.querySelectorAll('[data-open-desk="gear"], [data-open-desk="people"], [data-open-desk="sales"]').forEach(x => x.remove()); } // day-off approvals, gear and people are not his
     document.body.insertBefore(bar, document.body.firstChild);
     // the bar sticks to the top; the board's date bar and rail sit under it
     const setH = () => document.documentElement.style.setProperty('--mh-bar-h', bar.offsetHeight + 'px');
@@ -95,7 +96,8 @@
     const deskRows = phone === true ? (sup() ? [['#desk-shoots', 'board', 'Shoots desk', 'Add shoots, call sheet, history']] : [
       ['#updates', 'bell', 'Team updates' + (nUpd ? ' (' + nUpd + ')' : ''), 'Days off, can\'t make it, to confirm'],
       ['#desk-shoots', 'board', 'Shoots desk', 'Crew, rentals, call sheet, billing'],
-      ['#desk-people', 'idcard', 'People', 'Everyone at Muto\'s' + (owner ? ', attendance, salaries' : '')]]) : [];
+      ['#desk-people', 'idcard', 'People', 'Everyone at Muto\'s' + (owner ? ', attendance, salaries' : '')],
+      ['#desk-sales', 'rupee', 'Sales desk', 'Quotations, bills, payments, banks, GST']]) : [];
     const rows = deskRows.concat(sup() ? [['#out', 'logout', 'Sign out', who.email]] : [
       owner && ['#logins', 'key', 'Team logins', 'Managers, gear desk, who can sign in'],
       owner && ['#backups', 'cloud', 'Backups', 'Nightly copies, download or back up now'],
@@ -140,6 +142,10 @@
       ['clients', 'heart', 'Clients', 'main'], ['clientdata', 'drive', 'Client data'], ['packages', 'money', 'Packages']] },
     { k: 'people', ic: 'idcard', title: 'People', tools: [
       ['/desk.html?tab=people', 'idcard', 'People', 'main'], ['/attendance.html', 'clock', 'Attendance', '', 'owner'], ['/attendance.html?tab=hist', 'list', 'Salary history', '', 'owner']] },
+    // Sales desk (23 Nov 2026, Ravi: everything from myBillBook moves here; 041_sales.sql, public/sales.html), admin + manager only
+    { k: 'sales', ic: 'rupee', title: 'Sales desk', tools: [
+      ['/sales.html', 'rupee', 'Sales desk', 'main'], ['/sales.html?tab=bills', 'list', 'Quotations & bills'], ['/sales.html?new=quotation', 'plus', 'New quotation'],
+      ['/sales.html?tab=parties', 'crew', 'Parties'], ['/sales.html?tab=money', 'money', 'Money & banks'], ['/sales.html?tab=gst', 'sheet', 'GST invoices']] },
     { k: 'settings', ic: 'settings', title: 'Settings' }
   ];
   // what a supervisor gets from each desk (the rest he cannot change, see supervisor.js and 012_supervisor.sql)
@@ -157,6 +163,7 @@
     if (d.k === 'clients' && sup()) return ctx.cs && ctx.cs.toCheck ? ctx.cs.toCheck + ' to check' : 'Family Gmails and itineraries';
     if (d.k === 'shoots' && sup()) return ctx.today + ' today · add shoots, itinerary, client contact';
     if (d.k === 'clients') return ctx.cs ? [ctx.cs.toCheck ? ctx.cs.toCheck + ' to check' : '', ctx.cs.overdue ? ctx.cs.overdue + ' payment' + (ctx.cs.overdue > 1 ? 's' : '') + ' overdue' : ''].filter(Boolean).join(' · ') || 'Itineraries, packages, payments' : 'Itineraries, packages, payments';
+    if (d.k === 'sales') return 'Quotations, bills, payments, banks';
     if (d.k === 'people') return who.role === 'owner' ? 'People, attendance, salaries' : 'Everyone at Muto\'s';
     return 'Logins, backups, export';
   }
