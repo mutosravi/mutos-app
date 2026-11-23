@@ -9,7 +9,7 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims'].forEach(t => { T[t] = new Map(); });
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes'].forEach(t => { T[t] = new Map(); });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
@@ -164,6 +164,21 @@ function rpc(fn, a, e) {
     if (!(a.p_amount > 0)) return { data: { error: 'Type the amount you paid.' }, error: null };
     const id = crypto.randomUUID(); T.client_pay_claims.set(id, { id, wedding_key: k, amount: a.p_amount, paid_on: a.p_paid_on, mode: a.p_mode, upi_ref: a.p_ref || null, note: a.p_note || null, photo: a.p_photo, status: 'pending', by_email: e, at: new Date().toISOString() });
     return { data: { ok: true, id, title: l.title }, error: null };
+  }
+  // 039: a team member's own phone number
+  if (fn === 'my_phone' || fn === 'my_phone_set' || fn === 'phone_changes_seen') {
+    if (fn === 'phone_changes_seen') { if (!staff(e)) return { data: { error: 'Only the admin or the manager.' }, error: null }; (a.p_ids || []).forEach(id => { const x = T.phone_changes.get(String(id)) || T.phone_changes.get(id); if (x && !x.seen_at) Object.assign(x, { seen_at: new Date().toISOString(), seen_by: e }); }); return { data: { ok: true }, error: null }; }
+    const p = [...T.people.values()].find(x => x.email === e && x.active), m = T.members.get(e);
+    const recs = [...T.docs.values()].filter(d => ['shooters', 'assistants'].includes(d.collection) && ((p && (p.crew_keys || []).includes(d.id)) || (m && m.person_key && String(d.data.name || '').trim().toLowerCase() === m.person_key)));
+    if (fn === 'my_phone') return { data: { phone: (p && p.phone) || (recs.find(d => d.data.phone) || { data: {} }).data.phone || null, can: !!p || recs.length > 0 }, error: null };
+    let d = String(a.p_phone || '').replace(/\D/g, ''); if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+    if (d.length !== 10 || !/^[6-9]/.test(d)) return { data: { error: 'Type your 10-digit mobile number.' }, error: null };
+    if (!p && !recs.length) return { data: { error: 'You are not on the studio\'s team list yet. Please ask Muto\'s.' }, error: null };
+    const old = (p && p.phone) || (recs.find(x => x.data.phone) || { data: {} }).data.phone || null;
+    if (String(old || '').replace(/\D/g, '').slice(-10) === d) return { data: { ok: true, same: true, phone: d }, error: null };
+    if (p) p.phone = d; recs.forEach(r => { r.data = Object.assign({}, r.data, { phone: d }); });
+    const id = String(T.phone_changes.size + 1); T.phone_changes.set(id, { id: +id, person: p ? p.id : null, name: p ? p.name : (recs[0] || { data: {} }).data.name, old_phone: old, new_phone: d, by_email: e, at: new Date().toISOString(), seen_at: null });
+    return { data: { ok: true, phone: d, board: recs.length }, error: null };
   }
   // 038: a function's team from the day before (family), every coming function for the studio
   if (fn === 'client_team') {
@@ -786,6 +801,17 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await im.goto(B + '/'); await im.waitForURL('**/me.html'); await im.waitForSelector('[data-go="work"]'); await im.click('[data-go="work"]'); await im.waitForURL('**/mywork.html'); await im.waitForSelector('#tab-jobs .empty');
   ok((await im.textContent('#sub')).includes('M005'), 'office-only editor signs in and lands on My work with their code');
   await im.click('.bnav .tab[data-tab="me"]'); await im.waitForSelector('#mu'); ok(await im.inputValue('#mu') === 'imran@okhdfc', 'and sees their own private details');
+  // 039: they change their own phone number; the admin sees it under Needs you
+  await im.fill('#mph', '123'); await im.click('#mphs'); await im.waitForFunction(() => /10-digit/.test(document.getElementById('toast').textContent));
+  ok(true, 'a wrong number is refused ("Type your 10-digit mobile number")');
+  await im.fill('#mph', '+91 99887 76655'); await im.click('#mphs'); await im.waitForFunction(() => /Saved/.test(document.getElementById('toast').textContent));
+  ok(PP('Imran').phone === '9988776655' && [...T.phone_changes.values()].some(x => x.new_phone === '9988776655' && !x.seen_at), 'Imran saves his new number himself: People has it, and the change is logged');
+  await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="phones"]', { timeout: 20000 });
+  ok(/Phone numbers changed/.test(await owner.textContent('[data-need="phones"]')), 'admin Home → Needs you: "Phone numbers changed"');
+  await owner.click('[data-need="phones"]'); await owner.waitForSelector('#ph-list .ph-row');
+  ok(/Imran/.test(await owner.textContent('#ph-list')) && /→ 9988776655/.test(await owner.textContent('#ph-list')), 'the window shows who changed it, old → new');
+  await owner.click('#ph-ok'); await owner.waitForSelector('[data-need="phones"]', { state: 'detached' });
+  ok([...T.phone_changes.values()].every(x => x.seen_at), 'Seen ✓ clears it from Needs you');
   const pa = await as(PARTNER);
   await pa.goto(B + '/desk.html?tab=people'); await pa.waitForSelector('[data-p]');
   await pa.click('[data-p="' + PP('Imran').id + '"]'); await pa.waitForSelector('#pn');

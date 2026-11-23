@@ -6,7 +6,7 @@
   const pad = n => String(n).padStart(2, '0');
   const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
-  let who = null, cardSum = null, myDay = null;
+  let who = null, cardSum = null, myDay = null, phoneChanges = [];
   const sup = () => who && who.role === 'supervisor'; // supervisor: Shoots (add, itinerary), Work desk, Clients without money
   const api = () => window.__boardApi || null;
   const click = id => { const el = document.getElementById(id); if (el) el.click(); };
@@ -240,6 +240,7 @@
     const csum = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
     if (sup()) needs.length = 0; // crew, gear and day-off decisions are not his; family itineraries are (below)
     if (csum && csum.toCheck) needs.splice(Math.min(1, needs.length), 0, ['clients', 'lilac', csum.toCheck, 'Client itineraries', 'sent by families · venues already on the board']);
+    if (phoneChanges.length && !sup()) needs.push(['phones', 'sand', phoneChanges.length, 'Phone numbers changed', 'by the team themselves']);
     if (csum && csum.payToCheck && !sup()) needs.splice(0, 0, ['paycheck', 'lilac', csum.payToCheck, 'Payments to check', 'families said "we paid"']);
     if (csum && csum.overdue && !sup()) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
     if (csum && csum.dueSoon && !sup()) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
@@ -278,7 +279,7 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'phones') phonesWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });
@@ -302,6 +303,30 @@
       if (myDay && myDay.text === next.text) return;
       myDay = next; render();
     } catch (e) {}
+  }
+  // phone numbers the team changed themselves (039): Needs you until the admin / manager has seen them
+  async function loadPhones() {
+    if (!who || !['owner', 'manager'].includes(who.role)) return;
+    try {
+      const c = await app.client(), { data, error } = await c.from('phone_changes').select('*').is('seen_at', null).order('at', { ascending: false }).limit(200);
+      if (error) return;
+      const next = data || [], was = phoneChanges.map(x => x.id).join(); phoneChanges = next;
+      if (was !== next.map(x => x.id).join()) render();
+    } catch (e) {}
+  }
+  function phonesWin() {
+    const a = api(); if (!a) return;
+    const fmt = t => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    const modal = a.makeModal(a.modalHead('Phone numbers changed', 'Your team changed these themselves. The board, crew pages and families\' "Your team" card already use the new number.') +
+      '<div class="sb-modal-list" id="ph-list">' + (phoneChanges.length ? phoneChanges.map(x => '<div class="sb-manage-row ph-row" style="display:block;padding:9px 8px"><b>' + esc(x.name) + '</b><br><span class="sb-manage-sub">' +
+        esc((x.old_phone || 'no number') + ' → ' + x.new_phone + ' · ' + fmt(x.at)) + '</span></div>').join('') : '<p class="sb-modal-empty">Nothing new.</p>') + '</div>' +
+      '<div class="sb-modal-foot"><button type="button" class="secondary" id="ph-later">Later</button><button type="button" id="ph-ok">Seen ✓</button></div>', false);
+    modal.querySelector('#ph-later').addEventListener('click', a.closeModal);
+    modal.querySelector('#ph-ok').addEventListener('click', async () => {
+      const c = await app.client(), { data, error } = await c.rpc('phone_changes_seen', { p_ids: phoneChanges.map(x => x.id) });
+      if (error || !data || data.error) { a.toast(error ? error.message : data.error); return; }
+      phoneChanges = []; a.closeModal(); render();
+    });
   }
   // memory cards for Needs you and the Work desk (quietly nothing before 014_cards.sql is run)
   async function loadCards() {
@@ -331,6 +356,7 @@
     const watch = () => { const s = document.getElementById('sb-summary'); if (s) new MutationObserver(render).observe(s, { childList: true, subtree: true }); };
     watch();
     document.addEventListener('mutos:updates', render);
+    loadPhones(); setInterval(loadPhones, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadPhones(); });
     loadCards(); setInterval(loadCards, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { loadCards(); loadMyDay(); } });
     loadMyDay(); setInterval(loadMyDay, 2 * 60 * 1000);
     // cards and drives given to me (or returned to the office): a banner above everything until accepted or "not received"

@@ -242,6 +242,9 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     const { data } = await c.from('people_private').select('*').eq('person', person.id).maybeSingle();
     const x = data || {};
     $('tab-me').innerHTML = '<div class="job"><div class="job-h"><div><b><span class="code">' + esc(person.code) + '</span>' + esc(person.name) + '</b><div class="meta">' + esc(person.title || '') + '</div></div></div><div class="meta">' + esc([me.email, person.phone].filter(Boolean).join(' · ')) + '</div></div>' +
+      // my phone number: changed here, it reaches the board, the crew pages and the families' "Your team" card (039)
+      '<div class="job" id="myphone"><div class="mini"><label class="wide">My phone number<input class="in" id="mph" type="tel" inputmode="numeric" maxlength="16" placeholder="10-digit mobile" value="' + esc(String(person.phone || '').replace(/\D/g, '').slice(-10)) + '"></label></div>' +
+        '<p class="meta" style="margin:4px 0 0">The team and families on your shoots call you on this number. Muto\'s is told when you change it.</p><button type="button" class="pillbtn light" id="mphs" style="width:100%;margin-top:8px">Save my number</button></div>' +
       '<p class="sub">Your details for salary and emergencies. Only you, Ravi and the accountant see them.</p><div class="job"><div class="mini">' +
       '<label class="wide">Address<input class="in" id="ma" maxlength="300" value="' + esc(x.address || '') + '"></label>' +
       '<label>UPI ID<input class="in" id="mu" maxlength="80" value="' + esc(x.upi || '') + '" placeholder="name@okhdfc"></label>' +
@@ -249,6 +252,11 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
       '<label>Last 4 digits of the ID<input class="in" id="mil" maxlength="4" value="' + esc(x.id_last4 || '') + '"></label>' +
       '<label class="wide">Emergency contact<input class="in" id="mem" maxlength="120" value="' + esc(x.emergency || '') + '" placeholder="Name, relation, phone"></label></div>' +
       '<p class="meta">Only the last 4 digits of your ID are kept, never the full number.</p><button type="button" class="pillbtn" id="msave" style="width:100%;margin-top:8px">Save my details</button></div>';
+    $('mphs').addEventListener('click', async () => {
+      const { data, error } = await c.rpc('my_phone_set', { p_phone: $('mph').value });
+      if (error || !data || data.error) { toast(error ? (/my_phone_set/.test(error.message) ? 'Not ready yet: ask Ravi to run 039.' : error.message) : data.error, true); return; }
+      person.phone = data.phone; $('mph').value = data.phone; toast(data.same ? 'That is already your number.' : 'Saved. Your new number is on your shoots.');
+    });
     $('msave').addEventListener('click', async () => {
       const last4 = $('mil').value.trim();
       if (last4 && !/^[0-9A-Za-z]{4}$/.test(last4)) { toast('Only the last 4 digits, please.', true); return; }
