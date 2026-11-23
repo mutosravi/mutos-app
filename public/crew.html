@@ -33,6 +33,7 @@ a.ww-loc small { color: #f3d58e; }
 <script src="/push-client.js"></script>
 <script src="/icons.js"></script>
 <script src="/photos.js"></script>
+<script src="/team-photos.js"></script>
 </head>
 <body>
 <main class="wrap">
@@ -269,7 +270,7 @@ a.ww-loc small { color: #f3d58e; }
     if (s.clientName || s.clientPhone) h += '<div class="row"><span class="k">Client</span>' + esc(s.clientName || '') + (s.clientPhone ? ' <span class="meta" style="display:inline">' + esc(s.clientPhone) + '</span><div class="acts"><a class="chip" href="' + tel(s.clientPhone) + '">Call</a><a class="chip wa" href="' + wa(s.clientPhone) + '" target="_blank" rel="noopener">WhatsApp</a></div>' : '') + '</div>';
     if (s.gear && s.gear.length) h += '<div class="row"><span class="k">Your gear</span>' + esc(s.gear.join(', ')) + '</div>' + gearBlock(s, false);
     if (s.shared && s.shared.length) h += '<div class="row"><span class="k">Shared on this shoot</span>' + esc(s.shared.join(', ')) + '</div>';
-    if (s.team && s.team.length) h += '<div class="row"><span class="k">Team with you</span><ul class="team">' + s.team.map(t => '<li>' + esc(t.name) + ' <span class="meta" style="display:inline">' + esc(t.role) + '</span>' + (t.phone ? ' · <a href="' + tel(t.phone) + '">call</a>' : '') + (t.gear && t.gear.length ? '<div class="meta tgear">Gear: ' + esc(t.gear.join(', ')) + '</div>' : '') + '</li>').join('') + '</ul></div>';
+    if (s.team && s.team.length) h += '<div class="row"><span class="k">Team with you</span><ul class="team">' + s.team.map(t => '<li>' + (window.MutosTeamPhotos ? window.MutosTeamPhotos.face(t.name, { size: 30 }) + ' ' : '') + esc(t.name) + ' <span class="meta" style="display:inline">' + esc(t.role) + '</span>' + (t.phone ? ' · <a href="' + tel(t.phone) + '">call</a>' : '') + (t.gear && t.gear.length ? '<div class="meta tgear">Gear: ' + esc(t.gear.join(', ')) + '</div>' : '') + '</li>').join('') + '</ul></div>';
     (s.travel || []).forEach(t => { h += '<div class="row">' + esc(t) + '</div>'; });
     if (s.notes) { // the studio's lines and the family's "From client:" line are shown apart
       const ls = String(s.notes).split('\n'), studio = ls.filter(l => l.trim() && !l.startsWith('From client:')).join('\n'),
@@ -375,6 +376,8 @@ a.ww-loc small { color: #f3d58e; }
     if (row && !shoots.length) html = '<div class="empty">Nothing booked. When the studio adds you to a shoot it shows up here.</div>';
     if (shoots.length > 1 && !staff) html = '<div class="acts" style="margin:4px 0 0"><button type="button" class="chip" id="ics-all">+ Add all ' + shoots.length + ' shoots to phone calendar</button></div>' + html;
     $('list').innerHTML = html;
+    // teammates' faces (040): drawn once the approved photos are known
+    if (window.MutosTeamPhotos && window.MutosPhotos) { const T = window.MutosTeamPhotos; if (!render.tp) { render.tp = 1; T.load(c).then(() => render()); } else window.MutosPhotos.fill($('list'), c); }
     // recent: only what still needs doing
     const recent = past.filter(s => { const st = statusBy.get(s.id) || {}; return !st.data_at || (st.gear_out_at && !st.gear_back_at) || (!st.gear_out_at && (s.gear || []).some(g => g !== 'own kit') && s.date >= addDays(t, -3)); }).reverse();
     $('recent').innerHTML = recent.length ? '<h2 class="h2">Recent shoots · to finish</h2>' + recent.map(s => card(s, true)).join('') : '';

@@ -57,6 +57,8 @@
 <script src="/config.js"></script>
 <script src="/app-core.js"></script><script src="/nav.js"></script>
 <script src="/icons.js"></script>
+<script src="/photos.js"></script>
+<script src="/team-photos.js"></script>
 <script src="/work-core.js"></script>
 <script src="/drives-ui.js"></script>
 </head>
@@ -326,10 +328,12 @@
     if (!renderPeople.filled) { renderPeople.filled = true; const n = await fillGmailsFromCrew(); if (n) toast('Filled ' + n + ' Gmail' + (n > 1 ? 's' : '') + ' from the crew logins.'); }
     const list = people.slice().sort((a, b) => (b.active - a.active) || a.code.localeCompare(b.code));
     $('tab-people').innerHTML = '<div class="tools"><button type="button" class="pillbtn" id="padd" style="min-height:40px">＋ Add person</button><span class="sub">' + people.filter(p => p.active).length + ' working here · codes are made automatically</span></div>' +
-      (list.length ? list.map(p => '<button type="button" class="card jrow' + (p.active ? '' : ' off') + '" data-p="' + p.id + '" style="border-top:0;padding:12px 14px"><span class="nm"><span class="code">' + esc(p.code) + '</span>' + esc(p.name) + (p.active ? '' : ' · left') + '</span><span class="meta" style="grid-column:auto">' + esc(p.title || '') + '</span>' +
+      (list.length ? list.map(p => '<button type="button" class="card jrow' + (p.active ? '' : ' off') + '" data-p="' + p.id + '" style="border-top:0;padding:12px 14px"><span class="nm">' + (window.MutosTeamPhotos ? window.MutosTeamPhotos.face(p.name, { person: p.id, size: 34 }) + ' ' : '') + '<span class="code">' + esc(p.code) + '</span>' + esc(p.name) + (p.active ? '' : ' · left') + '</span><span class="meta" style="grid-column:auto">' + esc(p.title || '') + '</span>' +
         '<span class="meta">' + [p.email ? esc(p.email) : '<span class="late">No Gmail yet: cannot sign in</span>', p.phone ? esc(p.phone) : '', (p.crew_keys || []).length ? 'Crew: ' + esc(p.crew_keys.map(shooterLabel).join(', ')) : '', (p.skills || []).map(s => (W.SKILLS.find(x => x[0] === s) || [s, s])[1]).join(', ')].filter(Boolean).join(' · ') + '</span></button>').join('')
         : '<div class="empty">Nobody yet.</div>');
     $('padd').addEventListener('click', () => editPerson(null));
+    // faces (040): once the approved photos are known
+    if (window.MutosTeamPhotos && window.MutosPhotos) { if (!renderPeople.tp) { renderPeople.tp = 1; window.MutosTeamPhotos.load(c).then(() => { if (!$('tab-people').hidden) renderPeople(); }); } else window.MutosPhotos.fill($('tab-people'), c); }
     $('tab-people').querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => editPerson(people.find(p => p.id === b.dataset.p))));
   }
   async function editPerson(p) {

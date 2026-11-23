@@ -9,7 +9,7 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes'].forEach(t => { T[t] = new Map(); });
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes', 'team_photos'].forEach(t => { T[t] = new Map(); });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
@@ -30,6 +30,7 @@ function canSee(t, r, e) {
   if (['employees', 'att_punch', 'att_requests', 'payslips'].includes(t)) return r.email === e || payroll(e);
   if (t === 'payroll_runs' || t === 'att_log') return payroll(e);
   if (t === 'att_settings' || t === 'holidays') return true;
+  if (t === 'team_photos') return staff(e) || r.by_email === e || r.status === 'approved';
   // same rules as 007_work_desk.sql
   if (t === 'people') return staff(e) || payroll(e) || r.id === myPerson(e);
   if (t === 'people_private') return payroll(e) || r.person === myPerson(e);
@@ -165,6 +166,18 @@ function rpc(fn, a, e) {
     const id = crypto.randomUUID(); T.client_pay_claims.set(id, { id, wedding_key: k, amount: a.p_amount, paid_on: a.p_paid_on, mode: a.p_mode, upi_ref: a.p_ref || null, note: a.p_note || null, photo: a.p_photo, status: 'pending', by_email: e, at: new Date().toISOString() });
     return { data: { ok: true, id, title: l.title }, error: null };
   }
+  // 040: profile photos
+  if (fn === 'team_photo_map') return { data: [...T.team_photos.values()].filter(x => x.status === 'approved').map(x => ({ upload: x.upload, person: x.person, names: x.names })), error: null };
+  if (fn === 'my_team_photo') { const x = [...T.team_photos.values()].filter(y => y.by_email === e && y.status !== 'replaced').pop(); return { data: x ? { upload: x.upload, status: x.status, why: x.why } : {}, error: null }; }
+  if (fn === 'team_photo_decide') {
+    if (!staff(e)) return { data: { error: 'Only the admin or the manager can approve photos.' }, error: null };
+    const x = T.team_photos.get(String(a.p_id)); if (!x) return { data: { error: 'Unknown photo.' }, error: null };
+    if (x.status !== 'pending') return { data: { error: 'Already ' + x.status + '.' }, error: null };
+    if (!a.p_approve && !String(a.p_why || '').trim()) return { data: { error: 'Write why, they see it.' }, error: null };
+    if (a.p_approve) [...T.team_photos.values()].forEach(y => { if (y !== x && y.status === 'approved' && y.names.some(n => x.names.includes(n))) y.status = 'replaced'; });
+    Object.assign(x, { status: a.p_approve ? 'approved' : 'rejected', why: a.p_approve ? null : a.p_why, decided_by: e, decided_at: new Date().toISOString() });
+    return { data: { ok: true }, error: null };
+  }
   // 039: a team member's own phone number
   if (fn === 'my_phone' || fn === 'my_phone_set' || fn === 'phone_changes_seen') {
     if (fn === 'phone_changes_seen') { if (!staff(e)) return { data: { error: 'Only the admin or the manager.' }, error: null }; (a.p_ids || []).forEach(id => { const x = T.phone_changes.get(String(id)) || T.phone_changes.get(id); if (x && !x.seen_at) Object.assign(x, { seen_at: new Date().toISOString(), seen_by: e }); }); return { data: { ok: true }, error: null }; }
@@ -185,7 +198,7 @@ function rpc(fn, a, e) {
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active); if (!l) return { data: { error: 'This page is not active.' }, error: null };
     const fam = l.emails.includes(e), desk = staff(e) || role(e) === 'supervisor'; if (!fam && !desk) return { data: { error: 'Only the family\'s registered Gmail can see this.' }, error: null };
     const f = (T.client_feed.get(l.wedding_key) || {}).data || {}, t0 = istDay(), t1 = istDay(1);
-    return { data: { functions: (f.functions || []).filter(x => x.date >= t0 && (desk || x.date <= t1)).map(x => ({ id: x.id, name: x.name, date: x.date, slot: x.slot, team: ((f.team || {})[x.id] || []) })) }, error: null };
+    return { data: { functions: (f.functions || []).filter(x => x.date >= t0 && (desk || x.date <= t1)).map(x => ({ id: x.id, name: x.name, date: x.date, slot: x.slot, team: ((f.team || {})[x.id] || []).map(t => Object.assign({}, t, { photo: (([...T.team_photos.values()].find(y => y.status === 'approved' && y.names.includes(String(t.name).trim().toLowerCase())) || {}).upload) || null })) })) }, error: null };
   }
   if (fn === 'client_list') return { data: [...T.client_links.values()].filter(l => l.active && l.emails.includes(e)).map(l => ({ token: l.token, title: l.title })), error: null };
   if (fn === 'client_get' || fn === 'client_save') {
@@ -380,7 +393,7 @@ function handle(e, d) {
 function seed(dir, coll) { const p = path.join(DATA, dir); if (!fs.existsSync(p)) return 0; let n = 0; fs.readdirSync(p).forEach(f => { const data = JSON.parse(fs.readFileSync(path.join(p, f))); const id = data.id || f.replace(/\.json$/, ''); delete data.id; T.docs.set(coll + '/' + id, { collection: coll, id, data }); n++; }); return n; }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 // the Worker's photo routes (worker/photos.js), faked: off until driveOn (then a family's photos "go to Drive" = kept in uploads)
-let driveOn = false; const uploads = new Map();
+let driveOn = false, photoUser = null; const uploads = new Map();
 const TINY = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 function photoApi(q, s) {
   const send = (o, st = 200) => { s.writeHead(st, { 'content-type': 'application/json' }); s.end(JSON.stringify(o)); };
@@ -389,7 +402,7 @@ function photoApi(q, s) {
     if (u.pathname === '/api/photos/status') return send({ configured: true, connected: driveOn });
     if (!driveOn) return send({ error: 'Google Drive is not connected yet.' }, 503);
     if (u.pathname === '/api/photos/upload' && u.searchParams.get('thumb')) return send({ ok: true });
-    if (u.pathname === '/api/photos/upload') { const info = JSON.parse(decodeURIComponent(q.headers['x-mutos-photo'] || '{}')), id = crypto.randomUUID(); uploads.set(id, Object.assign({ id, size: Buffer.concat(chunks).length, mime: q.headers['content-type'] }, info)); return send({ id }); }
+    if (u.pathname === '/api/photos/upload') { const info = JSON.parse(decodeURIComponent(q.headers['x-mutos-photo'] || '{}')), id = crypto.randomUUID(); uploads.set(id, Object.assign({ id, size: Buffer.concat(chunks).length, mime: q.headers['content-type'] }, info)); if (info.kind === 'person' && photoUser) { const p = [...T.people.values()].find(x => x.email === photoUser), n = String(T.team_photos.size + 1); T.team_photos.set(n, { id: +n, upload: id, person: p ? p.id : null, names: [String(p ? p.name : photoUser).trim().toLowerCase()], name: p ? p.name : photoUser, status: 'pending', by_email: photoUser, at: new Date().toISOString() }); } return send({ id }); }
     const m = u.pathname.match(/^\/api\/photos\/file\/(.+)$/);
     if (m) { if (!uploads.has(m[1])) return send({ error: 'Not found.' }, 404); s.writeHead(200, { 'content-type': 'image/png' }); return s.end(TINY); }
     if (u.pathname === '/api/photos/remove') { const r = uploads.get(JSON.parse(Buffer.concat(chunks).toString() || '{}').id); if (r) r.removed = true; return send({ ok: true }); }
@@ -812,6 +825,26 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(/Imran/.test(await owner.textContent('#ph-list')) && /→ 9988776655/.test(await owner.textContent('#ph-list')), 'the window shows who changed it, old → new');
   await owner.click('#ph-ok'); await owner.waitForSelector('[data-need="phones"]', { state: 'detached' });
   ok([...T.phone_changes.values()].every(x => x.seen_at), 'Seen ✓ clears it from Needs you');
+  // 040: Imran adds a profile photo; it waits for the admin; once approved the People list shows his face
+  { const was = driveOn; driveOn = true; photoUser = IMRAN;
+    await im.goto(B + '/mywork.html?tab=me'); await im.waitForSelector('#myphoto #tp-in', { state: 'attached', timeout: 15000 });
+    await im.setInputFiles('#tp-in', { name: 'me.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFTGMSgwhCQBTkj/Bmb6ilQAAAABJRU5ErkJggg==', 'base64') });
+    await im.waitForFunction(() => /Waiting/.test((document.getElementById('tp-st') || {}).textContent || ''), null, { timeout: 15000 });
+    const tp = [...T.team_photos.values()].find(x => x.by_email === IMRAN);
+    ok(tp && tp.status === 'pending' && uploads.get(tp.upload).kind === 'person', 'Imran adds his photo: it goes to Drive and waits ("Waiting for Muto\'s to approve it")');
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="teamphotos"]', { timeout: 20000 });
+    ok(/Profile photos to approve/.test(await owner.textContent('[data-need="teamphotos"]')), 'admin Home → Needs you: "Profile photos to approve"');
+    await owner.click('[data-need="teamphotos"]'); await owner.waitForSelector('#tp-list .tp-row');
+    ok(/Imran/.test(await owner.textContent('#tp-list')), 'the window shows the photo and who sent it');
+    await owner.click('#tp-list .tp-row .tp-no'); await owner.click('#tp-list .tp-row .tp-send'); await owner.waitForFunction(() => /reason/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(tp.status === 'pending', 'turning it down needs a reason');
+    await owner.click('#tp-list .tp-row .tp-ok'); await owner.waitForSelector('#tp-list .tp-row', { state: 'detached' });
+    ok(tp.status === 'approved' && tp.decided_by, 'Approve ✓');
+    await owner.goto(B + '/desk.html?tab=people'); await owner.waitForSelector('[data-p="' + PP('Imran').id + '"] .tph[data-pid="' + tp.upload + '"]', { timeout: 15000 });
+    ok(true, 'the People list shows his face');
+    await im.goto(B + '/mywork.html?tab=me'); await im.waitForFunction(() => /Approved/.test((document.getElementById('tp-st') || {}).textContent || ''), null, { timeout: 15000 });
+    ok(true, 'and he sees "Approved"');
+    driveOn = was; photoUser = null; }
   const pa = await as(PARTNER);
   await pa.goto(B + '/desk.html?tab=people'); await pa.waitForSelector('[data-p]');
   await pa.click('[data-p="' + PP('Imran').id + '"]'); await pa.waitForSelector('#pn');

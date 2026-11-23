@@ -6,7 +6,7 @@
   const pad = n => String(n).padStart(2, '0');
   const dstr = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
-  let who = null, cardSum = null, myDay = null, phoneChanges = [];
+  let who = null, cardSum = null, myDay = null, phoneChanges = [], photoWait = [];
   const sup = () => who && who.role === 'supervisor'; // supervisor: Shoots (add, itinerary), Work desk, Clients without money
   const api = () => window.__boardApi || null;
   const click = id => { const el = document.getElementById(id); if (el) el.click(); };
@@ -240,6 +240,7 @@
     const csum = window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.summary ? window.MUTOS_CLIENTS.summary() : null;
     if (sup()) needs.length = 0; // crew, gear and day-off decisions are not his; family itineraries are (below)
     if (csum && csum.toCheck) needs.splice(Math.min(1, needs.length), 0, ['clients', 'lilac', csum.toCheck, 'Client itineraries', 'sent by families · venues already on the board']);
+    if (photoWait.length && !sup()) needs.push(['teamphotos', 'sand', photoWait.length, 'Profile photos to approve', 'families see them once you approve']);
     if (phoneChanges.length && !sup()) needs.push(['phones', 'sand', phoneChanges.length, 'Phone numbers changed', 'by the team themselves']);
     if (csum && csum.payToCheck && !sup()) needs.splice(0, 0, ['paycheck', 'lilac', csum.payToCheck, 'Payments to check', 'families said "we paid"']);
     if (csum && csum.overdue && !sup()) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
@@ -279,7 +280,7 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'phones') phonesWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'phones') phonesWin(); else if (k === 'teamphotos') photosWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });
@@ -328,6 +329,42 @@
       phoneChanges = []; a.closeModal(); render();
     });
   }
+  // profile photos the team sent (040): Needs you until the admin / manager approves or turns them down
+  async function loadTeamPhotos() {
+    if (!who || !['owner', 'manager'].includes(who.role)) return;
+    try {
+      const c = await app.client(), { data, error } = await c.from('team_photos').select('*').eq('status', 'pending').order('at', { ascending: true }).limit(100);
+      if (error) return;
+      const next = data || [], was = photoWait.map(x => x.id).join(); photoWait = next;
+      if (was !== next.map(x => x.id).join()) render();
+    } catch (e) {}
+  }
+  function photosWin() {
+    const a = api(); if (!a) return;
+    const fmt = t => new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    const row = x => '<div class="sb-manage-row tp-row" data-tp="' + x.id + '" style="display:flex;gap:12px;align-items:center;padding:10px 8px">' +
+      '<span class="tph" data-pid="' + esc(x.upload) + '" style="width:72px;height:72px;font-size:26px;border-radius:50%;flex:0 0 auto;background:#f1e2dc center/cover no-repeat;display:inline-flex;align-items:center;justify-content:center;color:#7d3a4b;cursor:zoom-in">' + esc(String(x.name || '?').charAt(0).toUpperCase()) + '</span>' +
+      '<div style="flex:1;min-width:0"><b>' + esc(x.name) + '</b><br><span class="sb-manage-sub">sent ' + esc(fmt(x.at)) + '</span>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button type="button" class="tp-ok">Approve ✓</button><button type="button" class="secondary tp-no">Not this one</button></div>' +
+      '<div class="tp-why" hidden style="margin-top:8px"><input type="text" class="tp-wtxt" maxlength="200" placeholder="Why? (they see this), e.g. face not clear" style="width:100%"><button type="button" class="tp-send" style="margin-top:6px">Send</button></div></div></div>';
+    const modal = a.makeModal(a.modalHead('Profile photos to approve', 'Once approved, families see the photo on their "Your team" card and the team sees it on shoots. Tap a photo to see it big.') +
+      '<div class="sb-modal-list" id="tp-list">' + (photoWait.length ? photoWait.map(row).join('') : '<p class="sb-modal-empty">Nothing waiting.</p>') + '</div>' +
+      '<div class="sb-modal-foot"><button type="button" class="secondary" id="tp-close">Close</button></div>', false);
+    app.client().then(c => { if (window.MutosPhotos) window.MutosPhotos.fill(modal, c); });
+    modal.querySelector('#tp-close').addEventListener('click', a.closeModal);
+    const decide = async (el, ok, why) => {
+      const id = +el.dataset.tp, c = await app.client(), { data, error } = await c.rpc('team_photo_decide', { p_id: id, p_approve: ok, p_why: why || null });
+      if (error || !data || data.error) { a.toast(error ? error.message : data.error); return; }
+      photoWait = photoWait.filter(x => x.id !== id); el.remove(); a.toast(ok ? 'Approved' : 'Turned down, they will see why'); render();
+      if (!modal.querySelector('.tp-row')) modal.querySelector('#tp-list').innerHTML = '<p class="sb-modal-empty">Nothing waiting.</p>';
+    };
+    modal.querySelectorAll('.tp-row').forEach(el => {
+      el.querySelector('.tp-ok').addEventListener('click', () => decide(el, true));
+      el.querySelector('.tp-no').addEventListener('click', () => { el.querySelector('.tp-why').hidden = false; el.querySelector('.tp-wtxt').focus(); });
+      el.querySelector('.tp-send').addEventListener('click', () => { const w = el.querySelector('.tp-wtxt').value.trim(); if (!w) { a.toast('Write a short reason'); return; } decide(el, false, w); });
+      el.querySelector('.tph').addEventListener('click', () => { const x = photoWait.find(y => y.id === +el.dataset.tp); if (x && window.MutosPhotos && window.MutosPhotos.view) app.client().then(c => window.MutosPhotos.view(c, [{ pid: x.upload, title: x.name }], 0)); });
+    });
+  }
   // memory cards for Needs you and the Work desk (quietly nothing before 014_cards.sql is run)
   async function loadCards() {
     try {
@@ -356,6 +393,7 @@
     const watch = () => { const s = document.getElementById('sb-summary'); if (s) new MutationObserver(render).observe(s, { childList: true, subtree: true }); };
     watch();
     document.addEventListener('mutos:updates', render);
+    loadTeamPhotos(); setInterval(loadTeamPhotos, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadTeamPhotos(); });
     loadPhones(); setInterval(loadPhones, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadPhones(); });
     loadCards(); setInterval(loadCards, 5 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { loadCards(); loadMyDay(); } });
     loadMyDay(); setInterval(loadMyDay, 2 * 60 * 1000);

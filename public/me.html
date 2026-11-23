@@ -49,6 +49,8 @@
 <script src="/config.js"></script>
 <script src="/app-core.js"></script><script src="/nav.js"></script>
 <script src="/icons.js"></script>
+<script src="/photos.js"></script>
+<script src="/team-photos.js"></script>
 <script src="/inbox.js"></script>
 <script src="/push-client.js"></script>
 <script src="/payroll.js"></script>
@@ -203,11 +205,13 @@
     $('doors').querySelector('button[data-go="profile"]').addEventListener('click', () => {
       if (person) { location.assign('/mywork.html?tab=me'); return; }
       const bg = sheet('My Profile', ['<div class="rowbtn" style="cursor:default">' + IC('idcard') + '<span><b>' + esc((emp && emp.name) || me.name) + '</b><small>' + esc(me.email) + '</small></span></div>',
+        '<div class="rowbtn" style="cursor:default;display:block" id="myphoto"></div>',
         // my phone number (039): changed here, it reaches the board, the crew pages and the families' "Your team" card
         '<div class="rowbtn" style="cursor:default;display:block" id="myphone"><b>My phone number</b><input class="in" id="mph" type="tel" inputmode="numeric" maxlength="16" placeholder="10-digit mobile" style="width:100%;margin:6px 0">' +
           '<small style="display:block;color:var(--muted)">The team and families on your shoots call you on this number.</small><button type="button" class="pillbtn light" id="mphs" style="width:100%;margin-top:8px">Save my number</button></div>',
         '<button type="button" class="rowbtn" id="so">' + IC('logout') + '<span><b>Sign out</b><small>Use another Google account</small></span></button>']);
       bg.querySelector('#so').addEventListener('click', () => app.signOut());
+      if (window.MutosTeamPhotos) window.MutosTeamPhotos.mine(bg.querySelector('#myphoto'), c, toast);
       c.rpc('my_phone').then(({ data }) => { const box = bg.querySelector('#myphone'); if (!data || data.error || !data.can) { if (box) box.remove(); return; } bg.querySelector('#mph').value = String(data.phone || '').replace(/\D/g, '').slice(-10); }).catch(() => { const box = bg.querySelector('#myphone'); if (box) box.remove(); });
       bg.querySelector('#mphs').addEventListener('click', async () => {
         const { data, error } = await c.rpc('my_phone_set', { p_phone: bg.querySelector('#mph').value });

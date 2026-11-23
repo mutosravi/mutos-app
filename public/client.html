@@ -20,6 +20,7 @@
 .teamcard { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow); padding: 14px 16px; margin: 10px 0; }
 .teamcard .tfn + .tfn { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(42,30,34,.08); }
 .teamcard .tfh { margin-bottom: 6px; font-size: 15px; }
+.teamcard .tface { width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto; background: #f1e2dc center/cover no-repeat; display: inline-flex; align-items: center; justify-content: center; color: #7d3a4b; font-weight: 700; font-size: 19px; }
 .teamcard .tp { display: flex; align-items: center; gap: 8px; padding: 7px 0; flex-wrap: wrap; }
 .teamcard .tpn { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; }
 .teamcard .tbtn { min-height: 38px; padding: 0 14px; border-radius: 999px; background: var(--ink, #2a1e22); color: #fff; font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; }
@@ -257,7 +258,7 @@
       const dayWord = d => d === today ? 'Today' : 'Tomorrow';
       const digits = x => String(x || '').replace(/\D/g, ''), waNo = x => { const d = digits(x); return d.length === 10 ? '91' + d : d; };
       h = '<div class="sechead2" style="margin-top:12px">Your team</div><section class="teamcard" id="team">' + team.map(f => '<div class="tfn"><div class="tfh"><b>' + esc(f.name) + '</b> <span class="meta">' + esc(dayWord(f.date) + ' · ' + f.slot) + '</span></div>' +
-        f.team.map(t => '<div class="tp"><div class="tpn"><b>' + esc(t.name) + '</b><span class="meta">' + esc(t.role || '') + (t.phone ? ' · ' + esc(t.phone) : '') + '</span></div>' +
+        f.team.map(t => '<div class="tp">' + (t.photo ? '<span class="tface" data-pid="' + esc(t.photo) + '" aria-hidden="true"></span>' : '<span class="tface none" aria-hidden="true">' + esc(String(t.name || '?').charAt(0).toUpperCase()) + '</span>') + '<div class="tpn"><b>' + esc(t.name) + '</b><span class="meta">' + esc(t.role || '') + (t.phone ? ' · ' + esc(t.phone) : '') + '</span></div>' +
           (digits(t.phone).length >= 10 ? '<a class="tbtn" href="tel:' + esc(digits(t.phone).length === 10 ? '+91' + digits(t.phone) : '+' + digits(t.phone)) + '">Call</a><a class="tbtn wa" href="https://wa.me/' + esc(waNo(t.phone)) + '" target="_blank" rel="noopener">WhatsApp</a>' : '') + '</div>').join('') + '</div>').join('') +
         '<p class="meta" style="margin:8px 2px 0">For changes to timings or coverage, please call Muto\'s.</p></section>' + h;
     }

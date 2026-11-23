@@ -26,6 +26,7 @@
 <script src="/icons.js"></script>
 <script src="/inbox.js"></script>
 <script src="/photos.js"></script>
+<script src="/team-photos.js"></script>
 <script src="/home.js"></script>
 <script src="/tabs.js"></script>
 </head>
@@ -1831,7 +1832,9 @@ body.mh-view-board #mutos-home { display: none; }
         row.className = 'sb-manage-row';
         const used = usage ? usage(p.id) : 0;
         const key = normalizeName(p.name);
-        let head = '<div class="sb-manage-head"><span class="sb-person-dot" style="background:' + colorFor(p.id, MEMBER_DOTS) + '"></span><span class="sb-manage-name">' + escapeHtml(p.name) + (!isGear && scheduleChanged(key) ? '<span class="sb-changed" title="Schedule changed since last sent"></span>' : '') + '</span>';
+        // in the app, people show their approved profile photo instead of the dot (040; MUTOS_APP.face, team-photos.js)
+        const faceHtml = !isGear && window.MUTOS_APP && window.MUTOS_APP.face ? window.MUTOS_APP.face(p.name) : '';
+        let head = '<div class="sb-manage-head">' + (faceHtml || '<span class="sb-person-dot" style="background:' + colorFor(p.id, MEMBER_DOTS) + '"></span>') + '<span class="sb-manage-name">' + escapeHtml(p.name) + (!isGear && scheduleChanged(key) ? '<span class="sb-changed" title="Schedule changed since last sent"></span>' : '') + '</span>';
         head += '<span class="sb-manage-sub">' + (isGear && gearQty(p.id) > 1 ? '<b>×' + gearQty(p.id) + '</b> · ' : '') + escapeHtml(p.role || p.category || '') + (isGear && p.vendor ? ' · rented from ' + escapeHtml(p.vendor) + (p.rentRate ? ' · ₹' + p.rentRate.toLocaleString('en-IN') + '/day' : ' · <span style="color:#9a5b00">no rate</span>') : '') + (!isGear ? ' · ' + workload(key, season) + ' this season' : '') + (!isGear && p.phone ? ' · ✆' : '') + (!isGear && p.ownKit ? ' · 🎒 own kit' : '') + '</span>';
         if (isGear && p.vendor) { const need = rentalsToBook().filter(r => r.gid === p.id).length, upc = (p.booked || []).filter(d => d >= todayStr()).length;
           head += '<button class="sb-mini-btn act-rent" type="button" title="Dates booked with the vendor"' + (need ? ' style="color:#9a5b00;font-weight:600"' : '') + '>dates' + (upc ? ' (' + upc + ')' : '') + (need ? ' · ' + need + ' to book' : '') + '</button>'; }
@@ -2102,6 +2105,7 @@ body.mh-view-board #mutos-home { display: none; }
         }
         listEl.appendChild(row);
       });
+      if (window.MUTOS_APP && window.MUTOS_APP.facesDone) window.MUTOS_APP.facesDone(listEl);
     }
     renderList();
     // gear: owned or rented, and from which vendor

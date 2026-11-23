@@ -35,6 +35,7 @@ head = '''<!doctype html>
 <script src="/icons.js"></script>
 <script src="/inbox.js"></script>
 <script src="/photos.js"></script>
+<script src="/team-photos.js"></script>
 <script src="/home.js"></script>
 <script src="/tabs.js"></script>
 </head>
