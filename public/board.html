@@ -3259,6 +3259,15 @@ body.mh-view-board #mutos-home { display: none; }
     return 'Crew';
   }
   // what the client is told: the job this person does on this shoot (from the slot they fill), never the full list of what they can do
+  // a shoot's team for the family page (23 Nov 2026, Ravi: "Show team names with their numbers to contact prior 1 day"):
+  // shooters (and teams) with the role the family understands, then assistants; numbers from any of the person's records
+  function teamOf(ev) {
+    const out = [], seen = new Set(), phoneOf = p => p.phone || phoneForKey(normalizeName(p.name)) || '';
+    ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (!p || seen.has(normalizeName(p.name))) return; seen.add(normalizeName(p.name)); const t = teamTake(a);
+      out.push({ name: p.name, role: t ? 'Team of ' + (t.photo + t.video) : clientRoleOn(ev, a) || 'Team', phone: phoneOf(p) }); });
+    ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (!p || seen.has(normalizeName(p.name))) return; seen.add(normalizeName(p.name)); out.push({ name: p.name, role: 'Assistant', phone: phoneOf(p) }); });
+    return out;
+  }
   function clientRoleOn(ev, a) {
     const p = findShooter(a.memberId), take = teamTake(a);
     if (take) return clientRole('', take);
@@ -5256,7 +5265,7 @@ body.mh-view-board #mutos-home { display: none; }
         applySnapshot(key, snap);
         if (!snap.metadata.fromCache && ++firstDone === KEYS.length) {
           setSync('cloud', 'Saved to cloud · ' + state.events.length + ' shoots');
-          if (window.MUTOS_APP && window.MUTOS_APP.attach) window.MUTOS_APP.attach({ state: () => state, save: () => saveData({ quiet: true }), saveSystem: () => saveData({ quiet: true, system: true }), crewFeedFor, broughtAlong, allPeopleKeys, recordsForKey, displayName, phoneForKey, normalizeName, todayStr, makeModal, modalHead, closeModal, renderBoard, toast, escapeHtml, isActive, isShort, isGearShort, hasConflict, crewCount, crewNeeded, rentalsToBook, inboxCount, openInbox, openRentals, goToDate, seasonOf, canSyncTeam, syncTeamSheet: () => syncTeamSheet(true), formatDay, cleanEvent });
+          if (window.MUTOS_APP && window.MUTOS_APP.attach) window.MUTOS_APP.attach({ state: () => state, save: () => saveData({ quiet: true }), saveSystem: () => saveData({ quiet: true, system: true }), crewFeedFor, teamOf, broughtAlong, allPeopleKeys, recordsForKey, displayName, phoneForKey, normalizeName, todayStr, makeModal, modalHead, closeModal, renderBoard, toast, escapeHtml, isActive, isShort, isGearShort, hasConflict, crewCount, crewNeeded, rentalsToBook, inboxCount, openInbox, openRentals, goToDate, seasonOf, canSyncTeam, syncTeamSheet: () => syncTeamSheet(true), formatDay, cleanEvent });
           setTimeout(() => { if (canPushCrew()) { const cur = crewSetting(); if (!cur.fileId || hash(JSON.stringify(crewRows())) !== cur.sig) scheduleCrewPush(); } }, 3000);
           setTimeout(() => { if (canSyncTeam()) syncTeamSheet(false); else renderTeamStatus(); }, 2500);
         }

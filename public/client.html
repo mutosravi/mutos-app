@@ -17,6 +17,13 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700;800&display=swap">
 <link rel="stylesheet" href="/app.css">
 <style>
+.teamcard { background: var(--surface); border-radius: 20px; box-shadow: var(--shadow); padding: 14px 16px; margin: 10px 0; }
+.teamcard .tfn + .tfn { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(42,30,34,.08); }
+.teamcard .tfh { margin-bottom: 6px; font-size: 15px; }
+.teamcard .tp { display: flex; align-items: center; gap: 8px; padding: 7px 0; flex-wrap: wrap; }
+.teamcard .tpn { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; }
+.teamcard .tbtn { min-height: 38px; padding: 0 14px; border-radius: 999px; background: var(--ink, #2a1e22); color: #fff; font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; }
+.teamcard .tbtn.wa { background: #1f6b4f; }
 .lock { background: #f7e9d0; color: #6b4a12; border-radius: 14px; padding: 10px 12px; font-size: 14px; line-height: 1.45; margin-bottom: 10px; }
 .dls { display: flex; flex-direction: column; gap: 8px; }
 .dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--bg); }
@@ -164,6 +171,9 @@
   let after = null;
   const loadAfter = async () => { try { const { data, error } = await c.rpc('client_after', { p_token: token }); after = !error && data && !data.error ? data : null; } catch (e) { after = null; } };
   await loadAfter();
+  // the team for each function, from the day before (038 client_team; 23 Nov 2026, Ravi)
+  let team = [];
+  try { const { data, error } = await c.rpc('client_team', { p_token: token }); team = !error && data && Array.isArray(data.functions) ? data.functions.filter(f => (f.team || []).length) : []; } catch (e) { team = []; }
   if (!ans.couple || typeof ans.couple !== 'object') ans.couple = {};   // { bride, groom } (12 Nov 2026, Ravi)
   // a photo from the phone, shrunk to a small JPEG (about 20–40 KB) so it saves quickly
   const shrink = file => new Promise((res, rej) => {
@@ -243,6 +253,14 @@
     const cp = ans.couple, cpOk = !!(cp.bride && cp.groom);
     let h = !couple ? '' : fcard('couple', ' sec' + (cpOk ? ' done' : ''), '<span class="txt"><h2>The couple</h2><span class="meta">' + esc(cpOk ? cp.bride + ' & ' + cp.groom : CPL.hint) + '</span></span><span class="go' + (cpOk ? ' ok' : '') + '">' + (cpOk ? 'Edit' : 'Add') + '</span>',
       '<div class="grid">' + field('couple', cp, ['bride', CPL.b, 'text', 'e.g. Divya Bansal', 'wide']) + field('couple', cp, ['groom', CPL.g, 'text', 'e.g. Swastik Gupta', 'wide']) + '</div>' + doneBtn);
+    if (team.length) {   // shown open, above the functions: this is what the family needs on the day
+      const dayWord = d => d === today ? 'Today' : 'Tomorrow';
+      const digits = x => String(x || '').replace(/\D/g, ''), waNo = x => { const d = digits(x); return d.length === 10 ? '91' + d : d; };
+      h = '<div class="sechead2" style="margin-top:12px">Your team</div><section class="teamcard" id="team">' + team.map(f => '<div class="tfn"><div class="tfh"><b>' + esc(f.name) + '</b> <span class="meta">' + esc(dayWord(f.date) + ' · ' + f.slot) + '</span></div>' +
+        f.team.map(t => '<div class="tp"><div class="tpn"><b>' + esc(t.name) + '</b><span class="meta">' + esc(t.role || '') + (t.phone ? ' · ' + esc(t.phone) : '') + '</span></div>' +
+          (digits(t.phone).length >= 10 ? '<a class="tbtn" href="tel:' + esc(digits(t.phone).length === 10 ? '+91' + digits(t.phone) : '+' + digits(t.phone)) + '">Call</a><a class="tbtn wa" href="https://wa.me/' + esc(waNo(t.phone)) + '" target="_blank" rel="noopener">WhatsApp</a>' : '') + '</div>').join('') + '</div>').join('') +
+        '<p class="meta" style="margin:8px 2px 0">For changes to timings or coverage, please call Muto\'s.</p></section>' + h;
+    }
     h += '<div class="sechead2">Your functions</div>';
     fns.forEach(f => {
       const a = ans[f.id] = ans[f.id] || {}, ok = filled(a), short = f.type === 'short';

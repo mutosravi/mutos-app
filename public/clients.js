@@ -43,7 +43,10 @@
   // kind of client (17 Nov 2026): wedding (default) / anniversary / birthday / event / other, kept on the board's shoots
   const OCC = { wedding: ['Wedding', '💍'], anniversary: ['Anniversary', '💞'], birthday: ['Birthday', '🎂'], event: ['Event', '🎉'], other: ['Other', '📷'] };
   const occTag = w => { const o = OCC[w.occasion] || OCC.wedding; return '<span class="pill cl-occ" style="font-size:10.5px;margin-left:6px;vertical-align:2px">' + o[1] + ' ' + o[0] + '</span>'; };
-  const feedOf = w => ({ functions: w.events.map(ev => ({ id: ev.id, name: ev.name, date: ev.date, slot: ev.slot, venue: ev.location || '', type: ev.eventType === 'full' ? 'full' : 'short', occasion: OCC[ev.occasion] ? ev.occasion : 'wedding' })) });
+  // team per function (name, role, number): kept beside the functions; the family gets it only through client_team() (038),
+  // which hands it out from the day before each function
+  const teamFor = ev => (api && api.teamOf ? api.teamOf(ev) : []).filter(t => t.name);
+  const feedOf = w => ({ team: Object.fromEntries(w.events.map(ev => [ev.id, teamFor(ev)])), functions: w.events.map(ev => ({ id: ev.id, name: ev.name, date: ev.date, slot: ev.slot, venue: ev.location || '', type: ev.eventType === 'full' ? 'full' : 'short', occasion: OCC[ev.occasion] ? ev.occasion : 'wedding' })) });
 
   async function load() {
     const c = await app.client();

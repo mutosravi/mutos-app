@@ -165,6 +165,13 @@ function rpc(fn, a, e) {
     const id = crypto.randomUUID(); T.client_pay_claims.set(id, { id, wedding_key: k, amount: a.p_amount, paid_on: a.p_paid_on, mode: a.p_mode, upi_ref: a.p_ref || null, note: a.p_note || null, photo: a.p_photo, status: 'pending', by_email: e, at: new Date().toISOString() });
     return { data: { ok: true, id, title: l.title }, error: null };
   }
+  // 038: a function's team from the day before (family), every coming function for the studio
+  if (fn === 'client_team') {
+    const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active); if (!l) return { data: { error: 'This page is not active.' }, error: null };
+    const fam = l.emails.includes(e), desk = staff(e) || role(e) === 'supervisor'; if (!fam && !desk) return { data: { error: 'Only the family\'s registered Gmail can see this.' }, error: null };
+    const f = (T.client_feed.get(l.wedding_key) || {}).data || {}, t0 = istDay(), t1 = istDay(1);
+    return { data: { functions: (f.functions || []).filter(x => x.date >= t0 && (desk || x.date <= t1)).map(x => ({ id: x.id, name: x.name, date: x.date, slot: x.slot, team: ((f.team || {})[x.id] || []) })) }, error: null };
+  }
   if (fn === 'client_list') return { data: [...T.client_links.values()].filter(l => l.active && l.emails.includes(e)).map(l => ({ token: l.token, title: l.title })), error: null };
   if (fn === 'client_get' || fn === 'client_save') {
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active);
@@ -999,6 +1006,26 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   T.booking_payments.set('p2', { id: 'p2', wedding_key: wed.key, amount: 150000, paid_on: istDay(), mode: 'UPI' });
   await fam.reload(); await fam.waitForSelector('#bar:not([hidden])');
   ok(!(await fam.textContent('#top')).includes('Payment reminder') && (await fam.textContent('#list')).includes('On delivery'), 'paid: the reminder goes and the next payment shows');
+  { // the team with their numbers, from the day before (038): today's function shows, the one weeks away does not
+    const feed = T.client_feed.get(wed.key).data, near = (feed.functions || []).filter(x => x.date >= istDay() && x.date <= istDay(1)), far = (feed.functions || []).filter(x => x.date > istDay(1));
+    const names = near.flatMap(x => (feed.team || {})[x.id] || []);
+    ok(feed.team && Object.keys(feed.team).length === (feed.functions || []).length, 'the board sends each function\'s team beside the family\'s functions');
+    if (names.length) {
+      const tt = await fam.textContent('#team');
+      ok(names.every(t => tt.includes(t.name)) && far.every(x => !tt.includes(x.name)), 'family page: "Your team" for today / tomorrow with names (' + names.map(t => t.name).join(', ') + '); later functions not yet');
+      const withNo = names.find(t => String(t.phone).replace(/\D/g, '').length >= 10);
+      if (withNo) ok(await fam.$('#team a[href^="tel:"]') && await fam.$('#team a[href^="https://wa.me/"]'), 'Call and WhatsApp buttons for each number');
+    } else ok(!(await fam.$('#team')), 'no team on the board for today / tomorrow: no team card');
+    // a team on today's function (as the board sends it) and one on a function weeks away
+    if (near.length && far.length) {
+      feed.team = Object.assign({}, feed.team, { [near[0].id]: [{ name: 'Shrey', role: 'Photo', phone: '98765 43210' }, { name: 'Raju', role: 'Assistant', phone: '' }], [far[0].id]: [{ name: 'Hidden Guy', role: 'Video', phone: '9000099999' }] });
+      await fam.reload(); await fam.waitForSelector('#team');
+      const tt = await fam.textContent('#team');
+      ok(/Shrey/.test(tt) && /Photo · 98765 43210/.test(tt) && /Raju/.test(tt) && !/Hidden Guy|9000099999/.test(tt), 'family: today\'s team with names, roles and numbers; the team of a function weeks away stays hidden');
+      ok(await fam.getAttribute('#team a[href^="tel:"]', 'href') === 'tel:+919876543210' && await fam.getAttribute('#team a[href^="https://wa.me/"]', 'href') === 'https://wa.me/919876543210' && (await fam.$$('#team a.tbtn')).length === 2, 'Call and WhatsApp for Shrey; no buttons for a person without a number');
+      if (process.env.SHOTS) await fam.screenshot({ path: path.join(SHOTS, 'client-team.png') });
+    }
+  }
   // ── after the shoot (035): services to deliver, "We paid", approval, links open at 90 % ──
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-after="' + wed.key + '"]');
   await owner.click('.sb-modal [data-after="' + wed.key + '"]'); await owner.waitForSelector('#af-svcs');
