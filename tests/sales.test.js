@@ -14,7 +14,7 @@ const T = { members: new Map(), docs: new Map(), sales_settings: new Map(), sale
 const OWNER = 'o@x.com', MGR = 'm@x.com', SUP = 's@x.com';
 [[OWNER, 'owner'], [MGR, 'manager'], [SUP, 'supervisor']].forEach(([email, role]) => T.members.set(email, { email, role }));
 T.sales_settings.set(1, { id: 1, data: { name: "Muto's Films", state: 'Uttar Pradesh', address: 'Gomti Nagar, Lucknow', pay_terms: '30% Booking Amount; 60% Before Event; 10% During Final Delivery', quote_days: 15, terms: '4- Short Event … maximum 5 hours' } });
-[['quotation', 'MTF2026-', 27245], ['invoice', 'MF/SL/26-27/', 158], ['gst_invoice', 'MF/G/26-27/', 21], ['purchase', 'PUR-', 1], ['in', 'IN-', 231], ['out', 'OUT-', 82], ['expense', 'EXP-', 341], ['transfer', 'TR-', 1]].forEach(([kind, prefix, next]) => T.sales_series.set(kind, { kind, prefix, next }));
+[['quotation', 'MTF2026-', 27245], ['invoice', 'MF/SL/26-27/', 157], ['gst_invoice', 'MF/G/26-27/', 21], ['purchase', 'PUR-', 1], ['in', 'IN-', 231], ['out', 'OUT-', 82], ['expense', 'EXP-', 341], ['transfer', 'TR-', 1]].forEach(([kind, prefix, next]) => T.sales_series.set(kind, { kind, prefix, next }));
 [['Wedding (Standard)', 'standard', 'Wedding', 180000, null], ['Engagement/Sangeet/Reception (Standard)', 'standard', 'Function', 55000, null], ['Short Event (Standard)', 'standard', 'Short event', 15000, 5],
  ['Wedding (Premium)', 'premium', 'Wedding', 260000, null], ['Short Event (Premium)', 'premium', 'Short event', 24000, 5], ['Album 50 Sheets', null, 'Album', 20000, null], ['Corporate event', null, 'Event', 10000, null]].forEach(([name, tier, category, price, hours], i) => {
   const id = uid(); T.sale_items.set(id, { id, name, tier, category, price, hours, unit: 'SSN', gst_rate: 18, team: tier ? '1 Candid Photographer, 1 Cinematographer' : null, deliverables: tier ? '25 Edited photographs' : null, active: true, sort: i });
@@ -163,9 +163,9 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
 
   // booked → bill
   await o.click('#dv-bill'); await o.waitForSelector('#de-save');
-  await o.click('#de-save'); await toastHas(o, /Made bill MF\/SL\/26-27\/158/);
+  await o.click('#de-save'); await toastHas(o, /Made bill MF\/SL\/26-27\/157/);
   const inv = D('invoice');
-  ok(inv && inv.total === 177000 && inv.from_doc === q.id && T.sales_docs.get(q.id).status === 'converted', 'bill MF/SL/26-27/158 made from it; the quotation is now Booked');
+  ok(inv && inv.total === 177000 && inv.from_doc === q.id && T.sales_docs.get(q.id).status === 'converted', 'bill MF/SL/26-27/157 made from it; the quotation is now Booked');
 
   // payment against the bill
   await o.click('#dv-pay'); await o.waitForSelector('#pf-amt');
@@ -212,7 +212,7 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
   const fam = await as(null, { width: 390, height: 844 });
   await fam.goto(B + '/bill.html?t=' + inv.token); await fam.waitForSelector('.mdoc');
   const ft = await fam.textContent('.mdoc');
-  ok(/MF\/SL\/26-27\/158/.test(ft) && /Received/.test(ft) && /₹1,27,000/.test(ft) && /HDFC0001234/.test(ft), 'the family opens the bill link: number, received, balance ₹1,27,000 and the bank to pay');
+  ok(/MF\/SL\/26-27\/157/.test(ft) && /Received/.test(ft) && /₹1,27,000/.test(ft) && /HDFC0001234/.test(ft), 'the family opens the bill link: number, received, balance ₹1,27,000 and the bank to pay');
   ok(!/GSTIN/.test(ft), 'a plain bill shows no GSTIN');
   ok(await fam.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'the bill fits a phone screen');
   await shot(fam, 'sales-bill-phone.png');
@@ -235,7 +235,7 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
 
   // the manager can work here; the supervisor cannot open it
   const m = await as(MGR); await m.goto(B + '/sales.html?tab=bills'); await m.waitForSelector('#bq');
-  ok(/MF\/SL\/26-27\/158/.test(await m.textContent('#tab-bills')), 'the manager sees the bills');
+  ok(/MF\/SL\/26-27\/157/.test(await m.textContent('#tab-bills')), 'the manager sees the bills');
   const s = await as(SUP); await s.goto(B + '/sales.html'); await s.waitForURL('**/board.html**', { timeout: 8000 }).catch(() => {});
   ok(/board\.html/.test(s.url()), 'the supervisor is sent back to the board');
 

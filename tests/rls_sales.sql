@@ -32,7 +32,7 @@ select pg_temp.check(pg_temp.fails($q$insert into sales_docs (kind, party, lines
 
 -- the bill made from it
 insert into sales_docs (kind, party, wedding_key, lines, from_doc) select 'invoice', party, wedding_key, lines, id from sales_docs where kind = 'quotation';
-select pg_temp.check((select number from sales_docs where kind = 'invoice') = 'MF/SL/26-27/158' and (select status from sales_docs where kind = 'quotation') = 'converted', 'bill MF/SL/26-27/158 is made from the quotation, which is now converted');
+select pg_temp.check((select number from sales_docs where kind = 'invoice') = 'MF/SL/26-27/157' and (select status from sales_docs where kind = 'quotation') = 'converted', 'bill MF/SL/26-27/157 is made from the quotation, which is now converted');
 
 -- GST invoices: same state = CGST + SGST, another state = IGST
 insert into sales_docs (kind, party, lines) select 'gst_invoice', id, '[{"name":"Corporate event","qty":1,"rate":10000,"gst":18}]' from parties where name = 'Mr Sharma';

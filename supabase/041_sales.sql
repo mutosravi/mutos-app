@@ -25,7 +25,7 @@ create table if not exists public.sales_series (
 );
 -- continues myBillBook's numbering (Ravi can change prefix / next number in Settings)
 insert into public.sales_series (kind, prefix, next) values
-  ('quotation', 'MTF2026-', 27245), ('invoice', 'MF/SL/26-27/', 158), ('gst_invoice', 'MF/G/26-27/', 21),
+  ('quotation', 'MTF2026-', 27245), ('invoice', 'MF/SL/26-27/', 157), ('gst_invoice', 'MF/G/26-27/', 21),
   ('purchase', 'PUR-', 1), ('in', 'IN-', 231), ('out', 'OUT-', 82), ('expense', 'EXP-', 341), ('transfer', 'TR-', 1)
 on conflict (kind) do nothing;
 
