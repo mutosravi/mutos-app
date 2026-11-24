@@ -29,6 +29,7 @@
 .dls { display: flex; flex-direction: column; gap: 8px; }
 .dl { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border-radius: 14px; background: var(--bg); }
 .dl .dl-go, .dl .dl-lock { grid-column: 1 / -1; justify-self: start; }
+.dl .dl-exp { grid-column: 1 / -1; } .dl .dl-exp.soon { color: #9a5a00; font-weight: 600; }
 .dl .dl-go { min-height: 38px; padding: 0 16px; text-decoration: none; display: inline-flex; align-items: center; }
 .dst { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 9px; white-space: nowrap; background: #eee6e3; color: var(--ink); }
 .dst.editing, .dst.wait { background: #f2dfa7; color: #5c4410; }
@@ -111,6 +112,13 @@
   const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   const wanted = new URLSearchParams(location.search).get('k') || '';
   const dayName = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  // 046: download links have a last day (expires_on); warn in the last 7 days
+  const expDay = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const expNote = e => {
+    if (!e) return '';
+    const left = Math.round((new Date(e + 'T12:00:00Z') - new Date(today + 'T12:00:00Z')) / 864e5);
+    return '<span class="meta dl-exp' + (left <= 7 ? ' soon' : '') + '">' + (left <= 0 ? '⏳ Today is the last day to download.' : left <= 7 ? '⏳ Only ' + left + ' day' + (left === 1 ? '' : 's') + ' left: download before ' + esc(expDay(e)) + '.' : 'Download before ' + esc(expDay(e)) + '.') + '</span>';
+  };
   const dblock = s => { const d = new Date(s + 'T12:00:00'); return '<span class="dblock"><b>' + d.getDate() + '</b><span>' + d.toLocaleDateString('en-IN', { month: 'short' }) + '</span></span>'; };
   let toastT = null;
   const toast = (m, bad) => { const t = $('toast'); t.textContent = m; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 4000); };
@@ -349,7 +357,9 @@
       afH += '<div class="sechead2">After the shoot</div>' + fcard('deliv', ' sec', '<span class="txt"><h2>Your photos &amp; films</h2><span class="meta">' + (ready ? ready + ' of ' + D.length + ' ready' : D.length + ' on the way') + (after.open ? '' : ' · 🔒 links open at 90% paid') + '</span></span><span class="go' + (after.open && ready ? ' ok' : '') + '">' + (after.open && ready ? 'Open' : 'See') + '</span>',
         (after.open ? '' : '<div class="lock">🔒 Your download links open once 90% is paid' + (after.need ? ' (' + inr(after.need) + ' more)' : '') + '. Paid already? Tell us under <b>' + (bk ? 'Your package' : 'Your payments') + ' → We paid</b>.</div>') +
         '<div class="dls">' + D.map(d => '<div class="dl"><div><b>' + esc(d.title) + '</b>' + (d.note ? '<div class="meta">' + esc(d.note) + '</div>' : '') + '</div><span class="dst ' + esc(d.status) + '">' + esc(SW[d.status] || d.status) + '</span>' +
-          (d.link ? '<a class="pillbtn dl-go" href="' + esc(d.link) + '" target="_blank" rel="noopener">Open ›</a>' : d.has_link ? '<span class="meta dl-lock">🔒 Opens at 90% paid</span>' : '') + '</div>').join('') + '</div>' + doneBtn);
+          (d.expired && d.has_link ? '<span class="meta dl-lock dl-exp">This download link ended on ' + esc(expDay(d.expires_on)) + '. Call Muto\'s if you still need it.</span>'
+            : d.link ? '<a class="pillbtn dl-go" href="' + esc(d.link) + '" target="_blank" rel="noopener">Open ›</a>' + expNote(d.expires_on)
+            : d.has_link ? '<span class="meta dl-lock">🔒 Opens at 90% paid</span>' + expNote(d.expires_on) : '') + '</div>').join('') + '</div>' + doneBtn);
     }
     if (bk) afH += '<div class="sechead2">Your package</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>' + (bk.package && bk.package !== 'Custom' ? esc(bk.package) : 'Package') + '</h2><span class="meta">Paid ' + inr(bk.paid) + ' of ' + inr(bk.total) + (bk.pending > 0 ? ' · ' + inr(bk.pending) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
       ((bk.items || []).length ? '<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +

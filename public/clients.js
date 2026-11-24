@@ -19,6 +19,9 @@
     return { b, paid, pending: Math.max(0, Number(b.total) - paid), overdue, next, soon: next && next.due >= t && next.due <= addDaysStr(t, 7) };
   }
   const todayIST = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  const dShort = d => new Date(String(d) + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  // 046: download links end on expires_on; expired links still saved = files to delete on Drive
+  const expiredDels = () => { const t = todayIST(); return dels.filter(d => d.link && d.expires_on && d.expires_on < t); };
   const addDaysStr = (d, n) => { const x = new Date(String(d) + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + Number(n || 0)); return x.toISOString().slice(0, 10); };
   const esc = s => { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; };
   const digits = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; if (d.length === 11 && d[0] === '0') d = '91' + d.slice(1); return d; };
@@ -106,7 +109,7 @@
   function summary() {
     if (!api) return null; const ws = weddings(), keys = new Set(ws.map(w => w.key));
     const all = bookings.map(b => money(b.wedding_key)).filter(Boolean);
-    return { requests: reqs.filter(r => r.status === 'new').length, payToCheck: claims.filter(x => x.status === 'pending').length, toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
+    return { expired: expiredDels().length, requests: reqs.filter(r => r.status === 'new').length, payToCheck: claims.filter(x => x.status === 'pending').length, toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
   }
 
   // shoots of the same family left out of a wedding (12 Nov 2026, Ravi: "I filled the Gmail … but it only shows in a single
@@ -241,6 +244,21 @@
     modal.querySelector('#rq-done').addEventListener('click', api.closeModal);
     wireReqs(modal, reqWin);
   }
+  function expTxt(exp, link) {
+    if (!exp) return 'No end date: the link works until you remove it.';
+    const t = todayIST(), left = Math.round((new Date(exp + 'T12:00:00Z') - new Date(t + 'T12:00:00Z')) / 864e5);
+    if (left < 0) return '<b style="color:#a33">Expired on ' + esc(dShort(exp)) + '.</b> The family no longer sees it.' + (link ? ' Delete the files on Drive, then clear the link (or give more days).' : '');
+    return 'The family can download till ' + esc(dShort(exp)) + (left === 0 ? ' (today is the last day)' : ' (' + left + ' day' + (left === 1 ? '' : 's') + ' left)') + '.';
+  }
+  function wireExp(root) {
+    root.querySelectorAll('.af-expq').forEach(b => { if (b._w) return; b._w = 1; b.addEventListener('click', () => {
+      const box = b.closest('.af-expbox'), inp = box.querySelector('.af-exp'), n = +b.dataset.days;
+      inp.value = n ? addDaysStr(todayIST(), n) : ''; inp.dispatchEvent(new Event('change'));
+    }); });
+    root.querySelectorAll('.af-exp').forEach(inp => { if (inp._w) return; inp._w = 1; inp.addEventListener('change', () => {
+      const row = inp.closest('.af-svc'); row.querySelector('.af-expst').innerHTML = expTxt(inp.value, row.querySelector('.af-link').value.trim());
+    }); });
+  }
   async function afterWin(w) {
     if (!w || sup()) return;
     try { await load(); } catch (e) { api.toast('Could not load: ' + (e.message || e)); return; }
@@ -255,13 +273,17 @@
     const mine = dels.filter(d => d.wedding_key === w.key), cl = claims.filter(x => x.wedding_key === w.key);
     // services: what is already listed, then the package items not listed yet (unticked)
     const fromPkg = ((bk && bk.items) || []).map(it => ({ kind: it.kind, title: (kindLabel(it.kind) + (it.per === 'function' ? ' (each function)' : '') + (it.note ? ' · ' + it.note : '')).slice(0, 80) }));
-    const rows = mine.map(d => ({ id: d.id, on: true, kind: d.kind, title: d.title, status: d.status, link: d.link || '', note: d.note || '' }))
+    const rows = mine.map(d => ({ id: d.id, on: true, kind: d.kind, title: d.title, status: d.status, link: d.link || '', note: d.note || '', exp: d.expires_on || '' }))
       .concat(fromPkg.filter(f => !mine.some(d => d.title === f.title)).map(f => ({ on: false, kind: f.kind, title: f.title, status: 'waiting', link: '', note: '' })));
     const svc = (r, i) => '<div class="sb-manage-row af-svc" data-i="' + i + '" style="display:block;padding:8px">' +
       '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" class="af-on" ' + (r.on ? 'checked' : '') + ' style="width:18px;height:18px"><b>' + esc(r.title) + '</b>' + (r.kind === 'bill' ? ' <span class="sb-manage-sub" style="display:inline">· from the bill</span>' : '') + '</label>' +
       '<div class="af-more" style="display:' + (r.on ? 'grid' : 'none') + ';grid-template-columns:auto 1fr;gap:6px;margin-top:6px"><select class="sb-field af-st">' + DSTAT.map(([k, t]) => '<option value="' + k + '"' + (r.status === k ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>' +
       '<input class="sb-field af-link" type="url" placeholder="Link (Drive, gallery…) when ready" value="' + esc(r.link) + '" data-nosuggest>' +
-      '<input class="sb-field af-note" placeholder="Note for the family (optional)" maxlength="300" value="' + esc(r.note) + '" style="grid-column:1/-1" data-nosuggest></div></div>';
+      '<input class="sb-field af-note" placeholder="Note for the family (optional)" maxlength="300" value="' + esc(r.note) + '" style="grid-column:1/-1" data-nosuggest>' +
+      '<div class="af-expbox" style="grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="sb-manage-sub" style="display:inline">Download till</span>' +
+        '<input class="sb-field af-exp" type="date" value="' + esc(r.exp || '') + '" style="width:auto;flex:0 1 160px">' +
+        [[30, '30 days'], [90, '90 days'], [180, '6 months'], [0, 'No limit']].map(([n, t]) => '<button type="button" class="sb-btn-sm secondary af-expq" data-days="' + n + '">' + t + '</button>').join('') +
+        '<span class="af-expst sb-manage-sub" style="display:block;width:100%">' + expTxt(r.exp, r.link) + '</span></div></div></div>';
     const pend = cl.filter(x => x.status === 'pending'), done = cl.filter(x => x.status !== 'pending');
     const rule = '<div class="sb-btn-row" id="af-rule" style="margin:6px 0 0">' + [['auto', 'By payment (90%)'], ['open', 'Open now'], ['closed', 'Keep closed']].map(([k, t]) =>
       '<button type="button" class="sb-btn-sm' + ((k === 'auto' && hand == null) || (k === 'open' && hand === true) || (k === 'closed' && hand === false) ? '' : ' secondary') + '" data-rule="' + k + '">' + t + '</button>').join('') + '</div>';
@@ -279,8 +301,9 @@
       '</div><div class="sb-modal-foot"><button type="button" class="secondary" id="af-back">Back</button>' + (l && (l.emails || []).length ? '<a class="sb-btn-sm wa" id="af-wa" href="#" style="align-self:center">WhatsApp</a>' : '') + '<button type="button" id="af-save">Save</button></div>', true);
     const q = x => modal.querySelector(x);
     modal.querySelectorAll('.af-on').forEach(cb => cb.addEventListener('change', () => { cb.closest('.af-svc').querySelector('.af-more').style.display = cb.checked ? 'grid' : 'none'; }));
-    q('#af-add').addEventListener('click', () => { const t = q('#af-new').value.trim(); if (!t) return; rows.push({ on: true, kind: null, title: t.slice(0, 80), status: 'waiting', link: '', note: '' }); q('#af-svcs').insertAdjacentHTML('beforeend', svc(rows[rows.length - 1], rows.length - 1)); const cb = q('#af-svcs .af-svc:last-child .af-on'); cb.addEventListener('change', () => { cb.closest('.af-svc').querySelector('.af-more').style.display = cb.checked ? 'grid' : 'none'; }); q('#af-new').value = ''; const em = q('#af-svcs .sb-modal-empty'); if (em) em.remove(); });
+    q('#af-add').addEventListener('click', () => { const t = q('#af-new').value.trim(); if (!t) return; rows.push({ on: true, kind: null, title: t.slice(0, 80), status: 'waiting', link: '', note: '' }); q('#af-svcs').insertAdjacentHTML('beforeend', svc(rows[rows.length - 1], rows.length - 1)); wireExp(modal); const cb = q('#af-svcs .af-svc:last-child .af-on'); cb.addEventListener('change', () => { cb.closest('.af-svc').querySelector('.af-more').style.display = cb.checked ? 'grid' : 'none'; }); q('#af-new').value = ''; const em = q('#af-svcs .sb-modal-empty'); if (em) em.remove(); });
     q('#af-back').addEventListener('click', open);
+    wireExp(modal);
     modal.querySelectorAll('[data-rule]').forEach(b => b.addEventListener('click', async () => {
       const v = { auto: null, open: true, closed: false }[b.dataset.rule], c = await app.client();
       const { data, error } = await c.rpc('client_deliveries_set_open', { p_key: w.key, p_open: v });
@@ -290,7 +313,7 @@
     wireClaims(modal, () => afterWin(w));
     wireReqs(modal, () => afterWin(w));
     const wa = q('#af-wa'); if (wa) {
-      const ready = mine.filter(d => d.status === 'ready' || d.status === 'delivered').map(d => d.title);
+      const t0 = todayIST(), ready = mine.filter(d => d.status === 'ready' || d.status === 'delivered').map(d => d.title + (d.link && d.expires_on && d.expires_on >= t0 ? ' (download before ' + dShort(d.expires_on) + ')' : ''));
       const msg = 'Namaste! This is Muto\'s. ' + (ready.length ? 'Ready for ' + w.title + ': ' + ready.join(', ') + '. ' : 'Updates for ' + w.title + ' are on your page. ') +
         (isOpen ? 'Open ' + linkOf() + ' and sign in with ' + l.emails.join(' or ') + ' to see and download them.' : 'They open on your page at ' + linkOf() + ' once ' + (need != null ? inr(need) + ' more is paid' : 'the payment is done') + '. You can tell us there when you pay.') + ' Thank you!';
       wa.href = 'https://wa.me/' + (digits(w.phone) || '') + '?text=' + encodeURIComponent(msg); wa.target = '_blank'; wa.rel = 'noopener';
@@ -303,12 +326,31 @@
         const r = rows[+el.dataset.i], on = el.querySelector('.af-on').checked, link = el.querySelector('.af-link').value.trim();
         if (on && link && !/^https?:\/\//i.test(link)) { errs.push(r.title + ': the link must start with https://'); continue; }
         const row = { wedding_key: w.key, kind: r.kind || null, title: r.title, status: el.querySelector('.af-st').value, link: link || null, note: el.querySelector('.af-note').value.trim() || null, sort: n };
+        const exp = el.querySelector('.af-exp').value || null; if (exp || r.exp) row.expires_on = exp;   // without 046 the column is missing: only sent when a date is used
         const res = on ? (r.id ? await c.from('client_deliveries').update(row).eq('id', r.id) : await c.from('client_deliveries').insert(row)) : r.id ? await c.from('client_deliveries').delete().eq('id', r.id) : { error: null };
-        if (res.error) errs.push(r.title + ': ' + (/client_deliveries/.test(res.error.message) ? 'run supabase/035_after_shoot.sql first' : res.error.message));
+        if (res.error) errs.push(r.title + ': ' + (/expires_on/.test(res.error.message) ? 'run supabase/046_link_expiry.sql first' : /client_deliveries/.test(res.error.message) ? 'run supabase/035_after_shoot.sql first' : res.error.message));
       }
       if (errs.length) { api.toast(errs[0]); btn.disabled = false; btn.textContent = 'Save'; return; }
       api.toast('Saved. The family sees it on their page.'); afterWin(w);
     });
+  }
+  // links past their date that are still saved (Home → Needs you → Expired download links)
+  async function expiredWin() {
+    if (!api || sup()) return;
+    try { await load(); } catch (e) { api.toast('Could not load: ' + (e.message || e)); return; }
+    const list = expiredDels().sort((a, b) => a.expires_on.localeCompare(b.expires_on)), all = weddings(true);
+    const nameOf = k => { const w = all.find(x => x.key === k), l = links.find(x => x.wedding_key === k); return (w && w.title) || (l && l.title) || k.replace(/^[a-z]:/, ''); };
+    const modal = api.makeModal(api.modalHead('Expired download links', 'The family no longer sees these links. The app cannot delete files on Google Drive: delete them there, then tap "Files deleted" (the link is cleared). Or give more days.') +
+      '<div class="sb-modal-list" id="xl-list">' + (list.length ? list.map(d => '<div class="sb-manage-row xl-row" style="display:block;padding:8px">' +
+        '<b>' + esc(nameOf(d.wedding_key)) + '</b> · ' + esc(d.title) + '<div class="sb-manage-sub">Ended ' + esc(dShort(d.expires_on)) + ' · <a href="' + esc(d.link) + '" target="_blank" rel="noopener">open the link</a></div>' +
+        '<div class="sb-btn-row" style="margin-top:6px"><button type="button" class="sb-btn-sm" data-xclr="' + d.id + '">Files deleted</button><button type="button" class="sb-btn-sm secondary" data-xmore="' + d.id + '">+30 days</button><button type="button" class="sb-btn-sm secondary" data-xaf="' + esc(d.wedding_key) + '">After shoot</button></div></div>').join('')
+        : '<p class="sb-modal-empty">No expired links. 🎉</p>') + '</div>' +
+      '<div class="sb-modal-foot"><button type="button" id="xl-done">Done</button></div>', true);
+    modal.querySelector('#xl-done').addEventListener('click', api.closeModal);
+    const upd = async (id, patch, msg) => { const c = await app.client(), { error } = await c.from('client_deliveries').update(patch).eq('id', id); if (error) { api.toast(error.message); return; } api.toast(msg); expiredWin(); };
+    modal.querySelectorAll('[data-xclr]').forEach(b => b.addEventListener('click', () => upd(b.dataset.xclr, { link: null }, 'Link cleared.')));
+    modal.querySelectorAll('[data-xmore]').forEach(b => b.addEventListener('click', () => upd(b.dataset.xmore, { expires_on: addDaysStr(todayIST(), 30) }, 'The family can download for 30 more days.')));
+    modal.querySelectorAll('[data-xaf]').forEach(b => b.addEventListener('click', () => afterWin(all.find(w => w.key === b.dataset.xaf))));
   }
   // every payment the families reported and not checked yet (Home → Needs you → Payments to check)
   async function payWin() {
@@ -724,7 +766,7 @@
   window.MUTOS_CLIENTS = {
     attach(a) { const first = !api; api = a; if (first) { load().then(() => { sync(); document.dispatchEvent(new Event('mutos:updates')); }).catch(() => {}); setInterval(() => load().then(sync).catch(() => {}), 10 * 60 * 1000); } },
     changed() { clearTimeout(this._t); this._t = setTimeout(sync, 3500); },
-    open, summary, money, payments: () => payWin(), requests: () => reqWin(), _afterWin: k => afterWin(weddings(true).find(w => w.key === k)), data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
+    open, summary, money, payments: () => payWin(), requests: () => reqWin(), expired: () => expiredWin(), _afterWin: k => afterWin(weddings(true).find(w => w.key === k)), data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
     packages() { if (!api) { alert('The board is still loading.'); return; } load().then(packagesWin).catch(e => api.toast('Could not load packages: ' + (e.message || e))); }
   };
 })();

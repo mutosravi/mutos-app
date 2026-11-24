@@ -169,7 +169,7 @@ function rpc(fn, a, e) {
       if (!fam && !staff(e) && role(e) !== 'supervisor') return { data: { error: 'Only the family\'s registered Gmail can see this.' }, error: null };
       const open = openOf(k), paid = paidOf(k);
       return { data: { open, total: b ? b.total : 0, paid, need: b && b.total > 0 ? Math.max(Math.ceil(b.total * 0.9) - paid, 0) : null, can_claim: fam && !!b,
-        deliveries: [...T.client_deliveries.values()].filter(d => d.wedding_key === k).sort((x, y) => x.sort - y.sort).map(d => ({ id: d.id, title: d.title, kind: d.kind, status: d.status, note: d.note, has_link: !!d.link, link: open || !fam ? d.link || null : null })),
+        deliveries: [...T.client_deliveries.values()].filter(d => d.wedding_key === k).sort((x, y) => x.sort - y.sort).map(d => ({ id: d.id, title: d.title, kind: d.kind, status: d.status, note: d.note, has_link: !!d.link, expires_on: d.expires_on || null, expired: !!(d.expires_on && d.expires_on < istDay()), link: !fam || (open && !(d.expires_on && d.expires_on < istDay())) ? d.link || null : null })),
         claims: [...T.client_pay_claims.values()].filter(x => x.wedding_key === k).reverse() }, error: null };
     }
     if (!fam) return { data: { error: 'Only the family\'s registered Gmail can report a payment.' }, error: null };
@@ -1157,6 +1157,33 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
   ok(await fam.getAttribute('[data-card="deliv"] .dl-go', 'href') === 'https://drive.google.com/reel' && /✓ Received/.test(await fam.textContent('#sec-pay')), 'family: the Reel link is open and the payment shows "✓ Received"');
   if (process.env.SHOTS) await fam.screenshot({ path: path.join(SHOTS, 'client-after.png'), fullPage: true });
+  { // 046: a download link has a last day; after it the family no longer gets the link and Home lists it for deleting
+    const reel = [...T.client_deliveries.values()].find(d => d.link === 'https://drive.google.com/reel');
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]');
+    await owner.waitForSelector('.sb-modal [data-after="' + wed.key + '"]'); await owner.click('.sb-modal [data-after="' + wed.key + '"]'); await owner.waitForSelector('#af-svcs');
+    const rr = '#af-svcs .af-svc:has(.af-link[value="https://drive.google.com/reel"]) ';
+    ok(/No end date/.test(await owner.textContent(rr + '.af-expst')), 'After shoot: a link without a date says it has no end date');
+    await owner.click(rr + '.af-expq[data-days="90"]');
+    ok(await owner.inputValue(rr + '.af-exp') === istDay(90) && /90 days left/.test(await owner.textContent(rr + '.af-expst')), '"90 days" fills the date and says how long the family has');
+    await owner.click('#af-save'); await owner.waitForFunction(() => /Saved/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(reel.expires_on === istDay(90), 'saved with its last day');
+    await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
+    ok(/Download before/.test(await fam.textContent('[data-card="deliv"]')) && !!(await fam.$('[data-card="deliv"] .dl-go')), 'family: "Download before <date>" under the open link');
+    reel.expires_on = istDay(3); await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
+    ok(/Only 3 days left/.test(await fam.textContent('[data-card="deliv"] .dl-exp.soon')), 'family: the last 7 days are flagged ("Only 3 days left")');
+    reel.expires_on = istDay(-1); await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
+    ok(!(await fam.$('[data-card="deliv"] .dl-go')) && /link ended on/.test(await fam.textContent('[data-card="deliv"]')), 'family: after the date the link is gone ("ended on …, call Muto\'s")');
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="explinks"]', { timeout: 20000 });
+    ok(/Expired download links/.test(await owner.textContent('[data-need="explinks"]')), 'admin Home → Needs you: "Expired download links"');
+    await owner.click('[data-need="explinks"]'); await owner.waitForSelector('#xl-list .xl-row');
+    await owner.click('#xl-list [data-xmore]'); await owner.waitForFunction(() => /30 more days/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(reel.expires_on === istDay(30) && reel.link, '"+30 days" gives the family the link back for 30 days');
+    reel.expires_on = istDay(-1); await owner.evaluate(() => window.MUTOS_CLIENTS.expired()); await owner.waitForSelector('#xl-list [data-xclr]');
+    await owner.click('#xl-list [data-xclr]'); await owner.waitForFunction(() => /Link cleared/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(!reel.link, '"Files deleted" clears the link');
+    reel.link = 'https://drive.google.com/reel'; reel.expires_on = null; await owner.evaluate(() => window.MUTOS_CLIENTS.expired && document.querySelector('#xl-done') && document.querySelector('#xl-done').click());
+    await fam.reload(); await fam.waitForSelector('[data-open="deliv"]');
+  }
   { // 044: once a function's day is over it cannot be changed; when all are over the page shows deliveries, payments, bills and "Need something?"
     const fd = T.client_feed.get(wed.key).data, keepDates = fd.functions.map(x => x.date);
     fd.functions.forEach((x, i) => { x.date = istDay(-5 + i * 0); });
