@@ -126,7 +126,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   p = await as('stranger@gmail.com');
   await p.goto(B + '/');
   await p.waitForSelector('#unknown:not([hidden])');
-  ok((await p.textContent('#unk-email')) === 'stranger@gmail.com', 'unknown Google account: asked to send address to Ravi');
+  ok((await p.textContent('#unk-email')) === 'stranger@gmail.com' && /not on Muto's app yet/.test(await p.textContent('#unknown')) && !/Ravi|team list/.test(await p.textContent('#unknown')), 'unknown Google account: "not on Muto\'s app yet … share it with Muto\'s" (no personal name)');
   await p.goto(B + '/board.html'); await p.waitForURL(B + '/'); ok(true, 'unknown account sent away from board');
   await p.context().close();
 

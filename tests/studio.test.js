@@ -1244,7 +1244,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   { const fd = T.client_feed.get(wed.key).data, before = JSON.stringify(fd.functions);
     fd.functions.forEach(f => { f.occasion = 'birthday'; });
     await fam.goto(B + '/client.html'); await fam.waitForSelector('.fn');
-    ok(/Your birthday/.test(await fam.textContent('#top')) && !(await fam.$('[data-card="couple"]')), 'a birthday client: "Your birthday", no couple card');
+    ok(/Your event/.test(await fam.textContent('#top')) && !/Your birthday|Your wedding/.test(await fam.textContent('#top')) && !(await fam.$('[data-card="couple"]')), 'a birthday client: "Your event" (the same words for every client), no couple card');
     fd.functions = JSON.parse(before); }
 
   // a backdated client (a year ago) added while the desk is open is offered in Add jobs, and found by typing (17 Nov 2026)
