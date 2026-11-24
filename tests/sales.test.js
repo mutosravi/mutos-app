@@ -258,6 +258,19 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
   await o.click('[data-lv="done"]'); await o.waitForSelector('#lk-list [data-unlk]');
   ok(/Mr Sharma/.test(await o.textContent('#lk-list')) && /paid/.test(await o.textContent('#lk-list')), 'Linked shows the client with its party and how much of its bills is paid');
   await o.click('#lk-done');
+  { // a party whose name shares nothing with the client is found by any part of it ("kk thukral" → "Dr. K.K. Thukral")
+    const sp = [...T.parties.values()].find(p => p.name === 'Mr Sharma'); sp.wedding_key = null;
+    const th = Object.assign({}, sp, { id: crypto.randomUUID(), name: 'Dr. K.K. Thukral', phone: '99887 76655', wedding_key: null }); T.parties.set(th.id, th);
+    await o.goto(B + '/sales.html?tab=parties&link=1'); await o.waitForSelector('#lk-list .lk-other');
+    const row = '#lk-list .lk-row[data-q*="sharma"] ';
+    await o.fill(row + '.lk-other', 'kk thukral'); await o.waitForSelector(row + '.lk-res .lk-pick');
+    ok(/Dr\. K\.K\. Thukral/.test(await o.textContent(row + '.lk-res')), 'Other party: "kk thukral" finds "Dr. K.K. Thukral" (dots and "Dr" do not matter)');
+    await o.fill(row + '.lk-other', '7665'); await o.waitForSelector(row + '.lk-res .lk-pick');
+    ok(/Thukral/.test(await o.textContent(row + '.lk-res')), '… and so does part of its phone number');
+    await o.click(row + '.lk-res .lk-pick'); await toastHas(o, /Linked Dr\. K\.K\. Thukral/);
+    ok(T.parties.get(th.id).wedding_key === 'w:sharma', 'one tap links it');
+    sp.wedding_key = 'w:sharma';
+  }
 
   const ph = await as(OWNER, { width: 390, height: 844 }); await ph.goto(B + '/sales.html'); await ph.waitForSelector('#h-collect');
   ok(await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone: the Sales desk is not wider than the screen');

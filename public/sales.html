@@ -460,9 +460,22 @@
     const wt = toks(w.title + ' ' + w.events.map(e => e.contactName || '').join(' ')), ph = new Set(w.events.map(e => last10(e.contactPhone)).filter(x => x.length === 10));
     return parties.filter(p => p.active && p.kind !== 'vendor' && !taken.has(p.id)).map(p => {
       const pt = new Set(toks(p.name)), common = toks(w.title).filter(x => pt.has(x)).length + wt.filter(x => pt.has(x)).length;
-      const score = (ph.has(last10(p.phone)) ? 100 : 0) + common * 10 + (billStats(p.id).n ? 3 : 0);
-      return { p, score, phone: ph.has(last10(p.phone)) };
+      const billTxt = new Set(toks(docs.filter(d => d.party === p.id && live(d)).map(d => (d.title || '') + ' ' + (d.lines || []).map(l => [l.name, l.event, l.desc].join(' ')).join(' ')).join(' ')));
+      const inBills = toks(w.title).filter(x => billTxt.has(x)).length;
+      const score = (ph.has(last10(p.phone)) ? 100 : 0) + common * 10 + inBills * 10 + (billStats(p.id).n ? 3 : 0);
+      return { p, score, phone: ph.has(last10(p.phone)), inBills: inBills > 0 && !common };
     }).filter(x => x.phone || x.score >= 10).sort((a, b) => b.score - a.score).slice(0, 3);
+  }
+  // 24 Nov 2026 (Ravi: "I dont see Dr K.K. thukral"): the browser's own list matched only the start of a name with its dots;
+  // this finds a party by any part of its name ("kk thukral", "thukral", "Dr K.K.") or its phone, vendors too
+  const flat = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  function partySearch(qv) {
+    const words = String(qv || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean); if (!words.length) return [];
+    const all = flat(qv);
+    return parties.map(p => { const n = flat(p.name), ph = last10(p.phone);
+      const hit = n.includes(all) || words.every(x => n.includes(x) || (x.length >= 4 && ph.includes(x)));
+      return hit ? { p, sc: (n === all ? 3 : n.startsWith(all) ? 2 : 1) + (p.active ? 1 : 0) } : null; })
+      .filter(Boolean).sort((a, b) => b.sc - a.sc || a.p.name.localeCompare(b.p.name)).slice(0, 8).map(x => x.p);
   }
   function linkClients(view) {
     view = view || 'open';
@@ -478,8 +491,9 @@
       const sg = suggestFor(w, taken);
       return '<div class="lrow lk-row" data-q="' + esc(w.title.toLowerCase()) + '" style="cursor:default;display:block">' + head +
         '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' + (sg.length ? sg.map(x => '<button type="button" class="pillbtn" data-lk="' + x.p.id + '" data-w="' + esc(w.key) + '" style="min-height:34px;padding:4px 12px;text-align:left">' +
-          esc(x.p.name) + (x.phone ? ' · 📞 same phone' : '') + ' · ' + esc(pctTxt(billStats(x.p.id))) + '</button>').join('') : '<span class="meta">No likely party found.</span>') + '</div>' +
-        '<div style="display:flex;gap:6px;margin-top:6px"><input class="in lk-other" list="dl-parties" placeholder="Other party: type its name" data-w="' + esc(w.key) + '" style="flex:1;min-width:0" autocomplete="off"><button type="button" class="pillbtn light" data-lko="' + esc(w.key) + '" style="min-height:40px">Link</button></div></div>';
+          esc(x.p.name) + (x.phone ? ' · 📞 same phone' : x.inBills ? ' · named on its bill' : '') + ' · ' + esc(pctTxt(billStats(x.p.id))) + '</button>').join('') : '<span class="meta">No likely party found.</span>') + '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:6px"><input class="in lk-other" placeholder="Other party: type any part of its name or phone" data-w="' + esc(w.key) + '" style="flex:1;min-width:0" autocomplete="off" data-nosuggest><button type="button" class="pillbtn light" data-lko="' + esc(w.key) + '" style="min-height:40px">Link</button></div>' +
+        '<div class="lk-res" data-w="' + esc(w.key) + '" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></div>';
     };
     const list = view === 'open' ? open : done;
     const bg = sheet('<h3>Link to board clients</h3><p class="sub">A client\'s photos &amp; films open for the family when its bills here are 90% paid. Link each client on the board to its party (the ones moved from myBillBook too). Tap the right party; likely ones are suggested by phone and name.</p>' +
@@ -499,15 +513,27 @@
       const p = parties.find(x => x.id === pid); if (p) p.wedding_key = key; return true;
     }
     function wireRows() {
-      bg.querySelectorAll('[data-lk]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; const w = weddings.find(x => x.key === b.dataset.w);
-        if (await setKey(b.dataset.lk, b.dataset.w)) { toast('Linked ' + partyOf(b.dataset.lk).name + ' to ' + (w ? w.title : 'the client') + '. Its deliveries follow these bills now.'); const v = q.value; close(bg); linkClients(view); const nq = document.getElementById('lk-q'); if (nq && v) { nq.value = v; nq.dispatchEvent(new Event('input')); } } else b.disabled = false; }));
+      bg.querySelectorAll('[data-lk]').forEach(b => b.addEventListener('click', () => pick(b)));
+      bg.querySelectorAll('.lk-other').forEach(inp => inp.addEventListener('input', () => {
+        const res = bg.querySelector('.lk-res[data-w="' + CSS.escape(inp.dataset.w) + '"]'), hits = partySearch(inp.value);
+        res.innerHTML = !inp.value.trim() ? '' : hits.length ? hits.map(p => '<button type="button" class="pillbtn light lk-pick" data-lk="' + p.id + '" data-w="' + esc(inp.dataset.w) + '" style="min-height:34px;padding:4px 12px;text-align:left">' +
+          esc(p.name) + (p.phone ? ' · ' + esc(p.phone) : '') + (p.kind === 'vendor' ? ' · vendor' : '') + (!p.active ? ' · closed' : '') + (p.wedding_key && p.wedding_key !== inp.dataset.w ? ' · linked to ' + esc((weddings.find(x => x.key === p.wedding_key) || { title: 'another client' }).title) : '') +
+          ' · ' + esc(pctTxt(billStats(p.id))) + '</button>').join('') : '<span class="meta">No party with that name or phone. Check the spelling, or add the party in Parties first.</span>';
+        res.querySelectorAll('[data-lk]').forEach(btn => btn.addEventListener('click', () => pick(btn)));
+      }));
       bg.querySelectorAll('[data-lko]').forEach(b => b.addEventListener('click', async () => {
-        const inp = bg.querySelector('.lk-other[data-w="' + CSS.escape(b.dataset.lko) + '"]'), name = inp.value.trim().toLowerCase(), p = parties.find(x => x.name.toLowerCase() === name);
-        if (!p) { toast('Pick a party from the list (type part of its name).', true); return; }
+        const inp = bg.querySelector('.lk-other[data-w="' + CSS.escape(b.dataset.lko) + '"]'), name = inp.value.trim().toLowerCase(), hits = partySearch(inp.value);
+        const p = parties.find(x => x.name.toLowerCase() === name) || (hits.length === 1 ? hits[0] : null);
+        if (!p) { toast(hits.length ? 'Tap the right party under the box.' : 'No party with that name. Type any part of it, e.g. "thukral".', true); return; }
         if (p.wedding_key && p.wedding_key !== b.dataset.lko && !confirm(p.name + ' is linked to another client. Move it to this one?')) return;
         if (await setKey(p.id, b.dataset.lko)) { toast('Linked ' + p.name + '.'); close(bg); linkClients(view); }
       }));
       bg.querySelectorAll('[data-unlk]').forEach(b => b.addEventListener('click', async () => { if (await setKey(b.dataset.unlk, null)) { toast('Unlinked ' + partyOf(b.dataset.unlk).name + '.'); close(bg); linkClients(view); } }));
+    }
+    async function pick(b) {
+      { const pp = partyOf(b.dataset.lk); if (pp && pp.wedding_key && pp.wedding_key !== b.dataset.w && !confirm(pp.name + ' is linked to another client. Move it to this one?')) return; }
+      { b.disabled = true; const w = weddings.find(x => x.key === b.dataset.w);
+        if (await setKey(b.dataset.lk, b.dataset.w)) { toast('Linked ' + partyOf(b.dataset.lk).name + ' to ' + (w ? w.title : 'the client') + '. Its deliveries follow these bills now.'); const v = q.value; close(bg); linkClients(view); const nq = document.getElementById('lk-q'); if (nq && v) { nq.value = v; nq.dispatchEvent(new Event('input')); } } else b.disabled = false; }
     }
     wireRows();
     return bg;
