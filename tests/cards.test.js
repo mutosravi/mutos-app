@@ -9,7 +9,7 @@ const uid = () => crypto.randomUUID(), now = () => new Date().toISOString();
 const istDay = (n = 0) => new Date(Date.now() + 330 * 60000 + n * 864e5).toISOString().slice(0, 10);
 
 // ── data ──
-const T = { uploads: new Map(), members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), client_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map() };
+const T = { uploads: new Map(), members: new Map(), people: new Map(), cards: new Map(), card_moves: new Map(), card_uses: new Map(), card_copies: new Map(), card_log: new Map(), client_log: new Map(), drives: new Map(), drive_items: new Map(), docs: new Map(), crew_feed: new Map(), client_links: new Map(), client_feed: new Map() };
 const OWNER = 'o@x.com', SUP = 's@x.com', SHREY = 'shrey@x.com', SAIF = 'saif@x.com', GEARM = 'gearm@x.com';
 [[OWNER, 'owner', null], [SUP, 'supervisor', null], [SHREY, 'crew', 'shrey'], [SAIF, 'crew', 'saif'], [GEARM, 'gear', null]].forEach(([email, role, person_key]) => T.members.set(email, { email, role, person_key }));
 const P = {}; [['Ravi', OWNER], ['Vikas', SUP], ['Shrey', SHREY], ['Saif', SAIF], ['Hamza', 'hamza@x.com'], ['Raju', GEARM]].forEach(([name, email], i) => { const id = uid(); P[name] = id; T.people.set(id, { id, code: 'M00' + (i + 1), name, email, active: true, skills: [] }); });
@@ -122,7 +122,7 @@ function rpc(fn, a, e) {
   }
   return err('unknown rpc ' + fn);
 }
-const readable = (t, e) => t === 'client_log' ? staff(e) : t === 'uploads' ? desk(e) || !!personOf(e) : ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
+const readable = (t, e) => t === 'client_log' || t === 'client_links' || t === 'client_feed' ? staff(e) : t === 'uploads' ? desk(e) || !!personOf(e) : ['cards', 'card_moves', 'card_uses', 'card_copies', 'card_log', 'drives', 'drive_items'].includes(t) ? desk(e) || !!personOf(e) : t === 'people' ? true : t === 'docs' ? desk(e) : t === 'crew_feed' ? true : t === 'members' ? true : false;
 function handle(e, d) {
   if (d.op === 'session') return e ? { id: 'u-' + e, email: e, user_metadata: { full_name: e } } : null;
   if (d.op === 'rpc') { const r = rpc(d.fn, d.args, e); return { data: r, error: null }; }
@@ -148,6 +148,12 @@ function handle(e, d) {
   if (d.table === 'people' && d.op === 'insert') {
     if (!staff(e)) return { data: null, error: { message: 'row-level security' } };
     d.rows.forEach(r => { const id = r.id || uid(); T.people.set(id, Object.assign({ code: 'M0' + (T.people.size + 1), email: null, crew_keys: [], skills: [], active: true }, r, { id })); });
+    return { data: null, error: null };
+  }
+  if ((d.table === 'client_links' || d.table === 'client_feed') && ['insert', 'upsert', 'update'].includes(d.op)) {   // studio only (004)
+    if (!staff(e)) return { data: null, error: { message: 'row-level security' } };
+    if (d.op === 'update') [...t.values()].filter(match).forEach(r => Object.assign(r, d.rows[0]));
+    else d.rows.forEach(r => t.set(r.wedding_key, Object.assign({ token: uid(), active: true, emails: [] }, t.get(r.wedding_key) || {}, r)));
     return { data: null, error: null };
   }
   if (d.table === 'cards' && d.op === 'update') { if (!staff(e)) return { data: null, error: null }; [...t.values()].filter(match).forEach(k => Object.assign(k, d.rows[0])); return { data: null, error: null }; }
@@ -371,6 +377,16 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await shot(o, 'clients-past.png');
   await o.click('#dw-back'); await o.waitForSelector('[data-cltab="past"]');
   ok(await o.isVisible('.cl-past'), 'back returns to the Past list');
+  // a past client gets a family Gmail too (24 Nov 2026, Ravi: "No option to add gmail for past clients?")
+  await o.fill('#cl-q', 'sharma'); await sleep(100);
+  await o.click('.cl-past:not([style*="none"]) [data-make]'); await o.waitForSelector('#cg-mails');
+  await o.fill('#cg-mails', 'sharma.family@gmail.com'); await o.click('#cg-save');
+  await o.waitForFunction(() => /Saved/.test((document.getElementById('sb-toast') || {}).textContent || ''), null, { timeout: 10000 });
+  await o.waitForSelector('.cl-past [data-mails]');
+  const shl = [...T.client_links.values()].find(l => /sharma/i.test(l.wedding_key));
+  const shf = shl && T.client_feed.get(shl.wedding_key);
+  ok(shl && shl.emails.join() === 'sharma.family@gmail.com' && /Signs in with: sharma\.family@gmail\.com/.test(await o.textContent('#cl-list')) && /Gmails \(1\)/.test(await o.textContent('#cl-list')), 'Past → "Add client Gmail": the family of a past client can now sign in (Gmails (1), signs in with …)');
+  ok(shf && (shf.data.functions || []).length > 0, '… and their page gets their (past) functions, so photos & films and payments show');
   // ── Rename a client (20 Nov 2026, Ravi): every shoot gets the new name, and what hangs on the old name moves with it ──
   await o.fill('#cl-q', 'verma'); await sleep(100);
   await o.click('.cl-past:not([style*="none"]) [data-ren]'); await o.waitForSelector('#rn-name');
