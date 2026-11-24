@@ -76,7 +76,7 @@
 <script src="/work-core.js"></script>
 <script src="/sales-core.js"></script>
 </head>
-<body>
+<body class="money">
 <main class="wrap wide">
   <header class="hdr topbar">
     <span class="logo" role="img" aria-label="Muto's"><b aria-hidden="true">Muto's</b></span>
@@ -614,13 +614,23 @@
       const mine = docs.filter(d => d.party === p.id && live(d) && (kind === 'in' ? isBill(d) : d.kind === 'purchase') && (bal(d) > 0 || alloc.some(a => a.doc === d.id))).sort((a, b) => a.doc_date.localeCompare(b.doc_date));
       if (!mine.length) { host.innerHTML = '<p class="meta">No open bills. It counts as an advance against the party.</p>'; return; }
       const was = id => t0 ? Number(((t0.alloc || []).find(a => a.doc === id) || {}).amount) || 0 : 0;
-      host.innerHTML = '<div class="alloc">' + mine.map(d => { const a = alloc.find(x => x.doc === d.id); return '<span><b>' + esc(d.number) + '</b> · ' + esc(S.day(d.doc_date)) + ' · due ' + inr(bal(d) + was(d.id)) + '</span><input class="in" inputmode="decimal" data-al="' + d.id + '" value="' + (a ? a.amount : '') + '" placeholder="0">'; }).join('') + '</div>' +
+      if (!handAl) autoFill(mine);
+      host.innerHTML = (!handAl && alloc.length ? '<p class="meta" id="pf-autonote">Set against the oldest bills first. Change the boxes if it was for another bill.</p>' : '') + '<div class="alloc">' + mine.map(d => { const a = alloc.find(x => x.doc === d.id); return '<span><b>' + esc(d.number) + '</b> · ' + esc(S.day(d.doc_date)) + ' · due ' + inr(bal(d) + was(d.id)) + '</span><input class="in" inputmode="decimal" data-al="' + d.id + '" value="' + (a ? a.amount : '') + '" placeholder="0">'; }).join('') + '</div>' +
         '<button type="button" class="x" id="pf-auto" style="margin-top:6px">Fill oldest first</button>';
-      host.querySelectorAll('[data-al]').forEach(inp => inp.addEventListener('input', () => { alloc = alloc.filter(a => a.doc !== inp.dataset.al); const v = Number(inp.value); if (v > 0) alloc.push({ doc: inp.dataset.al, amount: v }); }));
-      $b('pf-auto').addEventListener('click', () => { let left = Number($b('pf-amt').value) || 0; alloc = []; mine.forEach(d => { const due = bal(d) + was(d.id); const x = Math.min(due, left); if (x > 0) { alloc.push({ doc: d.id, amount: r2(x) }); left -= x; } }); drawBills(); });
+      host.querySelectorAll('[data-al]').forEach(inp => inp.addEventListener('input', () => { handAl = true; alloc = alloc.filter(a => a.doc !== inp.dataset.al); const v = Number(inp.value); if (v > 0) alloc.push({ doc: inp.dataset.al, amount: v }); }));
+      $b('pf-auto').addEventListener('click', () => { autoFill(mine); drawBills(); });
+    }
+    // a new payment is set against the party's oldest bills while the amount is typed, until a bill box is changed by hand
+    // (24 Nov 2026: a payment saved without a bill left the bill unpaid and the client's deliveries closed)
+    let handAl = !!t0 || !!pre.doc;
+    function autoFill(mine) {
+      const was = id => t0 ? Number(((t0.alloc || []).find(a => a.doc === id) || {}).amount) || 0 : 0;
+      let left = Number($b('pf-amt').value) || 0; alloc = [];
+      mine.forEach(d => { const due = bal(d) + was(d.id); const x = Math.min(due, left); if (x > 0) { alloc.push({ doc: d.id, amount: r2(x) }); left -= x; } });
     }
     drawBills();
     if ($b('pf-party')) $b('pf-party').addEventListener('change', () => { if (!t0) alloc = []; drawBills(); });
+    if ($b('pf-bills')) $b('pf-amt').addEventListener('input', () => { if (!handAl) drawBills(); });
     $b('pf-x').addEventListener('click', () => close(bg));
     $b('pf-save').addEventListener('click', async () => {
       const btn = $b('pf-save'); if (btn.disabled) return;

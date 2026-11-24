@@ -67,6 +67,11 @@ h1 { font-weight: 600; font-size: 21px; line-height: 1.25; margin: 0; letter-spa
 .stat.big { border-radius: 20px; padding: 14px; }
 .stat.big b { font-size: 28px; font-weight: 800; }
 .stat.big strong { display: block; font-size: 14px; font-weight: 700; }
+/* money pages (body.money): amounts in tiles shrink to fit a phone (24 Nov 2026: ₹62,45,909 ran past the screen edge) */
+.stat { min-width: 0; }
+body.money .stat { container-type: inline-size; }
+body.money .stat b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@supports (font-size: 1cqi) { body.money .stat b { font-size: clamp(13px, 14cqi, 22px); } body.money .stat.big b { font-size: clamp(13px, 15cqi, 28px); } }
 .chipset { display: flex; gap: 6px; flex-wrap: wrap; }
 .chipset span { font-size: 12px; background: var(--surface); border-radius: 999px; padding: 4px 11px; }
 .chipset span.dark { background: var(--ink); color: #fff; font-weight: 600; }

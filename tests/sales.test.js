@@ -233,6 +233,15 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
   ok(/₹97,000/.test(await o.textContent('#tab-money .bank')), 'and HDFC is back to ₹97,000 (1,00,000 − 3,000)');
   ok([...T.sales_log.values()].some(l => /Cancelled in IN-231: cheque bounced/.test(l.what)), 'the cancel is in Activity with its reason');
 
+  // a payment recorded from the party (not from the bill) is set against the oldest bill by itself
+  await o.click('#tab-money [data-new="in"]'); await o.waitForSelector('#pf-party');
+  await o.fill('#pf-party', 'Mr Sharma'); await o.dispatchEvent('#pf-party', 'change');
+  await o.fill('#pf-amt', '20000'); await o.waitForSelector('#pf-autonote');
+  ok(await o.inputValue('#pf-bills [data-al]') === '20000', 'payment from the party: ₹20,000 filled against the open bill as the amount is typed');
+  await o.click('#pf-save'); await toastHas(o, /IN-232/);
+  ok(T.sales_docs.get(inv.id).paid === 20000, '… and saved against it (the bill shows ₹20,000 paid)');
+
+
   // the manager can work here; the supervisor cannot open it
   const m = await as(MGR); await m.goto(B + '/sales.html?tab=bills'); await m.waitForSelector('#bq');
   ok(/MF\/SL\/26-27\/157/.test(await m.textContent('#tab-bills')), 'the manager sees the bills');
@@ -252,6 +261,7 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
 
   const ph = await as(OWNER, { width: 390, height: 844 }); await ph.goto(B + '/sales.html'); await ph.waitForSelector('#h-collect');
   ok(await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone: the Sales desk is not wider than the screen');
+  ok(await ph.evaluate(() => [...document.querySelectorAll('.stat b')].every(b => b.scrollWidth <= b.clientWidth + 1)), 'phone: every amount fits inside its tile');
   await ph.click('#tab-home [data-new="quotation"]'); await ph.waitForSelector('#de-party');
   ok(await ph.evaluate(() => document.querySelector('.sheet').scrollWidth <= document.querySelector('.sheet').clientWidth + 1), 'phone: the quotation editor fits the screen');
   await sleep(600); await shot(ph, 'sales-editor-phone.png');
