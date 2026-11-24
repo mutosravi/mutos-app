@@ -38,6 +38,7 @@
     const fire = name => { const s = snapOf(name); col(name).subs.forEach(sub => { try { sub.next(s); } catch (e) { console.error(e); } }); };
     const timers = {};
     const emit = name => { clearTimeout(timers[name]); timers[name] = setTimeout(() => fire(name), 60); }; // several changes in a row reach the board as one update
+    const sameMap = (a, b) => { if (!a || a.size !== b.size) return false; for (const [id, v] of b) { if (!a.has(id) || JSON.stringify(a.get(id)) !== JSON.stringify(v)) return false; } return true; };
     async function fetchAll(name) {
       const m = new Map(); let from = 0; const page = 1000;
       for (;;) {
@@ -61,7 +62,9 @@
       if (inflight > 0) { setTimeout(() => refreshAll(force), 1500); return; } // let this device's own saves land first
       refreshing = true;
       try {
-        for (const name of Object.keys(cols)) { const k = cols[name]; if (!k.loaded) continue; k.map = await fetchAll(name); emit(name); }
+        // only a collection that really changed is handed to the board: redrawing the whole board froze a phone for 2–3 s
+        // every time the app came back to the front, and taps in that time were lost (24 Nov 2026, Ravi: "a single click does not work")
+        for (const name of Object.keys(cols)) { const k = cols[name]; if (!k.loaded) continue; const m = await fetchAll(name); if (sameMap(k.map, m)) continue; k.map = m; emit(name); }
         lastRefresh = Date.now();
       } catch (e) { console.warn('refresh', e && e.message || e); } finally { refreshing = false; }
     }
@@ -70,7 +73,8 @@
       channel = c.channel('board-docs').on('postgres_changes', { event: '*', schema: 'public', table: 'docs' }, p => {
         const row = (p.new && p.new.collection) ? p.new : p.old; if (!row || !row.collection) return;
         const k = col(row.collection);
-        if (p.eventType === 'DELETE') k.map.delete(row.id); else k.map.set(row.id, p.new.data);
+        if (p.eventType === 'DELETE') { if (!k.map.has(row.id)) return; k.map.delete(row.id); }
+        else { if (k.map.has(row.id) && JSON.stringify(k.map.get(row.id)) === JSON.stringify(p.new.data)) return; k.map.set(row.id, p.new.data); }   // our own save coming back: already shown
         if (k.loaded) emit(row.collection);
       }).subscribe(status => {
         if (status === 'SUBSCRIBED') { if (joined) refreshAll(true); joined = true; } // re-joined: catch up on what was missed

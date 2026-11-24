@@ -714,7 +714,9 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   // does shoot a keep its people and gear away on the date of shoot b (the day before or after a)?
   function farBlocks(a, b) { const g = dayGap(a.date, b.date); return g === -1 ? farBefore(a) : g === 1 ? farAfter(a) : false; }
   function farText(ev) { return farBefore(ev) && farAfter(ev) ? 'the day before and the day after' : farBefore(ev) ? 'the day before' : 'the day after'; }
-  function dayGap(a, b) { const x = parseD(a), y = parseD(b); return x && y ? Math.round((y - x) / 86400000) : 99; }
+  const dayMs = new Map();   // 'YYYY-MM-DD' → time (dayGap runs tens of thousands of times per redraw)
+  function dayNum(d) { let v = dayMs.get(d); if (v === undefined) { const x = parseD(d); v = x ? x.getTime() : NaN; if (dayMs.size > 5000) dayMs.clear(); dayMs.set(d, v); } return v; }
+  function dayGap(a, b) { const x = dayNum(a), y = dayNum(b); return x === x && y === y ? Math.round((y - x) / 86400000) : 99; }
   function farClash(a, b) { return (farBlocks(a, b) || farBlocks(b, a)) && !samePlace(a, b) && !travelLinked(a, b); }
   function placeName(ev) { return ev.location || (isOutstation(ev) ? 'outstation' : 'Lucknow'); }
   // Earlier shoots that day in another place that share people or gear with this one: a team could be travelling between them
@@ -915,8 +917,13 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     modal.querySelector('#kc-done').addEventListener('click', () => { closeModal(); renderBoard(); });
   }
   function gearBusyAt(target) { return gearBusyElsewhere(target); }
+  let conflictMemo = null;   // set only while renderBoard draws (nothing changes the shoots in between)
   function getConflictIds(ev) {
-    const cs = new Set(), ca = new Set(), ce = new Set();
+    if (conflictMemo) { const hit = conflictMemo.get(ev); if (hit) return hit; const r = conflictIdsNow(ev); conflictMemo.set(ev, r); return r; }
+    return conflictIdsNow(ev);
+  }
+  function conflictIdsNow(ev) {
+    const cs = new Set(), ce = new Set(), ca = new Set();
     const na = new Set();   // gear short only because some of it is marked not available: a gear problem to swap, not a double booking
     if (!isActive(ev)) return { conflictShooterIds: cs, conflictAssistantIds: ca, conflictEquip: ce, naEquip: na };
     const mine = allGearIds(ev);
@@ -4405,7 +4412,9 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   function renderBoard() {
     try { updatePreBadge(); } catch (e) {}
     const sy = window.scrollY;
-    renderBoardInner();
+    // one redraw works out each shoot's double-bookings once (it was 3–4 times per shoot, against every other shoot: ~1.3 s per tap on a phone)
+    conflictMemo = new Map(); dayMs.clear();
+    try { renderBoardInner(); } finally { conflictMemo = null; }
     if (Math.abs(window.scrollY - sy) > 1) window.scrollTo(0, sy);
   }
   function renderBoardInner() {

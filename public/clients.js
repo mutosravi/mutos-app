@@ -50,19 +50,26 @@
 
   async function load() {
     const c = await app.client();
-    const [l, i] = await Promise.all([c.from('client_links').select('*'), c.from('client_itinerary').select('*')]);
+    // everything in ONE round of requests (it was five, one after another: each Clients window waited for all of them on a phone)
+    const safe = q => Promise.resolve(q).then(r => r, e => ({ error: e }));
+    const studio = !sup();
+    const [l, i, g, b, p, k, x, d, a] = await Promise.all([
+      c.from('client_links').select('*'), c.from('client_itinerary').select('*'),
+      // what the database put on the board when a family pressed Send (017_client_auto_apply.sql); fine if not set up yet
+      safe(c.from('client_apply_log').select('wedding_key, event_id, at, before, after').order('at', { ascending: false }).limit(500)),
+      // packages and payments (009_bookings.sql); fine if not set up yet
+      safe(c.from('bookings').select('*')), safe(c.from('booking_payments').select('*').order('paid_on')), safe(c.from('packages').select('*').order('name')),
+      // after the shoot (035_after_shoot.sql): payments the families reported, services to deliver; fine if not set up yet
+      studio ? safe(c.from('client_pay_claims').select('*').order('at', { ascending: false }).limit(1000)) : null,
+      studio ? safe(c.from('client_deliveries').select('*').order('sort').limit(1000)) : null,
+      // Sales desk accounts (041): approving a family's payment can also record it there (042); fine if not set up yet
+      studio ? safe(c.from('bank_accounts').select('id, name, kind, active, sort').eq('active', true).order('sort')) : null
+    ]);
     if (l.error) throw l.error;
     links = l.data || []; itin = i.error ? [] : (i.data || []);
-    // what the database put on the board when a family pressed Send (017_client_auto_apply.sql); fine if not set up yet
-    try { const g = await c.from('client_apply_log').select('wedding_key, event_id, at, before, after').order('at', { ascending: false }).limit(500); applied = g.error ? [] : (g.data || []); } catch (e) { applied = []; }
-    // packages and payments (009_bookings.sql); fine if not set up yet
-    const [b, p, k] = await Promise.all([c.from('bookings').select('*'), c.from('booking_payments').select('*').order('paid_on'), c.from('packages').select('*').order('name')]);
+    applied = g.error ? [] : (g.data || []);
     bookings = b.error ? [] : (b.data || []); payments = p.error ? [] : (p.data || []); packages = k.error ? [] : (k.data || []);
-    // after the shoot (035_after_shoot.sql): payments the families reported, services to deliver; fine if not set up yet
-    if (!sup()) { try { const [x, d] = await Promise.all([c.from('client_pay_claims').select('*').order('at', { ascending: false }).limit(1000), c.from('client_deliveries').select('*').order('sort').limit(1000)]);
-      claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); } catch (e) { claims = []; dels = []; }
-      // Sales desk accounts (041): approving a family's payment can also record it there (042); fine if not set up yet
-      try { const a = await c.from('bank_accounts').select('id, name, kind, active, sort').eq('active', true).order('sort'); accounts = a.error ? [] : (a.data || []); } catch (e) { accounts = []; } }
+    if (studio) { claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); accounts = a.error ? [] : (a.data || []); }
   }
   const ACC_KEY = 'mutos-pay-account';
   const lastAcc = () => { try { return localStorage.getItem(ACC_KEY) || ''; } catch (e) { return ''; } };

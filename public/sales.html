@@ -180,7 +180,9 @@
     return bg;
   }
   const close = bg => { if (bg && bg.parentNode) bg.remove(); };
-  async function refresh() { try { await load(); } catch (e) { toast('Could not reload: ' + (e.message || e), true); } render(); }
+  // redraw only when something really changed: a redraw under the finger loses the tap (24 Nov 2026, Ravi: "a single click does not work")
+  const dataSig = () => JSON.stringify([settings, series, items, parties, docs, txns, banks]);
+  async function refresh(always) { const before = dataSig(); try { await load(); } catch (e) { toast('Could not reload: ' + (e.message || e), true); } if (always !== false || dataSig() !== before) render(); }
   const errMsg = e => (e && (e.message || e.details)) || String(e);
   const phone10 = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
   const shareUrl = d => location.origin + '/bill.html?t=' + d.token;
@@ -760,10 +762,10 @@
   if (qs.get('new') && ['quotation', 'invoice', 'gst_invoice'].includes(qs.get('new'))) { await loadBoard(); const k = qs.get('client'), p = k && parties.find(x => x.wedding_key === k); editDoc(qs.get('new'), null, { copy: { party: p ? p.id : null, lines: [], wedding_key: k || null } }); }
   // live: another person's entries show up without reloading
   try {
-    const again = () => { clearTimeout(window.__sd); window.__sd = setTimeout(async () => { if (document.querySelector('.sheet-bg')) return; await refresh(); }, 900); };
+    const again = () => { clearTimeout(window.__sd); window.__sd = setTimeout(async () => { if (document.querySelector('.sheet-bg')) return; await refresh(false); }, 900); };
     let ch = c.channel('sales-desk'); ['sales_docs', 'money_txns', 'parties', 'bank_accounts', 'sale_items'].forEach(t => { ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, again); }); ch.subscribe();
   } catch (e) {}
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.querySelector('.sheet-bg')) refresh(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.querySelector('.sheet-bg')) refresh(false); });
 })();
 </script>
 </body>

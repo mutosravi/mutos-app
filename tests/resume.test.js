@@ -54,6 +54,11 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   docs.get('events/' + a).data = Object.assign({}, docs.get('events/' + a).data, { location: 'Changed again' });
   await p.evaluate(() => window.dispatchEvent(new Event('online'))); await sleep(2500);
   ok(await locOf(a) === 'Changed again', 'coming back online also catches up');
+  // nothing changed elsewhere: coming back must NOT redraw the board (a redraw froze a phone 2–3 s and lost taps; 24 Nov 2026)
+  await sleep(3200);
+  await p.evaluate(() => { window.__mut = 0; new MutationObserver(l => { window.__mut += l.length; }).observe(document.getElementById('sb-board'), { childList: true, subtree: true }); });
+  await wake(); await sleep(2500);
+  ok(await p.evaluate(() => window.__mut) === 0, 'coming back with nothing changed does not redraw the board');
   ok(errs.length === 0, 'no page errors ' + errs.slice(0, 2).join(' | '));
   await b.close(); server.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
