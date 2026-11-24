@@ -104,7 +104,7 @@
   // used while another tab is showing, it brings the Home & Board tab back first
   document.addEventListener('click', e => {
     if (active === 'home' || !e.target.closest) return;
-    const bar = e.target.closest('#mutos-bar'); if (!bar || e.target.closest('#mutos-back')) return;
+    const bar = e.target.closest('#mutos-bar'); if (!bar || e.target.closest('#mutos-back, #mutos-reload')) return;
     show('home');
   }, true);
   // links and buttons on the main page that would leave it open a tab instead

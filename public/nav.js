@@ -31,6 +31,22 @@
     if (top.isConnected) top.remove();
     return true;
   }
+  // something typed in an open window that a reload would lose
+  const typedInWindow = () => openOnes().some(w => [...w.querySelectorAll('input, textarea')].some(i => i.type !== 'checkbox' && i.type !== 'radio' && i.type !== 'file' && i.value !== i.defaultValue && i.value.trim() !== ''));
+  async function reload() {
+    const r = document.getElementById('mutos-reload');
+    if (typedInWindow() && !confirm('Reload? What you typed in the open window will be lost.')) return;
+    if (r) { r.disabled = true; r.classList.add('spin'); }
+    // the board saves 0.35 s after a change: wait until nothing has been on its way for 0.6 s (at most 8 s)
+    const busy = () => (window.__mutosInflight ? window.__mutosInflight() : 0) > 0;
+    const until = Date.now() + 8000; let quietSince = busy() ? 0 : Date.now();
+    while (Date.now() < until) {
+      await new Promise(x => setTimeout(x, 100));
+      if (busy()) quietSince = 0; else if (!quietSince) quietSince = Date.now(); else if (Date.now() - quietSince >= 600) break;
+    }
+    leaving = true;
+    location.reload();
+  }
   function back() {
     if (closeTop()) return;
     if (canBack()) { history.back(); return; }
@@ -76,10 +92,17 @@
     b.type = 'button'; b.id = 'mutos-back'; b.className = 'mutos-back'; b.setAttribute('aria-label', 'Back'); b.innerHTML = '<span aria-hidden="true">‹</span> Back';
     b.addEventListener('click', back);
     host.insertBefore(b, host.firstChild);
+    // ↻ Reload, right after Back (24 Nov 2026, Ravi: "Reload button on every desk or page"; a Home Screen app has no reload of its own).
+    // Inside a computer tab it reloads only that tab. It first lets the board's last saves reach the server.
+    const r = document.createElement('button');
+    r.type = 'button'; r.id = 'mutos-reload'; r.className = 'mutos-back mutos-reload'; r.title = 'Reload'; r.setAttribute('aria-label', 'Reload this page');
+    r.innerHTML = '<span aria-hidden="true">↻</span>';
+    r.addEventListener('click', reload);
+    b.after(r);
     paint(); return true;
   }
   const style = document.createElement('style');
-  style.textContent = '.mutos-back{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 12px 0 8px;margin-right:6px;border:0;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(42,30,34,.12);color:#2a1e22;font:600 14px/1 inherit;cursor:pointer;flex:0 0 auto}.mutos-back span{font-size:22px;line-height:1;margin-top:-2px}.mutos-back[hidden]{display:none}';
+  style.textContent = '.mutos-reload{padding:0;width:36px;justify-content:center;margin-left:-2px}.mutos-reload span{font-size:19px;margin-top:0}.mutos-reload.spin span{display:inline-block;animation:mutosSpin .8s linear infinite}@keyframes mutosSpin{to{transform:rotate(360deg)}}' + '.mutos-back{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 12px 0 8px;margin-right:6px;border:0;border-radius:999px;background:#fff;box-shadow:0 1px 3px rgba(42,30,34,.12);color:#2a1e22;font:600 14px/1 inherit;cursor:pointer;flex:0 0 auto}.mutos-back span{font-size:22px;line-height:1;margin-top:-2px}.mutos-back[hidden]{display:none}';
   document.head.appendChild(style);
   // On a phone every window opens as its own page with "‹ Back" on top, not as a pop-up over the page
   // (23 Nov 2026, Ravi: "Do not open anything as pop up. Open them as the next page with back option.")
