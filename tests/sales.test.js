@@ -203,7 +203,7 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
   await o.fill('#de-party', 'Mr Sharma');
   await o.fill('#de-lines [data-i="0"] [data-k="name"]', 'Wedding (Premium)'); await o.dispatchEvent('#de-lines [data-i="0"] [data-k="name"]', 'change');
   await o.click('#de-add'); await o.fill('#de-lines [data-i="1"] [data-k="name"]', 'Short Event (Standard)'); await o.dispatchEvent('#de-lines [data-i="1"] [data-k="name"]', 'change');
-  ok(/cannot be on one bill/.test(await o.textContent('#de-tot')), 'mixing Standard and Premium shows a warning');
+  ok(await o.waitForFunction(() => /cannot be on one bill/.test((document.getElementById('de-tot') || {}).textContent || ''), null, { timeout: 5000 }).then(() => true, () => false), 'mixing Standard and Premium shows a warning');
   await o.click('#de-save'); await toastHas(o, /cannot be on one bill/);
   ok([...T.sales_docs.values()].filter(x => x.kind === 'quotation').length === 1, 'and is not saved');
   await o.evaluate(() => document.querySelectorAll('.sheet-bg').forEach(x => x.remove()));

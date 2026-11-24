@@ -2,7 +2,7 @@
 // time, venue, address, contact and notes (public/client.html). The board keeps their function list up to date (client_feed).
 (function () {
   const app = window.mutosApp;
-  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [], claims = [], dels = [];
+  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [], claims = [], dels = [], accounts = [];
   const sup = () => window.__mutosRole === 'supervisor'; // supervisor: Gmails, WhatsApp, answers, editing the form; no money
   const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const KIND_LABELS = [['reel', 'Reel'], ['teaser', 'Teaser'], ['trailer', 'Trailer'], ['highlight', 'Highlight film'], ['full', 'Full film'], ['top', 'Top selection'], ['lr', 'LR edit'], ['album_sel', 'Album selection'], ['album', 'Album design'], ['other', 'Other']];
@@ -60,8 +60,16 @@
     bookings = b.error ? [] : (b.data || []); payments = p.error ? [] : (p.data || []); packages = k.error ? [] : (k.data || []);
     // after the shoot (035_after_shoot.sql): payments the families reported, services to deliver; fine if not set up yet
     if (!sup()) { try { const [x, d] = await Promise.all([c.from('client_pay_claims').select('*').order('at', { ascending: false }).limit(1000), c.from('client_deliveries').select('*').order('sort').limit(1000)]);
-      claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); } catch (e) { claims = []; dels = []; } }
+      claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); } catch (e) { claims = []; dels = []; }
+      // Sales desk accounts (041): approving a family's payment can also record it there (042); fine if not set up yet
+      try { const a = await c.from('bank_accounts').select('id, name, kind, active, sort').eq('active', true).order('sort'); accounts = a.error ? [] : (a.data || []); } catch (e) { accounts = []; } }
   }
+  const ACC_KEY = 'mutos-pay-account';
+  const lastAcc = () => { try { return localStorage.getItem(ACC_KEY) || ''; } catch (e) { return ''; } };
+  const accSelect = id => { const want = lastAcc(), pick = accounts.some(a => a.id === want) ? want : (accounts[0] || {}).id;
+    return accounts.length ? '<select class="sb-field" data-cacc="' + esc(id) + '" aria-label="Into which account" style="max-width:190px">' +
+      accounts.map(a => '<option value="' + esc(a.id) + '"' + (a.id === pick ? ' selected' : '') + '>Into ' + esc(a.name) + '</option>').join('') +
+      '<option value="">Package only (not in Sales desk)</option></select>' : ''; };
   // keep each linked wedding's function list fresh for the family
   async function sync() {
     if (!api) return;
@@ -174,7 +182,7 @@
     '<b>' + inr(x.amount) + '</b> · ' + esc(x.mode) + ' · paid ' + esc(dayName(x.paid_on)) + (x.upi_ref ? ' · ref ' + esc(x.upi_ref) : '') + (x.note ? '<br><span class="sb-manage-sub">' + esc(x.note) + '</span>' : '') +
     '<br><span class="sb-manage-sub">Reported by ' + esc(x.by_email) + ' · ' + esc(new Date(x.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '</span>' +
     (x.status === 'pending' ? '<div class="sb-btn-row" style="margin-top:6px;align-items:center">' + (x.photo ? '<button type="button" class="sb-btn-sm secondary" data-cph="' + esc(x.photo) + '">See screenshot</button>' : '<span class="sb-manage-sub">No screenshot</span>') +
-      '<input class="sb-field" type="number" min="1" step="1" data-camt="' + esc(x.id) + '" value="' + esc(String(Math.round(x.amount))) + '" style="width:110px" aria-label="Amount received">' +
+      '<input class="sb-field" type="number" min="1" step="1" data-camt="' + esc(x.id) + '" value="' + esc(String(Math.round(x.amount))) + '" style="width:110px" aria-label="Amount received">' + accSelect(x.id) +
       '<button type="button" class="sb-btn-sm" data-cok="' + esc(x.id) + '">Approve</button><button type="button" class="sb-btn-sm secondary" data-cno="' + esc(x.id) + '">Not received</button></div>'
       : '<br><span class="pill ' + (x.status === 'approved' ? 'ok' : 'no') + '" style="font-size:11px">' + (x.status === 'approved' ? 'Approved' : 'Not received') + '</span>' + (x.why ? ' <span class="sb-manage-sub" style="display:inline">' + esc(x.why) + '</span>' : '') + (x.photo ? ' <button type="button" class="sb-btn-sm secondary" data-cph="' + esc(x.photo) + '">Screenshot</button>' : '')) + '</div>';
   function wireClaims(modal, after) {
@@ -182,9 +190,12 @@
     const decide = async (id, ok) => {
       const why = ok ? '' : prompt('Why is it not received? The family sees this.', 'Not received in our account yet'); if (!ok && !why) return;
       const amtEl = modal.querySelector('[data-camt="' + id + '"]'), amt = amtEl ? Number(amtEl.value) : null;
-      const c = await app.client(), { data, error } = await c.rpc('client_pay_decide', { p_claim: id, p_approve: ok, p_why: why || null, p_amount: ok && amt > 0 ? amt : null });
-      if (error || !data || data.error) { api.toast(error ? error.message : data.error); return; }
-      api.toast(ok ? 'Approved: added to Package & payments.' + (data.open ? ' Deliveries are open for the family.' : '') : 'Marked not received. The family sees why.');
+      const accEl = modal.querySelector('[data-cacc="' + id + '"]'), acc = ok && accEl ? accEl.value || null : null;
+      if (accEl && ok) { try { localStorage.setItem(ACC_KEY, accEl.value); } catch (e) {} }
+      const args = { p_claim: id, p_approve: ok, p_why: why || null, p_amount: ok && amt > 0 ? amt : null }; if (acc) args.p_account = acc;
+      const c = await app.client(), { data, error } = await c.rpc('client_pay_decide', args);
+      if (error || !data || data.error) { api.toast(error ? (acc && /client_pay_decide/.test(error.message) ? 'Run supabase/042_bill_deliveries.sql first (or pick "Package only").' : error.message) : data.error); return; }
+      api.toast(ok ? 'Approved: added to Package & payments' + (data.txn ? ' and the Sales desk (' + data.txn + ')' : '') + '.' + (data.open ? ' Deliveries are open for the family.' : '') : 'Marked not received. The family sees why.');
       await load(); after();
     };
     modal.querySelectorAll('[data-cok]').forEach(b => b.addEventListener('click', () => decide(b.dataset.cok, true)));
@@ -202,7 +213,7 @@
     const rows = mine.map(d => ({ id: d.id, on: true, kind: d.kind, title: d.title, status: d.status, link: d.link || '', note: d.note || '' }))
       .concat(fromPkg.filter(f => !mine.some(d => d.title === f.title)).map(f => ({ on: false, kind: f.kind, title: f.title, status: 'waiting', link: '', note: '' })));
     const svc = (r, i) => '<div class="sb-manage-row af-svc" data-i="' + i + '" style="display:block;padding:8px">' +
-      '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" class="af-on" ' + (r.on ? 'checked' : '') + ' style="width:18px;height:18px"><b>' + esc(r.title) + '</b></label>' +
+      '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" class="af-on" ' + (r.on ? 'checked' : '') + ' style="width:18px;height:18px"><b>' + esc(r.title) + '</b>' + (r.kind === 'bill' ? ' <span class="sb-manage-sub" style="display:inline">· from the bill</span>' : '') + '</label>' +
       '<div class="af-more" style="display:' + (r.on ? 'grid' : 'none') + ';grid-template-columns:auto 1fr;gap:6px;margin-top:6px"><select class="sb-field af-st">' + DSTAT.map(([k, t]) => '<option value="' + k + '"' + (r.status === k ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>' +
       '<input class="sb-field af-link" type="url" placeholder="Link (Drive, gallery…) when ready" value="' + esc(r.link) + '" data-nosuggest>' +
       '<input class="sb-field af-note" placeholder="Note for the family (optional)" maxlength="300" value="' + esc(r.note) + '" style="grid-column:1/-1" data-nosuggest></div></div>';

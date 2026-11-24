@@ -369,7 +369,7 @@
           '<label>Discount %<input class="in" data-k="disc" inputmode="decimal" value="' + esc(l.disc || '') + '"></label>' +
           (gst || pur ? '<label>GST %<select class="in" data-k="gst">' + (pur ? [0, 5, 12, 18, 28] : [0, 5, 12, 18, 28]).map(g => '<option' + (Number(l.gst == null ? (pur ? 0 : 18) : l.gst) === g ? ' selected' : '') + '>' + g + '</option>').join('') + '</select></label>' : '') +
           '<label class="wide">Team / description<textarea class="in" data-k="desc" rows="2">' + esc(l.desc || '') + '</textarea></label>' +
-          (!pur ? '<label class="wide">Deliverables<textarea class="in" data-k="deliverables" rows="2">' + esc(l.deliverables || '') + '</textarea></label>' : '') + '</div>' +
+          (!pur ? '<label class="wide">Deliverables <span class="meta">(on a bill, each one, split by commas, goes on the client\'s After shoot list)</span><textarea class="in" data-k="deliverables" rows="2">' + esc(l.deliverables || '') + '</textarea></label>' : '') + '</div>' +
           '<button type="button" class="x" data-rm="' + i + '">Remove line</button>' + (i > 0 ? ' · <button type="button" class="x" data-up="' + i + '">Move up</button>' : '') + '</div>';
       }).join('');
       $b('de-lines').querySelectorAll('[data-k]').forEach(inp => {

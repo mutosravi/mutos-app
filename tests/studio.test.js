@@ -9,7 +9,8 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes', 'team_photos'].forEach(t => { T[t] = new Map(); });
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes', 'team_photos', 'bank_accounts', 'money_txns'].forEach(t => { T[t] = new Map(); });
+T.bank_accounts.set('acc-hdfc', { id: 'acc-hdfc', name: 'HDFC Current', kind: 'bank', active: true, sort: 0 }); T.bank_accounts.set('acc-cash', { id: 'acc-cash', name: 'Cash', kind: 'cash', active: true, sort: 1 });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
 let seq = 1; const newId = () => 'id' + (seq++);
@@ -146,9 +147,11 @@ function rpc(fn, a, e) {
       if (!staff(e)) return { data: { error: 'Only the admin or the manager can approve a payment.' }, error: null };
       const x = T.client_pay_claims.get(a.p_claim); if (!x) return { data: { error: 'Unknown payment.' }, error: null };
       if (x.status !== 'pending') return { data: { error: 'Already ' + x.status + '.' }, error: null };
-      if (a.p_approve) { const id = crypto.randomUUID(), amt = a.p_amount || x.amount; T.booking_payments.set(id, { id, wedding_key: x.wedding_key, amount: amt, paid_on: x.paid_on, mode: x.mode, note: 'Family reported' + (x.upi_ref ? ' · ref ' + x.upi_ref : ''), by_email: e, at: new Date().toISOString() }); Object.assign(x, { status: 'approved', decided_by: e, payment: id }); }
+      let txn = null;   // 042: with an account it is also a Payment In on the Sales desk (one package payment either way)
+      if (a.p_approve && a.p_account !== undefined && a.p_account !== null) { if (!T.bank_accounts.has(a.p_account)) return { data: { error: 'Pick the account the money came into.' }, error: null }; txn = 'IN-' + (231 + T.money_txns.size); T.money_txns.set(txn, { id: txn, number: txn, kind: 'in', amount: a.p_amount || x.amount, account: a.p_account }); }
+      if (a.p_approve) { const id = crypto.randomUUID(), amt = a.p_amount || x.amount; T.booking_payments.set(id, { id, wedding_key: x.wedding_key, amount: amt, paid_on: x.paid_on, mode: x.mode, note: 'Family reported' + (txn ? ' · ' + txn : '') + (x.upi_ref ? ' · ref ' + x.upi_ref : ''), by_email: e, at: new Date().toISOString() }); Object.assign(x, { status: 'approved', decided_by: e, payment: id, txn }); }
       else { if (!a.p_why || a.p_why.trim().length < 3) return { data: { error: 'Write why, so the family knows.' }, error: null }; Object.assign(x, { status: 'rejected', decided_by: e, why: a.p_why }); }
-      return { data: { ok: true, open: openOf(x.wedding_key) }, error: null };
+      return { data: { ok: true, open: openOf(x.wedding_key), txn }, error: null };
     }
     if (fn === 'client_deliveries_set_open') { if (!staff(e)) return { data: { error: 'Only the admin or the manager can do this.' }, error: null }; const l = T.client_links.get(a.p_key); if (!l) return { data: { error: 'Add the family\'s Gmail first.' }, error: null }; l.deliveries_open = a.p_open; return { data: { ok: true, open: openOf(a.p_key) }, error: null }; }
     const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active); if (!l) return { data: { error: 'This page is not active.' }, error: null };
@@ -1101,8 +1104,11 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="paycheck"]', { timeout: 20000 });
   ok(/Payments to check/.test(await owner.textContent('[data-need="paycheck"]')), 'Home → Needs you: "Payments to check"');
   await owner.click('[data-need="paycheck"]'); await owner.waitForSelector('#pay-list [data-cok]');
+  ok(/Into HDFC Current/.test(await owner.textContent('#pay-list [data-cacc="' + claim.id + '"]')) && /Package only/.test(await owner.textContent('#pay-list [data-cacc="' + claim.id + '"]')), 'approve row: "Into HDFC Current" / Cash / Package only');
+  await owner.selectOption('#pay-list [data-cacc="' + claim.id + '"]', 'acc-cash');
   await owner.click('#pay-list [data-cok="' + claim.id + '"]'); await owner.waitForFunction(() => /Deliveries are open/.test((document.getElementById('sb-toast') || {}).textContent || ''));
   ok(claim.status === 'approved' && [...T.booking_payments.values()].some(p => p.id === claim.payment && p.amount === 20000), 'owner approves: it becomes a payment in Package & payments, and the deliveries open (90%)');
+  ok(claim.txn === 'IN-231' && T.money_txns.get('IN-231').account === 'acc-cash' && /Sales desk \(IN-231\)/.test(await owner.textContent('#sb-toast')) && await owner.evaluate(() => localStorage.getItem('mutos-pay-account')) === 'acc-cash', '042: … and a Payment In IN-231 into the account picked (Cash), remembered for next time');
   await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
   ok(await fam.getAttribute('[data-card="deliv"] .dl-go', 'href') === 'https://drive.google.com/reel' && /✓ Received/.test(await fam.textContent('#sec-pay')), 'family: the Reel link is open and the payment shows "✓ Received"');
   if (process.env.SHOTS) await fam.screenshot({ path: path.join(SHOTS, 'client-after.png'), fullPage: true });
