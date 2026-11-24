@@ -9,9 +9,9 @@ bk.events.forEach(e => docs.set('events/' + e.id, { collection: 'events', id: e.
 bk.shooters.forEach(e => docs.set('shooters/' + e.id, { collection: 'shooters', id: e.id, data: e }));
 bk.equipment.forEach(e => docs.set('gear/' + e.id, { collection: 'gear', id: e.id, data: e }));
 const members = new Map([[OWNER, { email: OWNER, role: 'owner' }]]);
-let slow = 60;
+let slow = 60, signedIn = true;
 async function handle(d) {
-  if (d.op === 'session') return { id: 'u1', email: OWNER, user_metadata: {} };
+  if (d.op === 'session') return signedIn ? { id: 'u1', email: OWNER, user_metadata: {} } : null;
   await sleep(slow);
   const t = d.table === 'docs' ? docs : d.table === 'members' ? members : new Map();
   const match = r => d.filters.every(([op, c, v]) => op === 'eq' ? r[c] === v : op === 'gte' ? String(r[c]) >= v : v.includes(r[c]));
@@ -59,6 +59,14 @@ const server = http.createServer((q, s) => { let p = q.url.split('?')[0]; if (p 
   await p.evaluate(() => { window.__mut = 0; new MutationObserver(l => { window.__mut += l.length; }).observe(document.getElementById('sb-board'), { childList: true, subtree: true }); });
   await wake(); await sleep(2500);
   ok(await p.evaluate(() => window.__mut) === 0, 'coming back with nothing changed does not redraw the board');
+  // the sign-in ends on its own (a failed renewal): say so, with "Sign in again" back to this page (24 Nov 2026)
+  signedIn = false; await p.evaluate(() => window.__authFire('SIGNED_OUT', null));
+  await p.waitForSelector('#mutos-signedout', { timeout: 5000 });
+  ok(/You were signed out/.test(await p.textContent('#mutos-signedout')), 'signed out in the background: "You were signed out … Sign in again" shows');
+  await p.evaluate(() => { window.__noNav = 1; }); await p.click('#mutos-signedout button');
+  await p.waitForURL(u => !/board\.html/.test(String(u)), { timeout: 5000 }).catch(() => {});
+  ok(await p.evaluate(() => sessionStorage.getItem('mutos-return')) === '/board.html#board', '"Sign in again" remembers this page to come back to');
+  signedIn = true;
   ok(errs.length === 0, 'no page errors ' + errs.slice(0, 2).join(' | '));
   await b.close(); server.close();
   console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

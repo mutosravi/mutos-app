@@ -26,6 +26,7 @@
     return b;
   }
   const rt = [];
+  window.__authFire = (ev, s) => (window.__authCbs || []).forEach(f => { try { f(ev, s); } catch (e) { console.error(e); } });
   window.__rtFire = p => rt.forEach(f => { try { f(p); } catch (e) { console.error(e); } });
   window.__mutosTestClient = {
     from: builder,
@@ -33,7 +34,8 @@
     auth: {
       async getSession() { const u = await window.__mockCall({ op: 'session' }); return { data: { session: u ? { user: u, access_token: 'test-token' } : null } }; },
       async signInWithOAuth() { await window.__mockCall({ op: 'signin' }); location.href = '/'; },
-      async signOut() { await window.__mockCall({ op: 'signout' }); }
+      async signOut() { await window.__mockCall({ op: 'signout' }); },
+      onAuthStateChange(cb) { (window.__authCbs = window.__authCbs || []).push(cb); return { data: { subscription: { unsubscribe() {} } } }; }
     },
     channel() { const ch = { on(ev, filter, cb) { rt.push(cb); return ch; }, subscribe(cb) { if (cb) setTimeout(() => cb('SUBSCRIBED'), 0); return ch; } }; return ch; }
   };

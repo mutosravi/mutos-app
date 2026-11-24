@@ -130,7 +130,7 @@
   const sortSel = (id, v) => '<select class="sb-field" id="' + id + '" aria-label="Sort" style="flex:0 0 auto;max-width:170px">' + SORTS.map(([k, l]) => '<option value="' + k + '"' + (k === v ? ' selected' : '') + '>Sort: ' + esc(l) + '</option>').join('') + '</select>';
   async function open() {
     if (!api) { alert('The board is still loading.'); return; }
-    try { await load(); } catch (e) { api.toast('Could not load clients: ' + (e.message || e) + '. Run supabase/004_studio.sql first.'); return; }
+    try { await load(); } catch (e) { const why = app.whyRefused ? await app.whyRefused(e) : null; api.toast(why || 'Could not load clients: ' + (e.message || e) + (/does not exist/.test(String(e.message || e)) ? '. Run supabase/004_studio.sql first.' : '')); return; }
     sync();
     // Coming up | Past (12 Nov 2026, Ravi: "what about clients? I need to see data copied"): past weddings with Data, History and payments
     const today = api.todayStr(), past = clientsTab === 'past';
