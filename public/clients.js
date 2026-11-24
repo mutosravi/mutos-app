@@ -250,7 +250,15 @@
     if (left < 0) return '<b style="color:#a33">Expired on ' + esc(dShort(exp)) + '.</b> The family no longer sees it.' + (link ? ' Delete the files on Drive, then clear the link (or give more days).' : '');
     return 'The family can download till ' + esc(dShort(exp)) + (left === 0 ? ' (today is the last day)' : ' (' + left + ' day' + (left === 1 ? '' : 's') + ' left)') + '.';
   }
+  // default services offered (unticked) on every client's After shoot (24 Nov 2026, Ravi); tick the ones this client gets
+  const RAW_NOTE = 'These are the original photos straight from our cameras, unedited and unsorted. They may include blinks, blurred or repeated shots, test frames and moments caught mid-movement. Your edited photos are selected and colour-corrected separately. Please keep this folder as a complete backup of your day.';
+  const DEFAULT_SVCS = [['Raw JPGs', RAW_NOTE], ['Edited Photos'], ['Wedding Trailer'], ['Reels'], ['Full Video (Engagement)'], ['Full Video (Haldi)'], ['Full Video (Mehndi)'],
+    ['Full Video (Wedding)'], ['Full Video (Reception)'], ['Photo Frames (16x24)']];
+  // physical things (frames, albums, pendrives…) have no download date
+  const isPhysical = t => /frame|album|pen ?drive|calendar|print|hard ?disk|\bbox\b/i.test(String(t || ''));
+  const showExp = row => { const box = row.querySelector('.af-expbox'); if (box) box.style.display = !isPhysical(row.dataset.title) && (row.querySelector('.af-link').value.trim() || row.querySelector('.af-exp').value) ? 'flex' : 'none'; };
   function wireExp(root) {
+    root.querySelectorAll('.af-svc').forEach(row => { const l = row.querySelector('.af-link'); if (!l || l._we) return; l._we = 1; l.addEventListener('input', () => showExp(row)); showExp(row); });
     root.querySelectorAll('.af-expq').forEach(b => { if (b._w) return; b._w = 1; b.addEventListener('click', () => {
       const box = b.closest('.af-expbox'), inp = box.querySelector('.af-exp'), n = +b.dataset.days;
       inp.value = n ? addDaysStr(todayIST(), n) : ''; inp.dispatchEvent(new Event('change'));
@@ -274,8 +282,10 @@
     // services: what is already listed, then the package items not listed yet (unticked)
     const fromPkg = ((bk && bk.items) || []).map(it => ({ kind: it.kind, title: (kindLabel(it.kind) + (it.per === 'function' ? ' (each function)' : '') + (it.note ? ' · ' + it.note : '')).slice(0, 80) }));
     const rows = mine.map(d => ({ id: d.id, on: true, kind: d.kind, title: d.title, status: d.status, link: d.link || '', note: d.note || '', exp: d.expires_on || '' }))
-      .concat(fromPkg.filter(f => !mine.some(d => d.title === f.title)).map(f => ({ on: false, kind: f.kind, title: f.title, status: 'waiting', link: '', note: '' })));
-    const svc = (r, i) => '<div class="sb-manage-row af-svc" data-i="' + i + '" style="display:block;padding:8px">' +
+      .concat(fromPkg.filter(f => !mine.some(d => d.title.toLowerCase() === f.title.toLowerCase())).map(f => ({ on: false, kind: f.kind, title: f.title, status: 'waiting', link: '', note: '' })));
+    DEFAULT_SVCS.forEach(([t, n]) => { if (!rows.some(r => r.title.toLowerCase() === t.toLowerCase())) rows.push({ on: false, kind: null, title: t, status: 'waiting', link: '', note: n || '' }); });
+    rows.forEach(r => { if (!r.note && /^raw jpg/i.test(r.title)) r.note = RAW_NOTE; });
+    const svc = (r, i) => '<div class="sb-manage-row af-svc" data-i="' + i + '" data-title="' + esc(r.title) + '" style="display:block;padding:8px">' +
       '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" class="af-on" ' + (r.on ? 'checked' : '') + ' style="width:18px;height:18px"><b>' + esc(r.title) + '</b>' + (r.kind === 'bill' ? ' <span class="sb-manage-sub" style="display:inline">· from the bill</span>' : '') + '</label>' +
       '<div class="af-more" style="display:' + (r.on ? 'grid' : 'none') + ';grid-template-columns:auto 1fr;gap:6px;margin-top:6px"><select class="sb-field af-st">' + DSTAT.map(([k, t]) => '<option value="' + k + '"' + (r.status === k ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>' +
       '<input class="sb-field af-link" type="url" placeholder="Link (Drive, gallery…) when ready" value="' + esc(r.link) + '" data-nosuggest>' +

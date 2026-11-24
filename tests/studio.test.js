@@ -1128,7 +1128,17 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-after="' + wed.key + '"]');
   await owner.click('.sb-modal [data-after="' + wed.key + '"]'); await owner.waitForSelector('#af-svcs');
   ok(/Link this client's party there/.test(await owner.textContent('#af-state')), '043: no bills and no linked party: After shoot says to link the party in the Sales desk');
-  ok(/Paid ₹2,50,000 of ₹3,00,000 \(83%\)/.test(await owner.textContent('#af-state')) && /₹20,000 more opens them/.test(await owner.textContent('#af-state')) && await owner.$$eval('#af-svcs .af-svc', x => x.length) === 3, 'After shoot: 83% paid, ₹20,000 more opens the deliveries; the 3 package items are listed to tick');
+  ok(/Paid ₹2,50,000 of ₹3,00,000 \(83%\)/.test(await owner.textContent('#af-state')) && /₹20,000 more opens them/.test(await owner.textContent('#af-state')) && await owner.$$eval('#af-svcs .af-svc', x => x.length) === 13, 'After shoot: 83% paid, ₹20,000 more opens the deliveries; the 3 package items are listed to tick');
+  { // default services, unticked: Raw JPGs carries its note; a frame never asks for a download date
+    const raw = '#af-svcs .af-svc[data-title="Raw JPGs"] ', fr = '#af-svcs .af-svc[data-title="Photo Frames (16x24)"] ';
+    ok(!(await owner.isChecked(raw + '.af-on')) && /original photos straight from our cameras/.test(await owner.inputValue(raw + '.af-note')) && !!(await owner.$('#af-svcs .af-svc[data-title="Full Video (Reception)"]')),
+      'After shoot lists the default services unticked (Raw JPGs with its note about unedited photos)');
+    await owner.check(fr + '.af-on'); await owner.fill(fr + '.af-link', 'https://drive.google.com/frames');
+    await owner.check(raw + '.af-on'); ok(await owner.isHidden(raw + '.af-expbox'), 'no link yet: no "Download till" row');
+    await owner.fill(raw + '.af-link', 'https://drive.google.com/raw');
+    ok(await owner.isHidden(fr + '.af-expbox') && await owner.isVisible(raw + '.af-expbox'), 'with a link: "Download till" shows for Raw JPGs, never for a photo frame');
+    await owner.fill(fr + '.af-link', ''); await owner.uncheck(fr + '.af-on'); await owner.fill(raw + '.af-link', ''); await owner.uncheck(raw + '.af-on');
+  }
   { const r0 = '#af-svcs .af-svc[data-i="0"] '; await owner.check(r0 + '.af-on'); await owner.selectOption(r0 + '.af-st', 'ready'); await owner.fill(r0 + '.af-link', 'https://drive.google.com/reel'); await owner.fill(r0 + '.af-note', 'Haldi reel'); }
   await owner.fill('#af-new', 'Pendrive'); await owner.click('#af-add'); await owner.click('#af-save'); await owner.waitForFunction(() => /Saved/.test((document.getElementById('sb-toast') || {}).textContent || ''));
   ok(T.client_deliveries.size === 2 && [...T.client_deliveries.values()].some(d => d.status === 'ready' && d.link === 'https://drive.google.com/reel'), 'owner ticks the Reel (ready, with its link) and adds a Pendrive');
