@@ -215,8 +215,13 @@
     if (!w || sup()) return;
     try { await load(); } catch (e) { api.toast('Could not load: ' + (e.message || e)); return; }
     const m = money(w.key), l = links.find(x => x.wedding_key === w.key), bk = bookings.find(b => b.wedding_key === w.key);
-    const total = m ? Number(m.b.total) : 0, paid = m ? m.paid : 0, need = total > 0 ? Math.max(0, Math.ceil(total * 0.9) - paid) : null;
-    const hand = l ? l.deliveries_open : null, auto = total > 0 && paid >= total * 0.9, isOpen = hand === true || (hand !== false && auto);
+    // 043: the 90 % rule also counts the client's bills in the Sales desk (a linked party); without 043 it is the package only, as before
+    let mm = null; try { const c0 = await app.client(), r = await c0.rpc('client_money', { p_key: w.key }); if (!r.error && r.data && !r.data.error) mm = r.data; } catch (e) {}
+    const src = mm ? mm.source : 'package';
+    const total = mm ? Number(mm.total) : m ? Number(m.b.total) : 0, paid = mm ? Number(mm.paid) : m ? m.paid : 0, need = total > 0 ? Math.max(0, Math.ceil(total * 0.9) - paid) : null;
+    const hand = l ? l.deliveries_open : null, auto = mm ? !!mm.open : total > 0 && paid >= total * 0.9, isOpen = hand === true || (hand !== false && auto);
+    const srcTxt = src === 'bills' ? ' <span style="opacity:.75">From the bills in the Sales desk' + (mm.parties && mm.parties.length ? ' (' + esc(mm.parties.map(p => p.name).join(', ')) + ')' : '') + '.</span>' : src === 'package' && mm && mm.bills ? ' <span style="opacity:.75">From the package.</span>' : '';
+    const linkHint = mm && !mm.bills && !(mm.parties || []).length ? '<br>Paid in the Sales desk? <a href="/sales.html?tab=parties&amp;link=1" id="af-linkparty">Link this client\'s party there</a>: its bills then count.' : '';
     const mine = dels.filter(d => d.wedding_key === w.key), cl = claims.filter(x => x.wedding_key === w.key);
     // services: what is already listed, then the package items not listed yet (unticked)
     const fromPkg = ((bk && bk.items) || []).map(it => ({ kind: it.kind, title: (kindLabel(it.kind) + (it.per === 'function' ? ' (each function)' : '') + (it.note ? ' · ' + it.note : '')).slice(0, 80) }));
@@ -230,10 +235,10 @@
     const pend = cl.filter(x => x.status === 'pending'), done = cl.filter(x => x.status !== 'pending');
     const rule = '<div class="sb-btn-row" id="af-rule" style="margin:6px 0 0">' + [['auto', 'By payment (90%)'], ['open', 'Open now'], ['closed', 'Keep closed']].map(([k, t]) =>
       '<button type="button" class="sb-btn-sm' + ((k === 'auto' && hand == null) || (k === 'open' && hand === true) || (k === 'closed' && hand === false) ? '' : ' secondary') + '" data-rule="' + k + '">' + t + '</button>').join('') + '</div>';
-    const modal = api.makeModal(api.modalHead('After shoot · ' + w.title, 'Tick what you deliver. The family sees the status any time; the links open when approved payments reach 90% of the package, or when you open them by hand.') +
+    const modal = api.makeModal(api.modalHead('After shoot · ' + w.title, 'Tick what you deliver. The family sees the status any time; the links open when 90% is paid (the package, or the client\'s bills in the Sales desk), or when you open them by hand.') +
       '<div class="sb-modal-list" id="af-list">' +
       '<div class="sb-manage-sub" id="af-state" style="margin:4px 8px 8px;padding:8px 10px;border-radius:10px;background:' + (isOpen ? '#e1efe4' : '#f7e9d0') + ';color:var(--ink)">' +
-        (total > 0 ? 'Paid <b>' + inr(paid) + '</b> of ' + inr(total) + ' (' + Math.floor(paid / total * 100) + '%). ' : 'No package yet: add it in Package & payments. ') +
+        (total > 0 ? 'Paid <b>' + inr(paid) + '</b> of ' + inr(total) + ' (' + Math.floor(paid / total * 100) + '%).' + srcTxt + ' ' : 'No package or bill yet: add a package here or a bill in the Sales desk. ') + linkHint + ' ' +
         (isOpen ? '<b>Deliveries are open</b> for the family' + (hand === true ? ' (opened by hand)' : '') + '.' : '<b>Deliveries are closed</b>' + (hand === false ? ' (kept closed by hand)' : need != null ? ': ' + inr(need) + ' more opens them.' : '.')) +
         (l ? rule : '<br>Add the family\'s Gmail first: then they can see this on their page.') + '</div>' +
       '<p class="sb-modal-group">Payments the family reported' + (pend.length ? ' · ' + pend.length + ' to check' : '') + '</p>' +

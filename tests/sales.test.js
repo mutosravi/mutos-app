@@ -239,7 +239,17 @@ const server = http.createServer((q, s) => { let p = decodeURIComponent(q.url.sp
   const s = await as(SUP); await s.goto(B + '/sales.html'); await s.waitForURL('**/board.html**', { timeout: 8000 }).catch(() => {});
   ok(/board\.html/.test(s.url()), 'the supervisor is sent back to the board');
 
-  // on a phone the editor is a full page with Back, nothing wider than the screen
+  // ── link parties to board clients (043): deliveries open when the client's bills are 90 % paid ──
+  { const sp = [...T.parties.values()].find(p => p.name === 'Mr Sharma'); sp.wedding_key = null; sp.phone = '98765 43210'; }   // as if moved from myBillBook: not linked
+  await o.goto(B + '/sales.html?tab=parties&link=1'); await o.waitForSelector('#lk-list');
+  const lk = await o.textContent('#lk-list');
+  ok(/Sharma/.test(lk) && /Mr Sharma/.test(lk) && /of ₹/.test(lk), 'Link to board clients: Sharma (not linked) with "Mr Sharma" suggested by name, with what its bills say');
+  await o.click('#lk-list [data-lk]'); await toastHas(o, /Linked Mr Sharma/);
+  ok([...T.parties.values()].find(p => p.name === 'Mr Sharma').wedding_key === 'w:sharma', 'one tap links the party to the client');
+  await o.click('[data-lv="done"]'); await o.waitForSelector('#lk-list [data-unlk]');
+  ok(/Mr Sharma/.test(await o.textContent('#lk-list')) && /paid/.test(await o.textContent('#lk-list')), 'Linked shows the client with its party and how much of its bills is paid');
+  await o.click('#lk-done');
+
   const ph = await as(OWNER, { width: 390, height: 844 }); await ph.goto(B + '/sales.html'); await ph.waitForSelector('#h-collect');
   ok(await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone: the Sales desk is not wider than the screen');
   await ph.click('#tab-home [data-new="quotation"]'); await ph.waitForSelector('#de-party');

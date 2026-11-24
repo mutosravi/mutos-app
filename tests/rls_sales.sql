@@ -103,3 +103,11 @@ set request.jwt.claims = '{"email":"shrey@x.com"}';
 select pg_temp.check((select count(*) from sales_settings) = 0 and (select count(*) from sale_items) = 0, 'crew see nothing');
 reset role;
 select pg_temp.check((select count(*) from sale_items where name = 'Short Event (Standard)' and hours = 5) = 1 and (select data ->> 'terms' from sales_settings) like '%maximum 5 hours%', 'price list and terms start with short events = 5 hours');
+-- editing a party (24 Nov 2026: the change log read a bank-account field on parties and every party edit failed)
+set role authenticated; set request.jwt.claims = '{"email":"o@x.com"}';
+update parties set phone = '9876500001', wedding_key = 'w:sharma' where name = 'Mr Sharma';
+update parties set opening = opening + 100 where name = 'Mr Sharma';
+select pg_temp.check((select phone from parties where name = 'Mr Sharma') = '9876500001' and exists (select 1 from sales_log where what like 'Opening balance of Mr Sharma%'), 'a party can be edited and linked to its client; an opening change is logged');
+update bank_accounts set opening = opening + 1 where name = 'HDFC Current';
+select pg_temp.check(exists (select 1 from sales_log where what like 'Opening balance of HDFC Current%'), 'a bank account''s opening change is still logged');
+reset role;

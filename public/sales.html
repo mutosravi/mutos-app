@@ -441,13 +441,76 @@
       ({ all: true, collect: b > 0, pay: b < 0, customer: p.kind !== 'vendor', vendor: p.kind !== 'customer' })[pf.view] && (!q || (p.name + ' ' + (p.phone || '') + ' ' + (p.gstin || '')).toLowerCase().includes(q)));
     if (pf.view === 'collect') rows.sort((a, b) => b.b - a.b); else if (pf.view === 'pay') rows.sort((a, b) => a.b - b.b);
     $('tab-parties').innerHTML = '<div class="tools"><div class="chips">' + [['all', 'All'], ['collect', 'To collect'], ['pay', 'To pay'], ['customer', 'Customers'], ['vendor', 'Vendors']].map(([k, t]) => '<button type="button" class="chip-b' + (pf.view === k ? ' on' : '') + '" data-v="' + k + '">' + t + '</button>').join('') + '</div>' +
-      '<input class="in" id="pq" type="search" placeholder="Search name, phone, GSTIN" value="' + esc(pf.q) + '" style="flex:1;min-width:170px"><button type="button" class="pillbtn" data-new="party" style="min-height:40px">＋ Party</button></div>' +
+      '<input class="in" id="pq" type="search" placeholder="Search name, phone, GSTIN" value="' + esc(pf.q) + '" style="flex:1;min-width:170px"><button type="button" class="pillbtn" data-new="party" style="min-height:40px">＋ Party</button><button type="button" class="pillbtn light" id="p-link" style="min-height:40px">🔗 Link to board clients</button></div>' +
       '<p class="meta">' + rows.length + ' parties' + (pf.view === 'collect' || pf.view === 'pay' ? ' · ' + inr(Math.abs(rows.reduce((a, x) => a + x.b, 0))) : '') + '</p>' +
       (rows.length ? '<div class="lst">' + rows.slice(0, 400).map(({ p, b }) => '<button type="button" class="lrow" data-party="' + p.id + '"><span class="nm">' + esc(p.name) + (p.active ? '' : ' · inactive') + '</span><span class="amt ' + (b > 0 ? 'plus' : b < 0 ? 'minus' : '') + '">' + (b ? inr(Math.abs(b)) : '—') + '</span>' +
         '<span class="meta">' + esc([p.phone, p.kind === 'vendor' ? 'vendor' : p.kind === 'both' ? 'customer + vendor' : '', p.gstin ? 'GSTIN ' + p.gstin : ''].filter(Boolean).join(' · ')) + '</span><span class="meta">' + (b > 0 ? 'to collect' : b < 0 ? 'to pay' : '') + '</span></button>').join('') + '</div>' : '<div class="empty" style="margin-top:10px">No parties here.</div>');
     $('tab-parties').querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => { pf.view = b.dataset.v; renderParties(); }));
     $('pq').addEventListener('input', e => { pf.q = e.target.value; clearTimeout(renderParties.t); renderParties.t = setTimeout(() => { renderParties(); const i = $('pq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); });
     wire($('tab-parties'));
+    $('p-link').addEventListener('click', () => linkClients());
+  }
+  // ── link myBillBook parties to the board's clients (24 Nov 2026, Ravi: "Most of the clients have already paid 90% … it is not showing
+  // in their deliveries"): a client's deliveries open when its bills are 90 % paid (043), which needs its party linked ──
+  const STOPW = new Set(['mr', 'mrs', 'miss', 'ms', 'shri', 'smt', 'sri', 'ji', 'dr', 'the', 'and', 'wedding', 'family', 'birthday', 'anniversary', 'event', 'events', 'function', 'shoot', 'pre', 'post', 'party', 'ceremony']);
+  const toks = t => String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !STOPW.has(w));
+  const last10 = t => String(t || '').replace(/\D/g, '').slice(-10);
+  function billStats(pid) { const ds = docs.filter(d => d.party === pid && isBill(d) && live(d)); const t = ds.reduce((a, d) => a + Number(d.total), 0), pd = ds.reduce((a, d) => a + Number(d.paid), 0); return { n: ds.length, t, pd, pct: t > 0 ? Math.floor(pd / t * 100) : 0 }; }
+  function suggestFor(w, taken) {
+    const wt = toks(w.title + ' ' + w.events.map(e => e.contactName || '').join(' ')), ph = new Set(w.events.map(e => last10(e.contactPhone)).filter(x => x.length === 10));
+    return parties.filter(p => p.active && p.kind !== 'vendor' && !taken.has(p.id)).map(p => {
+      const pt = new Set(toks(p.name)), common = toks(w.title).filter(x => pt.has(x)).length + wt.filter(x => pt.has(x)).length;
+      const score = (ph.has(last10(p.phone)) ? 100 : 0) + common * 10 + (billStats(p.id).n ? 3 : 0);
+      return { p, score, phone: ph.has(last10(p.phone)) };
+    }).filter(x => x.phone || x.score >= 10).sort((a, b) => b.score - a.score).slice(0, 3);
+  }
+  function linkClients(view) {
+    view = view || 'open';
+    const linked = new Map(); parties.forEach(p => { if (p.wedding_key) { if (!linked.has(p.wedding_key)) linked.set(p.wedding_key, []); linked.get(p.wedding_key).push(p); } });
+    const taken = new Set(parties.filter(p => p.wedding_key).map(p => p.id));
+    const ws = weddings.slice().sort((a, b) => String(b.last).localeCompare(String(a.last)));
+    const open = ws.filter(w => !linked.has(w.key)), done = ws.filter(w => linked.has(w.key));
+    const pctTxt = st => st.n ? inr(st.pd) + ' of ' + inr(st.t) + ' paid (' + st.pct + '%)' : 'no bills';
+    const row = w => {
+      const head = '<b>' + esc(w.title) + '</b> <span class="meta">' + esc(S.day(w.first) + (w.last !== w.first ? ' – ' + S.day(w.last) : '')) + '</span>';
+      if (linked.has(w.key)) return '<div class="lrow lk-row" data-q="' + esc(w.title.toLowerCase()) + '" style="cursor:default;display:block">' + head + linked.get(w.key).map(p => '<div class="meta" style="margin-top:4px">🔗 ' + esc(p.name) + ' · ' + pctTxt(billStats(p.id)) +
+        ' <button type="button" class="pillbtn light" data-unlk="' + p.id + '" style="min-height:30px;padding:2px 10px">Unlink</button></div>').join('') + '</div>';
+      const sg = suggestFor(w, taken);
+      return '<div class="lrow lk-row" data-q="' + esc(w.title.toLowerCase()) + '" style="cursor:default;display:block">' + head +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' + (sg.length ? sg.map(x => '<button type="button" class="pillbtn" data-lk="' + x.p.id + '" data-w="' + esc(w.key) + '" style="min-height:34px;padding:4px 12px;text-align:left">' +
+          esc(x.p.name) + (x.phone ? ' · 📞 same phone' : '') + ' · ' + esc(pctTxt(billStats(x.p.id))) + '</button>').join('') : '<span class="meta">No likely party found.</span>') + '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:6px"><input class="in lk-other" list="dl-parties" placeholder="Other party: type its name" data-w="' + esc(w.key) + '" style="flex:1;min-width:0" autocomplete="off"><button type="button" class="pillbtn light" data-lko="' + esc(w.key) + '" style="min-height:40px">Link</button></div></div>';
+    };
+    const list = view === 'open' ? open : done;
+    const bg = sheet('<h3>Link to board clients</h3><p class="sub">A client\'s photos &amp; films open for the family when its bills here are 90% paid. Link each client on the board to its party (the ones moved from myBillBook too). Tap the right party; likely ones are suggested by phone and name.</p>' +
+      '<div class="chips" style="margin:8px 0"><button type="button" class="chip-b' + (view === 'open' ? ' on' : '') + '" data-lv="open">Not linked (' + open.length + ')</button><button type="button" class="chip-b' + (view === 'done' ? ' on' : '') + '" data-lv="done">Linked (' + done.length + ')</button></div>' +
+      '<input class="in" id="lk-q" type="search" placeholder="Search a client" style="width:100%;margin-bottom:8px">' +
+      '<div class="lst" id="lk-list">' + (list.length ? list.slice(0, 150).map(row).join('') : '<div class="empty">' + (view === 'open' ? 'Every client on the board is linked. 🎉' : 'Nothing linked yet.') + '</div>') + '</div>' +
+      (list.length > 150 ? '<p class="meta">Showing 150 of ' + list.length + ': search to find the rest.</p>' : '') +
+      '<div class="row"><button type="button" class="pillbtn" id="lk-done">Done</button></div>', true);
+    const q = bg.querySelector('#lk-q');
+    q.addEventListener('input', () => { const v = q.value.trim().toLowerCase(); const host = bg.querySelector('#lk-list'); const hit = list.filter(w => !v || w.title.toLowerCase().includes(v) || w.events.some(e => String(e.name).toLowerCase().includes(v)));
+      host.innerHTML = hit.length ? hit.slice(0, 150).map(row).join('') : '<div class="empty">No client with that name.</div>'; wireRows(); });
+    bg.querySelector('#lk-done').addEventListener('click', () => { close(bg); render(); });
+    bg.querySelectorAll('[data-lv]').forEach(b => b.addEventListener('click', () => { close(bg); linkClients(b.dataset.lv); }));
+    async function setKey(pid, key) {
+      const { error } = await c.from('parties').update({ wedding_key: key }).eq('id', pid);
+      if (error) { toast(errMsg(error), true); return false; }
+      const p = parties.find(x => x.id === pid); if (p) p.wedding_key = key; return true;
+    }
+    function wireRows() {
+      bg.querySelectorAll('[data-lk]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; const w = weddings.find(x => x.key === b.dataset.w);
+        if (await setKey(b.dataset.lk, b.dataset.w)) { toast('Linked ' + partyOf(b.dataset.lk).name + ' to ' + (w ? w.title : 'the client') + '. Its deliveries follow these bills now.'); const v = q.value; close(bg); linkClients(view); const nq = document.getElementById('lk-q'); if (nq && v) { nq.value = v; nq.dispatchEvent(new Event('input')); } } else b.disabled = false; }));
+      bg.querySelectorAll('[data-lko]').forEach(b => b.addEventListener('click', async () => {
+        const inp = bg.querySelector('.lk-other[data-w="' + CSS.escape(b.dataset.lko) + '"]'), name = inp.value.trim().toLowerCase(), p = parties.find(x => x.name.toLowerCase() === name);
+        if (!p) { toast('Pick a party from the list (type part of its name).', true); return; }
+        if (p.wedding_key && p.wedding_key !== b.dataset.lko && !confirm(p.name + ' is linked to another client. Move it to this one?')) return;
+        if (await setKey(p.id, b.dataset.lko)) { toast('Linked ' + p.name + '.'); close(bg); linkClients(view); }
+      }));
+      bg.querySelectorAll('[data-unlk]').forEach(b => b.addEventListener('click', async () => { if (await setKey(b.dataset.unlk, null)) { toast('Unlinked ' + partyOf(b.dataset.unlk).name + '.'); close(bg); linkClients(view); } }));
+    }
+    wireRows();
+    return bg;
   }
   function openParty(p) {
     if (!p) return;
@@ -756,7 +819,7 @@
   document.querySelectorAll('.bnav .tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   try { await load(); } catch (e) { $('tab-home').innerHTML = '<div class="empty">Could not load the Sales desk (' + esc(errMsg(e)) + '). Run supabase/041_sales.sql first.</div>'; return; }
   showTab(new URLSearchParams(location.search).get('tab') || 'home');
-  loadBoard().then(() => { if (!document.querySelector('.sheet-bg')) render(); });
+  loadBoard().then(() => { if (new URLSearchParams(location.search).get('link')) linkClients(); else if (!document.querySelector('.sheet-bg')) render(); });
   // ?new=quotation&client=<wedding_key> (from the Clients window)
   const qs = new URLSearchParams(location.search);
   if (qs.get('new') && ['quotation', 'invoice', 'gst_invoice'].includes(qs.get('new'))) { await loadBoard(); const k = qs.get('client'), p = k && parties.find(x => x.wedding_key === k); editDoc(qs.get('new'), null, { copy: { party: p ? p.id : null, lines: [], wedding_key: k || null } }); }

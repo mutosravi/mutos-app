@@ -333,10 +333,15 @@ create or replace function public.sales_touch_log() returns trigger
   language plpgsql security definer set search_path = public as $$
 begin
   new.updated_at := now();
-  if tg_op = 'UPDATE' and tg_table_name = 'bank_accounts' and (new.opening <> old.opening or new.opening_on <> old.opening_on) then
-    insert into public.sales_log (what, ref_kind, ref_id) values ('Opening balance of ' || new.name || ': ₹' || old.opening || ' (' || old.opening_on || ') → ₹' || new.opening || ' (' || new.opening_on || ')', 'account', new.id);
-  elsif tg_op = 'UPDATE' and tg_table_name = 'parties' and new.opening <> old.opening then
-    insert into public.sales_log (what, ref_kind, ref_id) values ('Opening balance of ' || new.name || ': ₹' || old.opening || ' → ₹' || new.opening, 'party', new.id);
+  -- one table at a time: plpgsql cannot even look at new.opening_on on a party (it has none), so the checks must not share one line
+  if tg_op = 'UPDATE' and tg_table_name = 'bank_accounts' then
+    if new.opening <> old.opening or new.opening_on <> old.opening_on then
+      insert into public.sales_log (what, ref_kind, ref_id) values ('Opening balance of ' || new.name || ': ₹' || old.opening || ' (' || old.opening_on || ') → ₹' || new.opening || ' (' || new.opening_on || ')', 'account', new.id);
+    end if;
+  elsif tg_op = 'UPDATE' and tg_table_name = 'parties' then
+    if new.opening <> old.opening then
+      insert into public.sales_log (what, ref_kind, ref_id) values ('Opening balance of ' || new.name || ': ₹' || old.opening || ' → ₹' || new.opening, 'party', new.id);
+    end if;
   end if;
   return new;
 end $$;

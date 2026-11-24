@@ -300,7 +300,7 @@
     if (after && after.deliveries.length) {
       const D = after.deliveries, ready = D.filter(d => d.status === 'ready' || d.status === 'delivered').length, SW = { waiting: 'Not started', editing: 'Being edited', ready: 'Ready', delivered: 'Delivered' };
       h += '<div class="sechead2">After the shoot</div>' + fcard('deliv', ' sec', '<span class="txt"><h2>Your photos &amp; films</h2><span class="meta">' + (ready ? ready + ' of ' + D.length + ' ready' : D.length + ' on the way') + (after.open ? '' : ' · 🔒 links open at 90% paid') + '</span></span><span class="go' + (after.open && ready ? ' ok' : '') + '">' + (after.open && ready ? 'Open' : 'See') + '</span>',
-        (after.open ? '' : '<div class="lock">🔒 Your download links open once 90% of the package is paid' + (after.need ? ' (' + inr(after.need) + ' more)' : '') + '. Paid already? Tell us under <b>Your package → We paid</b>.</div>') +
+        (after.open ? '' : '<div class="lock">🔒 Your download links open once 90% is paid' + (after.need ? ' (' + inr(after.need) + ' more)' : '') + '. Paid already? Tell us under <b>' + (bk ? 'Your package' : 'Your payments') + ' → We paid</b>.</div>') +
         '<div class="dls">' + D.map(d => '<div class="dl"><div><b>' + esc(d.title) + '</b>' + (d.note ? '<div class="meta">' + esc(d.note) + '</div>' : '') + '</div><span class="dst ' + esc(d.status) + '">' + esc(SW[d.status] || d.status) + '</span>' +
           (d.link ? '<a class="pillbtn dl-go" href="' + esc(d.link) + '" target="_blank" rel="noopener">Open ›</a>' : d.has_link ? '<span class="meta dl-lock">🔒 Opens at 90% paid</span>' : '') + '</div>').join('') + '</div>' + doneBtn);
     }
@@ -308,6 +308,12 @@
       ((bk.items || []).length ? '<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +
       '<div class="grid" style="margin-top:12px"><div><div class="meta">Paid</div><b>' + inr(bk.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(bk.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(bk.pending) + '</b></div>' +
       (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div>' + payHtml());
+    // no package, but bills in Muto's Sales desk (043): the same card with what the bills say, and "We paid"
+    else if (after && after.source === 'bills' && after.total > 0) {
+      const pend = Math.max(after.total - after.paid, 0);
+      h += '<div class="sechead2">Your payments</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>Payments</h2><span class="meta">Paid ' + inr(after.paid) + ' of ' + inr(after.total) + (pend > 0 ? ' · ' + inr(pend) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
+        '<div class="grid"><div><div class="meta">Paid</div><b>' + inr(after.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(after.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(pend) + '</b></div></div>' + payHtml());
+    }
     $('list').after($('more')); // keep the add button out of the list while it is rebuilt
     $('list').innerHTML = h;
     const slot = $('more-slot'); if (slot) slot.appendChild($('more'));

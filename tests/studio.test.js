@@ -10,6 +10,7 @@ const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.9
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
 const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes', 'team_photos', 'bank_accounts', 'money_txns'].forEach(t => { T[t] = new Map(); });
+const BILLS = {};
 T.bank_accounts.set('acc-hdfc', { id: 'acc-hdfc', name: 'HDFC Current', kind: 'bank', active: true, sort: 0 }); T.bank_accounts.set('acc-cash', { id: 'acc-cash', name: 'Cash', kind: 'cash', active: true, sort: 1 });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
@@ -139,6 +140,14 @@ function bookingSummary(key) {
 function rpc(fn, a, e) {
   // same rules as 005_client_login.sql
   if (fn.startsWith('client_') && !e) return { data: null, error: { message: 'permission denied for function ' + fn, code: '42501' } };
+  // 043: the studio's view of a client's money (package + the client's bills in the Sales desk; BILLS = what the Sales desk would say)
+  if (fn === 'client_money') {
+    if (!staff(e)) return { data: { error: 'Only the admin or the manager can see this.' }, error: null };
+    const k = a.p_key, b = T.bookings.get(k), pp = [...T.booking_payments.values()].filter(p => p.wedding_key === k).reduce((n, p) => n + Number(p.amount), 0), bl = BILLS[k] || { total: 0, paid: 0, bills: 0, parties: [] };
+    const pkOpen = !!(b && b.total > 0 && pp >= b.total * 0.9), blOpen = bl.total > 0 && bl.paid >= bl.total * 0.9, l = T.client_links.get(k), man = l && l.deliveries_open != null ? l.deliveries_open : null;
+    const src = blOpen ? 'bills' : pkOpen ? 'package' : bl.total > 0 ? 'bills' : b ? 'package' : null;
+    return { data: { open: man != null ? man : pkOpen || blOpen, by_hand: man != null, source: src, total: src === 'bills' ? bl.total : src === 'package' ? b.total : 0, paid: src === 'bills' ? bl.paid : src === 'package' ? pp : 0, bills: bl.bills, bills_total: bl.total, bills_paid: bl.paid, parties: bl.parties }, error: null };
+  }
   // after the shoot: same rules as 035_after_shoot.sql
   if (['client_after', 'client_pay_claim', 'client_pay_decide', 'client_deliveries_set_open'].includes(fn)) {
     const paidOf = k => [...T.booking_payments.values()].filter(p => p.wedding_key === k).reduce((n, p) => n + Number(p.amount), 0);
@@ -1096,6 +1105,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   // ── after the shoot (035): services to deliver, "We paid", approval, links open at 90 % ──
   await owner.goto(B + '/board.html'); await owner.waitForSelector('#mh-desks .desk', { timeout: 20000 }); await owner.click('[data-desk="clients"]'); await owner.click('#mh-desk [data-tile="clients"]'); await owner.waitForSelector('.sb-modal [data-after="' + wed.key + '"]');
   await owner.click('.sb-modal [data-after="' + wed.key + '"]'); await owner.waitForSelector('#af-svcs');
+  ok(/Link this client's party there/.test(await owner.textContent('#af-state')), '043: no bills and no linked party: After shoot says to link the party in the Sales desk');
   ok(/Paid ₹2,50,000 of ₹3,00,000 \(83%\)/.test(await owner.textContent('#af-state')) && /₹20,000 more opens them/.test(await owner.textContent('#af-state')) && await owner.$$eval('#af-svcs .af-svc', x => x.length) === 3, 'After shoot: 83% paid, ₹20,000 more opens the deliveries; the 3 package items are listed to tick');
   { const r0 = '#af-svcs .af-svc[data-i="0"] '; await owner.check(r0 + '.af-on'); await owner.selectOption(r0 + '.af-st', 'ready'); await owner.fill(r0 + '.af-link', 'https://drive.google.com/reel'); await owner.fill(r0 + '.af-note', 'Haldi reel'); }
   await owner.fill('#af-new', 'Pendrive'); await owner.click('#af-add'); await owner.click('#af-save'); await owner.waitForFunction(() => /Saved/.test((document.getElementById('sb-toast') || {}).textContent || ''));
@@ -1113,6 +1123,14 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await owner.selectOption('#pay-list [data-cacc="' + claim.id + '"]', 'acc-cash');
   await owner.click('#pay-list [data-cok="' + claim.id + '"]'); await owner.waitForFunction(() => /Deliveries are open/.test((document.getElementById('sb-toast') || {}).textContent || ''));
   ok(claim.status === 'approved' && [...T.booking_payments.values()].some(p => p.id === claim.payment && p.amount === 20000), 'owner approves: it becomes a payment in Package & payments, and the deliveries open (90%)');
+  { // 043: the client's bills in the Sales desk count too (a myBillBook party linked to the client, 95 % paid)
+    const keepPay = [...T.booking_payments.entries()]; T.booking_payments.clear(); BILLS[wed.key] = { total: 400000, paid: 380000, bills: 2, parties: [{ id: 'p1', name: 'Mr Sharma (myBillBook)' }] };
+    await owner.evaluate(k => window.MUTOS_CLIENTS._afterWin(k), wed.key); await owner.waitForSelector('#af-state');
+    const st = await owner.textContent('#af-state');
+    ok(/Paid ₹3,80,000 of ₹4,00,000 \(95%\)/.test(st) && /From the bills in the Sales desk \(Mr Sharma \(myBillBook\)\)/.test(st) && /Deliveries are open/.test(st), 'After shoot: 95% paid in the Sales desk (linked party) opens the deliveries, even with nothing in the package');
+    keepPay.forEach(([k, v]) => T.booking_payments.set(k, v)); delete BILLS[wed.key];
+    await owner.evaluate(() => document.querySelectorAll('.sb-modal-overlay').forEach(x => x.remove()));
+  }
   ok(claim.txn === 'IN-231' && T.money_txns.get('IN-231').account === 'acc-cash' && /Sales desk \(IN-231\)/.test(await owner.textContent('#sb-toast')) && await owner.evaluate(() => localStorage.getItem('mutos-pay-account')) === 'acc-cash', '042: … and a Payment In IN-231 into the account picked (Cash), remembered for next time');
   await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
   ok(await fam.getAttribute('[data-card="deliv"] .dl-go', 'href') === 'https://drive.google.com/reel' && /✓ Received/.test(await fam.textContent('#sec-pay')), 'family: the Reel link is open and the payment shows "✓ Received"');
