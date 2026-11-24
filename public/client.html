@@ -172,6 +172,10 @@
   let after = null;
   const loadAfter = async () => { try { const { data, error } = await c.rpc('client_after', { p_token: token }); after = !error && data && !data.error ? data : null; } catch (e) { after = null; } };
   await loadAfter();
+  // the family's bills, Muto's phone and their service requests (044_client_after_event.sql, 24 Nov 2026); fine before 044
+  let extras = null;
+  const loadExtras = async () => { try { const { data, error } = await c.rpc('client_bills', { p_token: token }); extras = !error && data && !data.error ? data : null; } catch (e) { extras = null; } };
+  await loadExtras();
   // the team for each function, from the day before (038 client_team; 23 Nov 2026, Ravi)
   let team = [];
   try { const { data, error } = await c.rpc('client_team', { p_token: token }); team = !error && data && Array.isArray(data.functions) ? data.functions.filter(f => (f.team || []).length) : []; } catch (e) { team = []; }
@@ -241,18 +245,53 @@
       await loadAfter(); openKey = 'pkg'; render(); toast('Sent. Muto\'s will check it and mark it received.');
     } catch (e) { toast(e.message || String(e), true); btn.disabled = false; btn.textContent = 'Send to Muto\'s'; }
   }
+  // a function whose day is over cannot be changed by the family any more (24 Nov 2026, Ravi): they call Muto's for changes
+  const isPast = d => !!d && d < today;
+  const roRow = (label, v) => v ? '<div><div class="meta">' + esc(label) + '</div><b style="font-weight:600;white-space:pre-wrap">' + esc(v) + '</b></div>' : '';
+  const readOnly = a => '<div class="grid">' + FIELDS.map(([k, label, type, , wide]) => k === 'map' ? (a.map ? '<div class="wide"><a href="' + esc(a.map) + '" target="_blank" rel="noopener">Open the location ›</a></div>' : '') :
+      (wide ? roRow(label, a[k]).replace('<div>', '<div class="wide">') : roRow(label, k === 'time' ? t12(a[k]) : a[k]))).join('') + '</div>' +
+    '<p class="meta pastnote" style="margin:12px 0 0">This function is over, so it cannot be changed here. For any change, please call Muto\'s.</p>';
+  const phoneNo = () => extras && extras.phone ? extras.phone : '';
+  const telOf = n => { const d = String(n).replace(/[^0-9]/g, ''); return d.length === 10 ? '+91' + d : (String(n).startsWith('+') ? '+' : '+') + d; };
+  const waOf = n => { const d = String(n).replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
+  // their bills from Muto's (044): number, date, total, paid, open it
+  const billsHtml = () => !extras || !(extras.bills || []).length ? '' : '<div class="bills" id="sec-bills" style="margin-top:12px"><h3 style="margin:0 0 6px;font-size:15px">Your bills</h3>' +
+    extras.bills.map(b => '<div class="dl"><div><b>' + esc(b.number || 'Bill') + '</b><div class="meta">' + esc(b.date ? dayName(b.date).split(',')[0] : '') + ' · ' + inr(b.total) +
+      (Number(b.paid) >= Number(b.total) ? ' · paid' : ' · ' + inr(Number(b.total) - Number(b.paid)) + ' due') + '</div></div><span class="dst ' + (Number(b.paid) >= Number(b.total) ? 'ok' : 'wait') + '">' + (Number(b.paid) >= Number(b.total) ? 'Paid' : 'Due') + '</span>' +
+      '<a class="pillbtn light bill-go" href="/bill.html?t=' + encodeURIComponent(b.token) + '" target="_blank" rel="noopener">Open ›</a></div>').join('') + '</div>';
+  // "Need something?": call / WhatsApp Muto's, ask for a service, and the answers (044)
+  const RQ = ['Extra album', 'More edited photos', 'Another copy of the film', 'Pendrive / hard drive copy', 'Another shoot', 'Something else'];
+  const RQS = { new: ['wait', 'Sent'], seen: ['wait', 'Muto\'s is looking'], done: ['ok', 'Done'], declined: ['no', 'Not possible'] };
+  function helpCard() {
+    const ph = phoneNo(), reqs = (extras && extras.requests) || [];
+    return '<div class="sechead2">Need something?</div>' + fcard('help', ' sec', '<span class="txt"><h2>Call Muto\'s or ask for more</h2><span class="meta">' + (reqs.length ? reqs.length + ' request' + (reqs.length > 1 ? 's' : '') + ' sent' : 'Changes, an extra album, more photos…') + '</span></span><span class="go ok">Open</span>',
+      (ph ? '<div style="display:flex;gap:8px;flex-wrap:wrap"><a class="pillbtn" id="call-m" href="tel:' + esc(telOf(ph)) + '">Call Muto\'s</a><a class="pillbtn light" id="wa-m" href="https://wa.me/' + esc(waOf(ph)) + '" target="_blank" rel="noopener">WhatsApp Muto\'s</a></div>' : '<p class="meta" style="margin:0">For changes, please call Muto\'s.</p>') +
+      (reqs.length ? '<div class="dls" style="margin-top:12px">' + reqs.map(r => '<div class="dl"><div><b>' + esc(r.what) + '</b>' + (r.note ? '<div class="meta">' + esc(r.note) + '</div>' : '') + (r.reply ? '<div class="meta" style="color:var(--ink)">Muto\'s: ' + esc(r.reply) + '</div>' : '') + '</div><span class="dst ' + (RQS[r.status] || RQS.new)[0] + '">' + (RQS[r.status] || RQS.new)[1] + '</span></div>').join('') + '</div>' : '') +
+      (preview || studio || !extras ? '' : '<div class="grid" style="margin-top:12px" id="req-form"><label class="wide">Ask Muto\'s for<select class="in" id="req-what">' + RQ.map(x => '<option>' + esc(x) + '</option>').join('') + '</select></label>' +
+        '<label class="wide">A few words<textarea class="in" id="req-note" rows="2" maxlength="500" placeholder="e.g. 2 more albums of 30 sheets for the grandparents"></textarea></label>' +
+        '<button type="button" class="pillbtn wide" id="req-send">Send request</button></div>') + doneBtn);
+  }
+  async function sendRequest() {
+    const btn = $('req-send'); btn.disabled = true; btn.textContent = 'Sending…';
+    const { data, error } = await c.rpc('client_request', { p_token: token, p_what: $('req-what').value, p_note: $('req-note').value.trim() });
+    if (error || !data || data.error) { alert(error ? error.message : data.error); btn.disabled = false; btn.textContent = 'Send request'; return; }
+    try { const ss = await c.auth.getSession(); const tok = ss && ss.data && ss.data.session && ss.data.session.access_token; if (tok) fetch('/api/notify-request', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ request: data.id }) }).catch(() => {}); } catch (e) {}
+    await loadExtras(); openKey = 'help'; render();
+  }
   function render() {
+    const over = fns.length > 0 && fns.every(f => isPast(f.date)) && !ans.extra.some(a => !a.date || !isPast(a.date));   // the whole booking is over
     const total = fns.length + ans.extra.length, done = fns.filter(f => filled(ans[f.id])).length + ans.extra.filter(filled).length;
     const first = fns.find(f => f.date >= today), daysTo = first ? Math.round((new Date(first.date + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5) : null;
     $('top').innerHTML = '<section class="hero"><div class="hero-top"><span class="k">' + esc(occWord) + '</span>' + (daysTo != null ? '<span class="badge-w">' + (daysTo === 0 ? 'Today!' : daysTo + ' day' + (daysTo === 1 ? '' : 's') + ' to go') + '</span>' : '') + '</div>' +
-      '<h2>' + esc((couple && coupleTitle()) || got.title) + '</h2><p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
-      '<div class="progress" aria-label="' + done + ' of ' + total + ' ready"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' ready</p>' +
+      '<h2>' + esc((couple && coupleTitle()) || got.title) + '</h2>' + (over ? '<p id="over-note">Thank you for choosing Muto\'s! Your functions are done. Here you can follow your photos &amp; films, your payments and bills, and ask us for anything more.</p>' :
+      '<p>Tap a function to add or change its time and venue, then tap <b>Send to Muto\'s</b>. You can update it any time; our team sees what you send.</p>' +
+      '<div class="progress" aria-label="' + done + ' of ' + total + ' ready"><i style="width:' + (total ? Math.round(100 * done / total) : 0) + '%"></i></div><p style="font-size:13px;font-weight:600">' + done + ' of ' + total + ' function' + (total === 1 ? '' : 's') + ' ready</p>') +
       (preview ? '<div class="ans wait" style="margin:0">Preview: this is what the family sees after signing in. Only their Gmail can fill it in.</div>' : '') +
       (studio ? '<div class="ans wait" style="margin:0" id="studio-note">Editing for the family, from Muto\'s. Your changes save here and the family sees them. Only the family can press Send.' + (got.updated_by ? ' Last changed by ' + esc(got.updated_by) + '.' : '') + '</div>' : '') +
       (late ? '<div class="ans wait" style="margin:0"><b>Payment reminder:</b> ' + inr(bk.overdue) + ' is overdue. Please clear it or call Muto\'s if anything is unclear. Thank you!</div>' : '') +
-      (submittedAt ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Changed something? Tap Send again and our team sees it at once.</div>' : '') + '</section>';
+      (submittedAt && !over ? '<div class="ans ok" style="margin:0">✓ Sent to Muto\'s on ' + esc(new Date(submittedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })) + '. Changed something? Tap Send again and our team sees it at once.</div>' : '') + '</section>';
     const cp = ans.couple, cpOk = !!(cp.bride && cp.groom);
-    let h = !couple ? '' : fcard('couple', ' sec' + (cpOk ? ' done' : ''), '<span class="txt"><h2>The couple</h2><span class="meta">' + esc(cpOk ? cp.bride + ' & ' + cp.groom : CPL.hint) + '</span></span><span class="go' + (cpOk ? ' ok' : '') + '">' + (cpOk ? 'Edit' : 'Add') + '</span>',
+    let h = !couple || over ? '' : fcard('couple', ' sec' + (cpOk ? ' done' : ''), '<span class="txt"><h2>The couple</h2><span class="meta">' + esc(cpOk ? cp.bride + ' & ' + cp.groom : CPL.hint) + '</span></span><span class="go' + (cpOk ? ' ok' : '') + '">' + (cpOk ? 'Edit' : 'Add') + '</span>',
       '<div class="grid">' + field('couple', cp, ['bride', CPL.b, 'text', 'e.g. Divya Bansal', 'wide']) + field('couple', cp, ['groom', CPL.g, 'text', 'e.g. Swastik Gupta', 'wide']) + '</div>' + doneBtn);
     if (team.length) {   // shown open, above the functions: this is what the family needs on the day
       const dayWord = d => d === today ? 'Today' : 'Tomorrow';
@@ -262,62 +301,75 @@
           (digits(t.phone).length >= 10 ? '<a class="tbtn" href="tel:' + esc(digits(t.phone).length === 10 ? '+91' + digits(t.phone) : '+' + digits(t.phone)) + '">Call</a><a class="tbtn wa" href="https://wa.me/' + esc(waNo(t.phone)) + '" target="_blank" rel="noopener">WhatsApp</a>' : '') + '</div>').join('') + '</div>').join('') +
         '<p class="meta" style="margin:8px 2px 0">For changes to timings or coverage, please call Muto\'s.</p></section>' + h;
     }
-    h += '<div class="sechead2">Your functions</div>';
+    let fnH = '<div class="sechead2">Your functions</div>';
     fns.forEach(f => {
       const a = ans[f.id] = ans[f.id] || {}, ok = filled(a), short = f.type === 'short';
-      h += fcard(f.id, ok ? ' done' : '',
+      if (isPast(f.date)) {   // over: what they told us, nothing to change here
+        fnH += fcard(f.id, ' done past', (f.date ? dblock(f.date) : '') + '<span class="txt"><h2>' + esc(f.name) + '</h2><span class="meta">' + esc([f.date ? dayName(f.date).split(',')[0] : '', f.slot].filter(Boolean).join(' · ')) + '</span><span class="meta" style="display:block">' + esc(filled(a) ? summaryOf(a) : 'Done') + '</span></span><span class="go ok">Done</span>',
+          readOnly(a) + doneBtn);
+        return;
+      }
+      fnH += fcard(f.id, ok ? ' done' : '',
         (f.date ? dblock(f.date) : '') + '<span class="txt"><h2>' + esc(f.name) + '</h2><span class="meta">' + esc([f.date ? dayName(f.date).split(',')[0] : '', f.slot].filter(Boolean).join(' · ')) + '</span><span class="meta" style="display:block">' + esc(summaryOf(a)) + '</span></span>' +
         '<span class="go' + (ok ? ' ok' : '') + '">' + (ok ? 'Ready' : 'Add details') + '</span>',
         (short ? shortNote : '') + '<div class="grid">' + FIELDS.map(F => field(f.id, a, F)).join('') +
         '<label class="wide" style="flex-direction:row;align-items:center;gap:8px;font-weight:400;color:var(--ink)"><input type="checkbox" data-k="' + esc(f.id) + '" data-f="changed"' + (a.changed ? ' checked' : '') + ' style="width:20px;height:20px;accent-color:var(--rose)">The date or time has changed (write the new one in the notes)</label></div>' + doneBtn);
     });
     ans.extra.forEach((a, i) => {
-      h += fcard('x' + i, filled(a) ? ' done' : '',
+      if (isPast(a.date)) { fnH += fcard('x' + i, ' done past', '<span class="txt"><h2>' + esc(a.name || 'Function') + '</h2><span class="meta">' + esc([a.date ? dayName(a.date).split(',')[0] : '', a.slot].filter(Boolean).join(' · ')) + '</span></span><span class="go ok">Done</span>', readOnly(a) + doneBtn); return; }
+      fnH += fcard('x' + i, filled(a) ? ' done' : '',
         '<span class="txt"><h2>' + esc(a.name || 'New function') + '</h2><span class="meta">' + esc([a.date ? dayName(a.date).split(',')[0] : '', a.slot].filter(Boolean).join(' · ') || 'Added by you: the studio will confirm it') + '</span><span class="meta" style="display:block">' + esc(summaryOf(a)) + '</span></span><span class="go' + (filled(a) ? ' ok' : '') + '">' + (filled(a) ? 'Ready' : 'Add details') + '</span>',
         '<div class="grid">' + field('x' + i, a, ['name', 'Function name', 'text', 'e.g. Tilak, Ring ceremony', 'wide']) + field('x' + i, a, ['date', 'Date', 'date', '']) +
         '<label>Time of day<select class="in" data-k="x' + i + '" data-f="slot">' + ['Morning', 'Evening', 'Full day'].map(s => '<option' + (a.slot === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></label>' +
         FIELDS.map(F => field('x' + i, a, F)).join('') + '</div><p style="margin:10px 0 0"><button type="button" class="x" data-rm="' + i + '">Remove this function</button></p>' + doneBtn);
     });
-    if (!fns.length && !ans.extra.length) h += '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
-    h += '<div id="more-slot"></div><div class="sechead2">For our team on the day</div>';
+    if (!fns.length && !ans.extra.length) fnH += '<div class="empty">The studio has not added your functions yet. You can add them below.</div>';
+    fnH += '<div id="more-slot"></div>';
+    let dayH = '<div class="sechead2">For our team on the day</div>';
     const fnOpts = sel => '<option value="">All functions</option>' + fns.map(f => '<option value="' + esc(f.id) + '"' + (sel === f.id ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('');
     const nC = ans.contacts.filter(p => p.name || p.phone).length, nV = ans.vip.filter(p => p.name || p.photo || p.pid).length, nR = ans.refs.filter(r => r.pid).length;
-    h += fcard('contacts', ' sec', '<span class="txt"><h2>People to call</h2><span class="meta">' + (nC ? nC + ' added' : 'Family members our team can call at the venue') + '</span></span><span class="go' + (nC ? ' ok' : '') + '">' + (nC ? 'Edit' : 'Add') + '</span>',
+    dayH += fcard('contacts', ' sec', '<span class="txt"><h2>People to call</h2><span class="meta">' + (nC ? nC + ' added' : 'Family members our team can call at the venue') + '</span></span><span class="go' + (nC ? ' ok' : '') + '">' + (nC ? 'Edit' : 'Add') + '</span>',
       '<div id="sec-contacts">' + ans.contacts.map((p, i) => '<div class="ppl"><label>Name<input class="in" data-k="c' + i + '" data-f="name" maxlength="80" value="' + esc(p.name || '') + '"></label><label>Relation<input class="in" data-k="c' + i + '" data-f="rel" maxlength="60" value="' + esc(p.rel || '') + '" placeholder="e.g. Bride\'s brother"></label>' +
         '<label>Phone<input class="in" type="tel" inputmode="tel" data-k="c' + i + '" data-f="phone" maxlength="20" value="' + esc(p.phone || '') + '"></label><label>For<select class="in" data-k="c' + i + '" data-f="fn">' + fnOpts(p.fn) + '</select></label>' +
         '<button type="button" class="x" data-rmc="' + i + '" style="justify-self:start">Remove</button></div>').join('') +
       (ans.contacts.length < 12 ? '<button type="button" class="addrow" id="add-c">＋ Add a person to call</button>' : '') + '</div>' + doneBtn);
-    h += fcard('vip', ' sec', '<span class="txt"><h2>Important people</h2><span class="meta">' + (nV ? nV + ' added' : 'Family members who must be in the photos') + '</span></span><span class="go' + (nV ? ' ok' : '') + '">' + (nV ? 'Edit' : 'Add') + '</span>',
+    dayH += fcard('vip', ' sec', '<span class="txt"><h2>Important people</h2><span class="meta">' + (nV ? nV + ' added' : 'Family members who must be in the photos') + '</span></span><span class="go' + (nV ? ' ok' : '') + '">' + (nV ? 'Edit' : 'Add') + '</span>',
       '<div id="sec-vip"><p class="meta" style="margin:0">Add a photo and name of grandparents and close relatives. Our team sees them before the shoot.</p>' + ans.vip.map((p, i) => '<div class="vip"><label class="ph"' + (p.pid ? ' data-pid="' + esc(p.pid) + '"' : '') + ' style="' + (p.photo && !p.pid ? 'background-image:url(' + esc(p.photo) + ')' : '') + '">' + (p.photo || p.pid ? '' : 'Add photo') + '<input type="file" accept="image/*" data-vph="' + i + '" aria-label="Photo"></label>' +
         '<div class="f"><input class="in" data-k="v' + i + '" data-f="name" maxlength="80" placeholder="Name" value="' + esc(p.name || '') + '"><input class="in" data-k="v' + i + '" data-f="rel" maxlength="60" placeholder="Relation, e.g. Groom\'s grandmother" value="' + esc(p.rel || '') + '"><button type="button" class="x" data-rmv="' + i + '" style="justify-self:start">Remove</button></div></div>').join('') +
       (ans.vip.length < 15 ? '<button type="button" class="addrow" id="add-v">＋ Add an important person</button>' : '') + '</div>' + doneBtn);
-    if (onDrive || nR) h += fcard('refs', ' sec', '<span class="txt"><h2>Reference photos</h2><span class="meta">' + (nR ? nR + ' added' : 'Poses, decor, outfits you like') + '</span></span><span class="go' + (nR ? ' ok' : '') + '">' + (nR ? 'Edit' : 'Add') + '</span>',
+    if (onDrive || nR) dayH += fcard('refs', ' sec', '<span class="txt"><h2>Reference photos</h2><span class="meta">' + (nR ? nR + ' added' : 'Poses, decor, outfits you like') + '</span></span><span class="go' + (nR ? ' ok' : '') + '">' + (nR ? 'Edit' : 'Add') + '</span>',
       '<div id="sec-refs"><p class="meta" style="margin:0">Photos you would like our team to see: poses, decor, outfits, ideas. Add a line about each and pick the function. Saved in full quality for our team.</p>' +
       '<div class="refs">' + ans.refs.map((r, i) => r.pid ? '<div class="rf"><button type="button" class="open" data-pid="' + esc(r.pid) + '" data-rfi="' + i + '" aria-label="See the photo"></button>' +
         '<input class="in" data-k="r' + i + '" data-f="note" maxlength="120" placeholder="What about it?" value="' + esc(r.note || '') + '"><select class="in" data-k="r' + i + '" data-f="fn">' + fnOpts(r.fn) + '</select>' +
         '<button type="button" class="x" data-rmr="' + i + '" style="justify-self:start">Remove</button></div>' : '').join('') + '</div>' +
       (onDrive && ans.refs.length < 40 ? '<label class="addrow" style="display:block;text-align:center;cursor:pointer">＋ Add photos<input type="file" accept="image/*" multiple id="add-r" hidden></label><div class="upbar" id="r-bar" hidden><i></i></div>' : '') + '</div>' + doneBtn);
+    let afH = '';
     if (after && after.deliveries.length) {
       const D = after.deliveries, ready = D.filter(d => d.status === 'ready' || d.status === 'delivered').length, SW = { waiting: 'Not started', editing: 'Being edited', ready: 'Ready', delivered: 'Delivered' };
-      h += '<div class="sechead2">After the shoot</div>' + fcard('deliv', ' sec', '<span class="txt"><h2>Your photos &amp; films</h2><span class="meta">' + (ready ? ready + ' of ' + D.length + ' ready' : D.length + ' on the way') + (after.open ? '' : ' · 🔒 links open at 90% paid') + '</span></span><span class="go' + (after.open && ready ? ' ok' : '') + '">' + (after.open && ready ? 'Open' : 'See') + '</span>',
+      afH += '<div class="sechead2">After the shoot</div>' + fcard('deliv', ' sec', '<span class="txt"><h2>Your photos &amp; films</h2><span class="meta">' + (ready ? ready + ' of ' + D.length + ' ready' : D.length + ' on the way') + (after.open ? '' : ' · 🔒 links open at 90% paid') + '</span></span><span class="go' + (after.open && ready ? ' ok' : '') + '">' + (after.open && ready ? 'Open' : 'See') + '</span>',
         (after.open ? '' : '<div class="lock">🔒 Your download links open once 90% is paid' + (after.need ? ' (' + inr(after.need) + ' more)' : '') + '. Paid already? Tell us under <b>' + (bk ? 'Your package' : 'Your payments') + ' → We paid</b>.</div>') +
         '<div class="dls">' + D.map(d => '<div class="dl"><div><b>' + esc(d.title) + '</b>' + (d.note ? '<div class="meta">' + esc(d.note) + '</div>' : '') + '</div><span class="dst ' + esc(d.status) + '">' + esc(SW[d.status] || d.status) + '</span>' +
           (d.link ? '<a class="pillbtn dl-go" href="' + esc(d.link) + '" target="_blank" rel="noopener">Open ›</a>' : d.has_link ? '<span class="meta dl-lock">🔒 Opens at 90% paid</span>' : '') + '</div>').join('') + '</div>' + doneBtn);
     }
-    if (bk) h += '<div class="sechead2">Your package</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>' + (bk.package && bk.package !== 'Custom' ? esc(bk.package) : 'Package') + '</h2><span class="meta">Paid ' + inr(bk.paid) + ' of ' + inr(bk.total) + (bk.pending > 0 ? ' · ' + inr(bk.pending) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
+    if (bk) afH += '<div class="sechead2">Your package</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>' + (bk.package && bk.package !== 'Custom' ? esc(bk.package) : 'Package') + '</h2><span class="meta">Paid ' + inr(bk.paid) + ' of ' + inr(bk.total) + (bk.pending > 0 ? ' · ' + inr(bk.pending) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
       ((bk.items || []).length ? '<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6">' + bk.items.map(it => '<li>' + esc(KL[it.kind] || it.kind) + (it.per === 'function' ? ' for each function' : '') + (it.note ? ' · ' + esc(it.note) : '') + '</li>').join('') + '</ul>' : '') +
       '<div class="grid" style="margin-top:12px"><div><div class="meta">Paid</div><b>' + inr(bk.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(bk.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(bk.pending) + '</b></div>' +
-      (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div>' + payHtml());
+      (bk.next_due ? '<div class="wide"><div class="meta">Next payment</div><b>' + inr(bk.next_amount) + '</b> · ' + esc(bk.next_label || '') + ' · ' + esc(dayName(bk.next_due)) + '</div>' : '') + '</div>' + billsHtml() + payHtml());
     // no package, but bills in Muto's Sales desk (043): the same card with what the bills say, and "We paid"
     else if (after && after.source === 'bills' && after.total > 0) {
       const pend = Math.max(after.total - after.paid, 0);
-      h += '<div class="sechead2">Your payments</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>Payments</h2><span class="meta">Paid ' + inr(after.paid) + ' of ' + inr(after.total) + (pend > 0 ? ' · ' + inr(pend) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
-        '<div class="grid"><div><div class="meta">Paid</div><b>' + inr(after.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(after.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(pend) + '</b></div></div>' + payHtml());
+      afH += '<div class="sechead2">Your payments</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>Payments</h2><span class="meta">Paid ' + inr(after.paid) + ' of ' + inr(after.total) + (pend > 0 ? ' · ' + inr(pend) + ' pending' : '') + '</span></span><span class="go ok">View</span>',
+        '<div class="grid"><div><div class="meta">Paid</div><b>' + inr(after.paid) + '</b> <span class="meta" style="display:inline">of ' + inr(after.total) + '</span></div><div><div class="meta">Pending</div><b>' + inr(pend) + '</b></div></div>' + billsHtml() + payHtml());
     }
+    else if (billsHtml()) afH += '<div class="sechead2">Your bills</div>' + fcard('pkg', ' sec', '<span class="txt"><h2>Bills</h2><span class="meta">' + extras.bills.length + ' bill' + (extras.bills.length > 1 ? 's' : '') + ' from Muto\'s</span></span><span class="go ok">View</span>', billsHtml() + doneBtn);
+    const showHelp = over || !!(after && after.deliveries.length) || !!(extras && (extras.requests || []).length);
+    if (showHelp) afH += helpCard();
+    // over: what comes after the shoot first, the functions (read-only) below; nothing for the day any more
+    h += over ? afH + fnH : fnH + dayH + afH;
     $('list').after($('more')); // keep the add button out of the list while it is rebuilt
     $('list').innerHTML = h;
     const slot = $('more-slot'); if (slot) slot.appendChild($('more'));
-    $('more').hidden = preview; $('bar').hidden = preview;
+    $('more').hidden = preview || over; $('bar').hidden = preview || over;
     if (studio) $('send').hidden = true;
     if (preview) $('list').querySelectorAll('input, textarea, select').forEach(x => { x.disabled = true; });
     $('list').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { const k = b.dataset.open; openKey = openKey === k ? null : k; render(); if (openKey) { const el = $('list').querySelector('[data-card="' + k + '"]'); if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } }));
@@ -333,6 +385,7 @@
     const on = (id, fn) => { const b = $(id); if (b) b.addEventListener('click', fn); };
     on('pay-open', () => { $('pay-form').hidden = false; $('pay-open').hidden = true; $('pay-amt').focus(); });
     on('pay-send', sendPay);
+    on('req-send', sendRequest);
     { const ph = $('pay-ph'); if (ph) ph.addEventListener('change', () => { $('pay-phl').textContent = ph.files[0] ? '✓ ' + ph.files[0].name : '＋ Payment screenshot (optional)'; }); }
     on('add-c', () => { ans.contacts.push({}); openKey = 'contacts'; render(); const r = document.querySelectorAll('#sec-contacts .ppl'); r[r.length - 1].querySelector('input').focus(); });
     on('add-v', () => { ans.vip.push({}); openKey = 'vip'; render(); const r = document.querySelectorAll('#sec-vip .vip'); r[r.length - 1].scrollIntoView({ block: 'center' }); });

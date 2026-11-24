@@ -9,8 +9,8 @@ const OWNER = 'owner.test@gmail.com', STAFF = 'office.staff@gmail.com', ACC = 'a
 const OFFICE = { latitude: 26.8467, longitude: 80.9462 }, FAR = { latitude: 26.90, longitude: 81.00 }, CODE = '482913';
 const pad = n => String(n).padStart(2, '0');
 const istDay = (o = 0) => new Date(Date.now() + 330 * 60000 + o * 864e5).toISOString().slice(0, 10);
-const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes', 'team_photos', 'bank_accounts', 'money_txns'].forEach(t => { T[t] = new Map(); });
-const BILLS = {};
+const T = {}; ['docs', 'members', 'crew_feed', 'crew_away', 'crew_status', 'gear_feed', 'gear_log', 'push_subs', 'client_links', 'client_feed', 'client_itinerary', 'employees', 'att_settings', 'att_punch', 'att_requests', 'holidays', 'payroll_runs', 'payslips', 'att_log', 'people', 'people_private', 'work_jobs', 'work_reports', 'drives', 'drive_items', 'drive_moves', 'drive_log', 'packages', 'bookings', 'booking_payments', 'salary_history', 'client_deliveries', 'client_pay_claims', 'phone_changes', 'team_photos', 'bank_accounts', 'money_txns', 'client_requests'].forEach(t => { T[t] = new Map(); });
+const BILLS = {}, BILLDOCS = {};
 T.bank_accounts.set('acc-hdfc', { id: 'acc-hdfc', name: 'HDFC Current', kind: 'bank', active: true, sort: 0 }); T.bank_accounts.set('acc-cash', { id: 'acc-cash', name: 'Cash', kind: 'cash', active: true, sort: 1 });
 const KEY = { docs: r => r.collection + '/' + r.id, members: r => r.email, crew_feed: r => r.person_key, client_links: r => r.wedding_key, client_feed: r => r.wedding_key, client_itinerary: r => r.wedding_key, employees: r => r.email, att_settings: r => String(r.id), payroll_runs: r => r.month, payslips: r => r.month + '|' + r.email, crew_status: r => r.person_key + '|' + r.event_id, people_private: r => r.person, bookings: r => r.wedding_key, salary_history: r => r.person + '|' + r.month };
 const keyOf = (t, r) => (KEY[t] || (r => r.id))(r);
@@ -204,6 +204,23 @@ function rpc(fn, a, e) {
     if (p) p.phone = d; recs.forEach(r => { r.data = Object.assign({}, r.data, { phone: d }); });
     const id = String(T.phone_changes.size + 1); T.phone_changes.set(id, { id: +id, person: p ? p.id : null, name: p ? p.name : (recs[0] || { data: {} }).data.name, old_phone: old, new_phone: d, by_email: e, at: new Date().toISOString(), seen_at: null });
     return { data: { ok: true, phone: d, board: recs.length }, error: null };
+  }
+  // 044: the family's bills + Muto's phone + their requests; asking for a service; the studio answering
+  if (fn === 'client_bills' || fn === 'client_request') {
+    const l = [...T.client_links.values()].find(x => x.token === a.p_token && x.active); if (!l) return { data: { error: 'This page is not active.' }, error: null };
+    const fam = l.emails.includes(e);
+    if (fn === 'client_request') {
+      if (!fam) return { data: { error: 'Only the family\'s registered Gmail can ask for a service.' }, error: null };
+      const id = crypto.randomUUID(); T.client_requests.set(id, { id, wedding_key: l.wedding_key, what: a.p_what, note: a.p_note || null, status: 'new', reply: null, by_email: e, at: new Date().toISOString() });
+      return { data: { ok: true, id }, error: null };
+    }
+    if (!fam && !staff(e) && role(e) !== 'supervisor') return { data: { error: 'Only the family\'s registered Gmail can see this.' }, error: null };
+    return { data: { studio: "Muto's Films", phone: '+919876500000', bills: (BILLDOCS[l.wedding_key] || []), requests: [...T.client_requests.values()].filter(r => r.wedding_key === l.wedding_key).reverse() }, error: null };
+  }
+  if (fn === 'client_request_set') {
+    if (!staff(e)) return { data: { error: 'Only the admin or the manager can answer a request.' }, error: null };
+    const r = T.client_requests.get(a.p_id); if (!r) return { data: { error: 'Unknown request.' }, error: null };
+    Object.assign(r, { status: a.p_status, reply: a.p_reply || r.reply, decided_by: e }); return { data: { ok: true }, error: null };
   }
   // 038: a function's team from the day before (family), every coming function for the studio
   if (fn === 'client_team') {
@@ -493,6 +510,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     if (process.env.SHOTS) { await owner.waitForTimeout(1500); await owner.screenshot({ path: path.join(SHOTS, 'desktop-tabs.png') }); }
     await owner.click('#mutos-bar [data-open-desk="gear"]'); await owner.waitForSelector('#mh-desk');
     ok(await owner.isHidden('#mutos-frames') && /Home/.test(await owner.textContent('#mutos-tabs .mt-tab.on')), 'a top-bar desk button while a tab shows: back on Home & Board with that desk open');
+    ok(await owner.evaluate(() => { const t = document.getElementById('mutos-tabs'), r = t.getBoundingClientRect(), el = document.elementFromPoint(r.left + 40, r.top + r.height / 2); return !!el && !t.contains(el); }), 'an open desk panel covers the tab strip (the strip no longer sits on top of windows)');
     await owner.click('#mh-desk .mh-x');
     await owner.click('#mutos-tabs .mt-tab[data-tab="t1"]');
     ok(await fr().evaluate(() => window.__keep) === 42, 'switching back to Drives: the same page, nothing reloaded (your place is kept)');
@@ -851,6 +869,10 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     ok(tp && tp.status === 'pending' && uploads.get(tp.upload).kind === 'person', 'Imran adds his photo: it goes to Drive and waits ("Waiting for Muto\'s to approve it")');
     await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="teamphotos"]', { timeout: 20000 });
     ok(/Profile photos to approve/.test(await owner.textContent('[data-need="teamphotos"]')), 'admin Home → Needs you: "Profile photos to approve"');
+    await owner.click('[data-desk="people"]'); await owner.waitForSelector('#mh-desk [data-tile="teamphotos"]');
+    ok(/1/.test(await owner.textContent('#mh-desk [data-tile="teamphotos"] .count')), 'People desk: a "Profile photos" tile, any time, with how many wait');
+    await owner.click('#mh-desk [data-tile="teamphotos"]'); await owner.waitForSelector('#tp-list .tp-row');
+    await owner.click('#tp-close'); await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="teamphotos"]', { timeout: 20000 });
     await owner.click('[data-need="teamphotos"]'); await owner.waitForSelector('#tp-list .tp-row');
     ok(/Imran/.test(await owner.textContent('#tp-list')), 'the window shows the photo and who sent it');
     await owner.click('#tp-list .tp-row .tp-no'); await owner.click('#tp-list .tp-row .tp-send'); await owner.waitForFunction(() => /reason/.test((document.getElementById('sb-toast') || {}).textContent || ''));
@@ -1135,6 +1157,38 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
   ok(await fam.getAttribute('[data-card="deliv"] .dl-go', 'href') === 'https://drive.google.com/reel' && /✓ Received/.test(await fam.textContent('#sec-pay')), 'family: the Reel link is open and the payment shows "✓ Received"');
   if (process.env.SHOTS) await fam.screenshot({ path: path.join(SHOTS, 'client-after.png'), fullPage: true });
+  { // 044: once a function's day is over it cannot be changed; when all are over the page shows deliveries, payments, bills and "Need something?"
+    const fd = T.client_feed.get(wed.key).data, keepDates = fd.functions.map(x => x.date);
+    fd.functions.forEach((x, i) => { x.date = istDay(-5 + i * 0); });
+    BILLDOCS[wed.key] = [{ number: 'MF/SL/26-27/157', kind: 'invoice', date: istDay(-40), total: 300000, paid: 270000, token: 'tok-157' }];
+    await fam.reload(); await fam.waitForSelector('#over-note');
+    const f0 = fd.functions[0].id;
+    ok(await fam.isHidden('#bar') && await fam.isHidden('#more') && !(await fam.$('[data-card="contacts"]')), 'all functions over: no Save / Send, no "Add a function", nothing "for the team on the day"');
+    await fam.click('[data-open="' + f0 + '"]');
+    ok(!(await fam.$('[data-card="' + f0 + '"] input, [data-card="' + f0 + '"] textarea')) && /cannot be changed here/.test(await fam.textContent('[data-card="' + f0 + '"]')), 'a past function opens read-only: what they gave us, "call Muto\'s" for changes');
+    const order = await fam.$$eval('#list > .sechead2', x => x.map(e => e.textContent));
+    ok(order.indexOf('After the shoot') > -1 && order.indexOf('After the shoot') < order.indexOf('Your functions'), 'after the event: photos & films, payments and help come first, the functions below');
+    await fam.click('[data-open="pkg"]');
+    ok(/MF\/SL\/26-27\/157/.test(await fam.textContent('#sec-bills')) && await fam.getAttribute('#sec-bills .bill-go', 'href') === '/bill.html?t=tok-157', 'their bill is listed with "Open ›" to see it');
+    await fam.click('[data-open="help"]');
+    ok(await fam.getAttribute('#call-m', 'href') === 'tel:+919876500000' && /wa\.me\/919876500000/.test(await fam.getAttribute('#wa-m', 'href')), '"Call Muto\'s" and "WhatsApp Muto\'s"');
+    await fam.selectOption('#req-what', 'Extra album'); await fam.fill('#req-note', '2 more for the grandparents'); await fam.click('#req-send');
+    await fam.waitForFunction(() => /Extra album/.test((document.querySelector('[data-card="help"]') || {}).textContent || ''));
+    const rq = [...T.client_requests.values()][0];
+    ok(rq && rq.what === 'Extra album' && rq.status === 'new' && /Sent/.test(await fam.textContent('[data-card="help"]')), 'the family asks for an extra album: "Sent"');
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="requests"]', { timeout: 20000 });
+    ok(/Service requests/.test(await owner.textContent('[data-need="requests"]')), 'admin Home → Needs you: "Service requests"');
+    await owner.click('[data-need="requests"]'); await owner.waitForSelector('#rq-list .rq-row');
+    await owner.fill('#rq-list .rq-reply', 'Ordered, ready in 2 weeks'); await owner.click('#rq-list [data-rqs="done"]');
+    await owner.waitForFunction(() => /Marked done/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(rq.status === 'done' && rq.reply === 'Ordered, ready in 2 weeks', 'admin marks it done with an answer');
+    T.client_feed.get(wed.key).data.functions.forEach(x => { x.date = istDay(-5); });   // the admin's board re-sent the real dates meanwhile
+    await fam.reload(); await fam.waitForSelector('#over-note'); await fam.click('[data-open="help"]');
+    ok(/Done/.test(await fam.textContent('[data-card="help"]')) && /Ordered, ready in 2 weeks/.test(await fam.textContent('[data-card="help"]')), 'the family sees "Done" and the answer');
+    if (process.env.SHOTS) await fam.screenshot({ path: path.join(SHOTS, 'client-over.png'), fullPage: true });
+    T.client_feed.get(wed.key).data.functions.forEach((x, i) => { x.date = keepDates[i]; }); delete BILLDOCS[wed.key];
+    await fam.reload(); await fam.waitForSelector('[data-open="contacts"]');
+  }
   // the family adds people to call and important people with a photo; the crew on that shoot see them
   await fam.click('[data-open="contacts"]'); await fam.click('#add-c'); await fam.fill('#sec-contacts [data-f="name"]', 'Rohit'); await fam.fill('#sec-contacts [data-f="rel"]', 'Bride\'s brother'); await fam.fill('#sec-contacts [data-f="phone"]', '9876500011');
   await fam.click('[data-open="vip"]'); await fam.click('#add-v'); await fam.fill('#sec-vip [data-f="name"]', 'Dadi'); await fam.fill('#sec-vip [data-f="rel"]', 'Grandmother');

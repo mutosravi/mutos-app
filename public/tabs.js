@@ -22,7 +22,7 @@
   function ensureUi() {
     if (strip) return;
     const st = document.createElement('style');
-    st.textContent = '#mutos-tabs{position:sticky;top:var(--mh-bar-h,56px);z-index:1160;display:flex;gap:4px;align-items:flex-end;padding:6px 12px 0;background:var(--bg,#fbf6f2);border-bottom:1px solid rgba(42,30,34,.12);overflow-x:auto;scrollbar-width:none}' +
+    st.textContent = '#mutos-tabs{position:sticky;top:var(--mh-bar-h,56px);z-index:70;display:flex;gap:4px;align-items:flex-end;padding:6px 12px 0;background:var(--bg,#fbf6f2);border-bottom:1px solid rgba(42,30,34,.12);overflow-x:auto;scrollbar-width:none}' +
       '#mutos-tabs[hidden]{display:none}#mutos-tabs::-webkit-scrollbar{display:none}' +
       '.mt-tab{display:inline-flex;align-items:center;gap:6px;max-width:220px;min-height:34px;padding:0 6px 0 14px;border:1px solid transparent;border-bottom:0;border-radius:10px 10px 0 0;background:transparent;color:#6f5f63;font:600 13px/1 "Open Sans",system-ui,sans-serif;cursor:pointer;white-space:nowrap;flex:0 0 auto}' +
       '.mt-tab:hover{background:rgba(158,79,98,.08)}.mt-tab.on{background:#fff;color:#2a1e22;border-color:rgba(42,30,34,.12);box-shadow:0 -2px 6px -4px rgba(42,30,34,.2);margin-bottom:-1px;padding-bottom:1px}' +

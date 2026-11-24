@@ -141,7 +141,7 @@
     { k: 'clients', ic: 'heart', title: 'Clients', tools: [
       ['clients', 'heart', 'Clients', 'main'], ['clientdata', 'drive', 'Client data'], ['packages', 'money', 'Packages']] },
     { k: 'people', ic: 'idcard', title: 'People', tools: [
-      ['/desk.html?tab=people', 'idcard', 'People', 'main'], ['/attendance.html', 'clock', 'Attendance', '', 'owner'], ['/attendance.html?tab=hist', 'list', 'Salary history', '', 'owner']] },
+      ['/desk.html?tab=people', 'idcard', 'People', 'main'], ['teamphotos', 'camera', 'Profile photos'], ['/attendance.html', 'clock', 'Attendance', '', 'owner'], ['/attendance.html?tab=hist', 'list', 'Salary history', '', 'owner']] },
     // Sales desk (23 Nov 2026, Ravi: everything from myBillBook moves here; 041_sales.sql, public/sales.html), admin + manager only
     { k: 'sales', ic: 'rupee', title: 'Sales desk', tools: [
       ['/sales.html', 'rupee', 'Sales desk', 'main'], ['/sales.html?tab=bills', 'list', 'Quotations & bills'], ['/sales.html?new=quotation', 'plus', 'New quotation'],
@@ -184,7 +184,7 @@
     const ov = document.createElement('div'); ov.className = 'sb-modal-overlay mh-sheet-bg'; ov.id = 'mh-desk';
     ov.innerHTML = '<div class="sb-modal mh-sheet mh-desksheet" role="dialog" aria-modal="true" aria-label="' + esc(d.title) + '"><div class="mh-sheet-head"><b>' + esc(d.title) + '</b><button type="button" class="mh-x" aria-label="Close">✕</button></div>' +
       '<div class="tiles three" id="mh-tiles">' + deskTools(d).map(([k, ic, label, cls]) => {
-        const n = k === '/cards.html' ? (cardSum && !sup() ? cardSum.hold + cardSum.toOffice : 0) : k === 'sb-rentals' ? rent : k === 'sync' ? inbox : k === 'clients' && cs ? cs.toCheck + cs.overdue : 0;
+        const n = k === '/cards.html' ? (cardSum && !sup() ? cardSum.hold + cardSum.toOffice : 0) : k === 'sb-rentals' ? rent : k === 'sync' ? inbox : k === 'clients' && cs ? cs.toCheck + cs.overdue : k === 'teamphotos' ? photoWait.length : 0;
         return (k.startsWith('/') ? '<a class="tile' + (cls ? ' ' + cls : '') + '" href="' + k + '">' : '<button type="button" class="tile' + (cls ? ' ' + cls : '') + '" data-tile="' + k + '">') + ICON(ic) + esc(label) + (n ? '<span class="count">' + n + '</span>' : '') + (k.startsWith('/') ? '</a>' : '</button>');
       }).join('') + '</div></div>';
     document.body.appendChild(ov);
@@ -206,6 +206,7 @@
     else if (k === 'clients') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.open();
     else if (k === 'clientdata') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.data && window.MUTOS_CLIENTS.data();
     else if (k === 'packages') window.MUTOS_CLIENTS && window.MUTOS_CLIENTS.packages && window.MUTOS_CLIENTS.packages();
+    else if (k === 'teamphotos') loadTeamPhotos().then(photosWin);   // People desk: profile photos the team sent, any time (24 Nov 2026)
     else click(k); // the board's own buttons open their windows on top of Home
   }
   let renderT = null;
@@ -250,6 +251,7 @@
     if (photoWait.length && !sup()) needs.push(['teamphotos', 'sand', photoWait.length, 'Profile photos to approve', 'families see them once you approve']);
     if (phoneChanges.length && !sup()) needs.push(['phones', 'sand', phoneChanges.length, 'Phone numbers changed', 'by the team themselves']);
     if (csum && csum.payToCheck && !sup()) needs.splice(0, 0, ['paycheck', 'lilac', csum.payToCheck, 'Payments to check', 'families said "we paid"']);
+    if (csum && csum.requests && !sup()) needs.splice(0, 0, ['requests', 'peach', csum.requests, 'Service requests', 'families asked for something more']);
     if (csum && csum.overdue && !sup()) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
     if (csum && csum.dueSoon && !sup()) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
     if (u && u.unconf.length && !sup()) needs.push(['updates', 'sand', u.unconf.length, 'Not confirmed', 'by crew, next 7 days']);
@@ -287,7 +289,7 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'phones') phonesWin(); else if (k === 'teamphotos') photosWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'requests') window.MUTOS_CLIENTS.requests(); else if (k === 'phones') phonesWin(); else if (k === 'teamphotos') photosWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });
