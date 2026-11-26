@@ -188,6 +188,14 @@ button.sb-pill:hover { border-color: var(--gold); color: var(--gold); }
 .sb-empty-drop { font-size: 11px; color: var(--ink-muted); font-style: italic; }
 .sb-gear-wrap { display: flex; flex-wrap: wrap; gap: 5px; }
 .sb-same-team { display: block; width: 100%; text-align: left; margin: 10px 0 0; background: var(--paper); border: 1px dashed var(--ok); color: var(--ok-ink); border-radius: 5px; padding: 6px 8px; font-size: 11.5px; font-family: var(--font-mono); cursor: pointer; overflow-wrap: anywhere; }
+.sb-travel-card { background: #efe9f6; color: #3b2a58; border: 2px dashed #b9a5d6; border-radius: 6px; padding: 12px 14px; font-size: 13px; line-height: 1.45; align-self: start; }
+.sb-list .sb-travel-card { margin: 6px 0; }
+.sb-travel-head { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #6b4f93; }
+.sb-travel-title { font-size: 16px; font-weight: 700; margin-top: 2px; }
+.sb-travel-sub { color: #6b5a85; margin-bottom: 6px; }
+.sb-travel-row { margin-top: 4px; }
+.sb-travel-go { margin-top: 8px; background: #fff; color: #4a3470; border: 1px solid #c9b8e0; border-radius: 6px; padding: 6px 10px; font: inherit; font-weight: 600; cursor: pointer; }
+.sb-flash { outline: 3px solid #d4a64a; outline-offset: 2px; }
 .sb-same-team:hover { border-style: solid; background: var(--ok-soft); }
 .sb-stepper { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .sb-stepper button { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--card-edge); background: var(--paper); color: var(--ink); font-size: 15px; line-height: 1; cursor: pointer; padding: 0; }
@@ -4437,6 +4445,15 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     const changedSet = new Set(changedKeys());
     const groups = {};
     visible.forEach(ev => { const k = ev.date || 'No date set'; (groups[k] = groups[k] || []).push(ev); });
+    const shootKeys = Object.keys(groups).sort((a, b) => a === 'No date set' ? 1 : b === 'No date set' ? -1 : a.localeCompare(b));
+    // travel days (26 Nov 2026, Ravi: "it must be visible as same card on the previous or next day as travelling"): a far shoot with a
+    // travel day before / after shows a travelling card on that day too, even when nothing else is booked then
+    const travelOn = {};
+    visible.forEach(ev => { if (!isActive(ev) || !ev.date || !isFar(ev)) return;
+      [[farBefore(ev), -1], [farAfter(ev), 1]].forEach(([on, n]) => { if (!on) return; const d = addDays(ev.date, n);
+        if (state.events.some(o => o.id !== ev.id && isActive(o) && o.date === d && samePlace(o, ev))) return;   // a shoot at the same place that day: not just travelling
+        (travelOn[d] = travelOn[d] || []).push({ ev, side: n < 0 ? 'before' : 'after' }); }); });
+    Object.keys(travelOn).forEach(d => { if (!groups[d]) groups[d] = []; });
     const dateKeys = Object.keys(groups).sort((a, b) => a === 'No date set' ? 1 : b === 'No date set' ? -1 : a.localeCompare(b));
     // serials count every shoot on a date so numbers stay stable under filters
     eventSerials = {};
@@ -4445,7 +4462,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
     Object.keys(allByDate).forEach(k => allByDate[k].sort((a, b) => (SLOT_ORDER[a.slot] ?? 1) - (SLOT_ORDER[b.slot] ?? 1) || a.name.localeCompare(b.name)).forEach((ev, i) => { eventSerials[ev.id] = i + 1; }));
     const byDate = {};
     dateKeys.forEach(k => { byDate[k] = groups[k].slice().sort((a, b) => eventSerials[a.id] - eventSerials[b.id]); });
-    renderMonth(dateKeys, byDate);
+    renderMonth(shootKeys, byDate);
 
     if (!visible.length && state.events.length) {
       const p = document.createElement('div'); p.className = 'sb-empty-state';
@@ -4488,7 +4505,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       });
       const list = (arr, empty) => arr.length ? arr.map(x => escapeHtml(x.name)).join(', ') : empty;
       const bodies = freeGear.filter(eq => gearBucket(eq) === 'bodies'), lenses = freeGear.filter(eq => gearBucket(eq) === 'lenses'), other = freeGear.filter(eq => gearBucket(eq) === 'other');
-      let hh = '<div class="sb-date-head"><span class="sb-date-title">' + escapeHtml(formatDateLong(dateKey === 'No date set' ? null : dateKey)) + '</span><span class="sb-date-count">' + evs.length + (evs.length === 1 ? ' shoot' : ' shoots') + (matchIds ? ' · ' + evs.filter(e => matchIds.has(e.id)).length + ' ' + ({ short: 'short on crew', gear: 'short on gear', drone: 'short on drone', assist: 'short on assistant', clash: 'double-booked', premium: 'premium', mine: 'yours', week: 'this week', wedding: evs.filter(e => matchIds.has(e.id)).length === 1 ? 'wedding' : 'weddings' })[prefs.filter] : '') + '</span>';
+      let hh = '<div class="sb-date-head"><span class="sb-date-title">' + escapeHtml(formatDateLong(dateKey === 'No date set' ? null : dateKey)) + '</span><span class="sb-date-count">' + evs.length + (evs.length === 1 ? ' shoot' : ' shoots') + ((travelOn[dateKey] || []).length ? ' · 🛫 ' + travelOn[dateKey].length + ' travelling' : '') + (matchIds ? ' · ' + evs.filter(e => matchIds.has(e.id)).length + ' ' + ({ short: 'short on crew', gear: 'short on gear', drone: 'short on drone', assist: 'short on assistant', clash: 'double-booked', premium: 'premium', mine: 'yours', week: 'this week', wedding: evs.filter(e => matchIds.has(e.id)).length === 1 ? 'wedding' : 'weddings' })[prefs.filter] : '') + '</span>';
       if (dateKey !== 'No date set') {
         dayInfo[dateKey] = { free: freeShooters.map(p => p.name), freeIn: freeShooters.filter(p => !isFreelancer(p)).map(p => p.name), freeFl: freeShooters.filter(isFreelancer).map(p => p.name + (availOf(p, dateKey) === 'yes' ? ' (✓ free)' : availOf(p, dateKey) === 'asked' ? ' (asked)' : '')), freeAsst: freeAssistants.map(p => p.name), away: awayNames, travelling: [...travelling.entries()].map(([k, pl]) => displayName(k) + ' (' + pl + ')'), bodies: bodies.map(e => e.name) };
         hh += '<button type="button" class="sb-date-add" data-action="dayaway" title="Tick everyone who is not available on this date">✋ who is away</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="daystatus" title="A summary of this day to send to a team member: shoots, crew filled, who is free">➤ send day status</button><button type="button" class="sb-date-add" style="margin-left:6px" data-action="addhere">+ add shoot on this date</button>';
@@ -4521,12 +4538,14 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       if (prefs.view === 'list') {
         const listEl = document.createElement('div'); listEl.className = 'sb-list';
         shown.forEach(ev => listEl.appendChild(createRowEl(ev, eventSerials[ev.id], changedSet, dimOf(ev))));
+        if (!dayPick[dateKey]) (travelOn[dateKey] || []).forEach(t => listEl.appendChild(travelCardEl(t.ev, t.side, dateKey)));
         if (shown.length < evs.length) { const more = document.createElement('button'); more.type = 'button'; more.className = 'sb-day-all'; more.textContent = 'Show all ' + evs.length + ' shoots of this day'; more.addEventListener('click', () => { delete dayPick[dateKey]; renderBoard(); }); listEl.appendChild(more); }
         if (showingNewForm && newFormTargetKey === dateKey) listEl.appendChild(buildNewEventForm(dateKey));
         section.appendChild(listEl);
       } else {
         const grid = document.createElement('div'); grid.className = 'sb-board';
         shown.forEach(ev => grid.appendChild(createCardEl(ev, tilt++, eventSerials[ev.id], changedSet, { dim: dimOf(ev) })));
+        if (!dayPick[dateKey]) (travelOn[dateKey] || []).forEach(t => grid.appendChild(travelCardEl(t.ev, t.side, dateKey)));
         if (shown.length < evs.length) { const more = document.createElement('button'); more.type = 'button'; more.className = 'sb-day-all'; more.textContent = 'Show all ' + evs.length + ' shoots of this day'; more.addEventListener('click', () => { delete dayPick[dateKey]; renderBoard(); }); grid.appendChild(more); }
         if (showingNewForm && newFormTargetKey === dateKey) grid.appendChild(buildNewEventForm(dateKey));
         section.appendChild(grid);
@@ -4547,6 +4566,26 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       addSection.appendChild(w);
     }
     board.appendChild(addSection);
+  }
+  // the travelling card on a far shoot's travel day: who and what is away, with a way to the shoot itself
+  function travelCardEl(ev, side, dateKey) {
+    const el = document.createElement('div'); el.className = 'sb-travel-card'; el.dataset.ev = ev.id; el.dataset.side = side;
+    const who = [];
+    ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p) { const t = teamTake(a); who.push(p.name + (t ? ' (team of ' + (t.photo + t.video) + ')' : '')); } });
+    ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p) who.push(p.name + ' (assistant)'); });
+    const gear = [...new Set(allGearIds(ev))].map(findEquip).filter(Boolean).map(eq => eq.name);
+    el.innerHTML = '<div class="sb-travel-head">🛫 Travelling · ' + (side === 'before' ? 'day before' : 'day after') + '</div>' +
+      '<div class="sb-travel-title">' + (side === 'before' ? 'Going to ' : 'Coming back from ') + escapeHtml(placeName(ev)) + '</div>' +
+      '<div class="sb-travel-sub">for ' + escapeHtml(ev.name) + ' · ' + escapeHtml(formatDay(ev.date)) + ' · ' + escapeHtml(ev.slot || '') + '</div>' +
+      '<div class="sb-travel-row"><b>Not available today:</b> ' + (who.length ? escapeHtml(who.join(', ')) : '<i>nobody assigned yet</i>') + '</div>' +
+      (gear.length ? '<div class="sb-travel-row"><b>Gear away:</b> ' + escapeHtml(gear.join(', ')) + '</div>' : '') +
+      '<button type="button" class="sb-travel-go" data-action="opentravel">Open ' + escapeHtml(ev.name) + ' ›</button>';
+    el.querySelector('.sb-travel-go').addEventListener('click', () => {
+      if (dayPick[ev.date]) { delete dayPick[ev.date]; renderBoard(); }
+      const c = document.getElementById('card-' + ev.id) || document.getElementById('sec-' + ev.date);
+      if (c) { c.scrollIntoView({ block: 'center', behavior: 'smooth' }); c.classList.add('sb-flash'); setTimeout(() => c.classList.remove('sb-flash'), 2500); }
+    });
+    return el;
   }
   function gearBucket(eq) {
     const c = (eq.category || '').toLowerCase(), n = (eq.name || '').toLowerCase();

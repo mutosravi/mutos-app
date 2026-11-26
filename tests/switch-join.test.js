@@ -35,7 +35,7 @@ const server = http.createServer((q, s) => { const p = q.url.split('?')[0], f = 
   await p.evaluate(d => window.__boardApi.goToDate(d), set.day); await p.waitForSelector('#card-' + set.ids[0]);
   // time and place stand out
   const ww = await p.$eval('#card-' + set.ids[0] + ' .sb-card-ww', x => ({ t: x.querySelector('.sb-ww-time').textContent, l: x.querySelector('.sb-ww-loc').textContent, map: !!x.querySelector('.sb-ww-map'), bg: window.getComputedStyle(x.querySelector('.sb-ww-time')).backgroundColor, w: window.getComputedStyle(x.querySelector('.sb-ww-loc')).fontWeight }));
-  ok(/Report 7:30\s*am/i.test(ww.t) && /Clarks Awadh/.test(ww.l) && ww.map && ww.bg !== 'rgba(0, 0, 0, 0)' && +ww.w >= 700, 'board card: "⏰ Report 7:30 am" on a dark pill, "📍 Clarks Awadh" bold, Map ↗ (' + ww.t + ' · ' + ww.l + ')');
+  ok(/Report 7:30\s*am/i.test(ww.t) && /Clarks Awadh/.test(ww.l) && ww.map && ww.bg !== 'rgba(0, 0, 0, 0)' && +ww.w >= 700, 'board card: "⏰ Report 7:30 am" on a dark pill, "📍 Clarks Awadh" bold, Map ↗ (' + ww.t + ' · ' + ww.l + ' · map ' + ww.map + ' · ' + ww.bg + ' · ' + ww.w + ')');
   ok(/not set/.test(await p.textContent('#card-' + set.ids[1] + ' .sb-ww-time.tbc')), 'no report time: a dashed "Report time not set" warning');
   // switch with the gear staying with the slot (as before)
   const sw = async () => { await p.click('#card-' + set.ids[0] + ' [data-action="switchshooter"][data-member="' + set.a + '"]'); await p.waitForSelector('#sw-gear'); };
