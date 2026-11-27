@@ -5,6 +5,7 @@ import { sendPush } from './push.js';
 import { runBackup, listAll } from './backup.js';
 import { parseServiceAccount, exportSheetXlsx } from './google.js';
 import { photosApi } from './photos.js';
+import { deliverApi, unshareExpired } from './deliver.js';
 import { runDailyLogs } from './logs.js';
 
 const pad = n => String(n).padStart(2, '0');
@@ -376,6 +377,9 @@ export default {
     if (url.pathname === '/api/notify-shoots' && request.method === 'POST') {
       try { return await notifyShootsApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
+    if (url.pathname.startsWith('/api/deliver/')) {   // editors hand over finished work (worker/deliver.js)
+      try { return await deliverApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
+    }
     if (url.pathname.startsWith('/api/photos/')) {   // photos on the studio's Google Drive (worker/photos.js)
       try { return await photosApi(request, env); } catch (e) { return Response.json({ error: String(e.message || e) }, { status: 500 }); }
     }
@@ -394,7 +398,8 @@ export default {
       if (!env.SUPABASE_SECRET_KEY || !env.BACKUPS) { console.log('backup skipped: secret key or storage missing'); return; }
       ctx.waitUntil(runBackup(env, 'nightly').then(r => console.log('backup', JSON.stringify(r)))
         .catch(e => console.log('backup failed', e))
-        .then(() => runDailyLogs(env)).then(r => console.log('daily logs', JSON.stringify(r))).catch(e => console.log('daily logs failed', e)));
+        .then(() => runDailyLogs(env)).then(r => console.log('daily logs', JSON.stringify(r))).catch(e => console.log('daily logs failed', e))
+        .then(() => unshareExpired(env)).then(r => console.log('expired links', JSON.stringify(r))).catch(e => console.log('unshare failed', e)));
       return;
     }
     if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) { console.log('reminders skipped: secrets not set'); return; }

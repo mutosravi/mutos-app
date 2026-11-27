@@ -2,7 +2,7 @@
 // time, venue, address, contact and notes (public/client.html). The board keeps their function list up to date (client_feed).
 (function () {
   const app = window.mutosApp;
-  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [], claims = [], dels = [], accounts = [], reqs = [];
+  let api = null, links = [], itin = [], applied = [], lastSig = new Map(), bookings = [], payments = [], packages = [], claims = [], dels = [], accounts = [], reqs = [], reviewJobs = [], peopleList = [];
   const sup = () => window.__mutosRole === 'supervisor'; // supervisor: Gmails, WhatsApp, answers, editing the form; no money
   const inr = n => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const KIND_LABELS = [['reel', 'Reel'], ['teaser', 'Teaser'], ['trailer', 'Trailer'], ['highlight', 'Highlight film'], ['full', 'Full film'], ['top', 'Top selection'], ['lr', 'LR edit'], ['album_sel', 'Album selection'], ['album', 'Album design'], ['other', 'Other']];
@@ -56,7 +56,7 @@
     // everything in ONE round of requests (it was five, one after another: each Clients window waited for all of them on a phone)
     const safe = q => Promise.resolve(q).then(r => r, e => ({ error: e }));
     const studio = !sup();
-    const [l, i, g, b, p, k, x, d, a, rq] = await Promise.all([
+    const [l, i, g, b, p, k, x, d, a, rq, rv, pp] = await Promise.all([
       c.from('client_links').select('*'), c.from('client_itinerary').select('*'),
       // what the database put on the board when a family pressed Send (017_client_auto_apply.sql); fine if not set up yet
       safe(c.from('client_apply_log').select('wedding_key, event_id, at, before, after').order('at', { ascending: false }).limit(500)),
@@ -68,13 +68,16 @@
       // Sales desk accounts (041): approving a family's payment can also record it there (042); fine if not set up yet
       studio ? safe(c.from('bank_accounts').select('id, name, kind, active, sort').eq('active', true).order('sort')) : null,
       // service requests from the families' pages (044); fine if not set up yet
-      studio ? safe(c.from('client_requests').select('*').order('at', { ascending: false }).limit(500)) : null
+      studio ? safe(c.from('client_requests').select('*').order('at', { ascending: false }).limit(500)) : null,
+      // editors' handed-over work waiting for a check (047); fine if not set up yet
+      studio ? safe(c.from('work_jobs').select('*').eq('review', 'waiting').order('hand_at')) : null,
+      studio ? safe(c.from('people').select('id, name, email')) : null
     ]);
     if (l.error) throw l.error;
     links = l.data || []; itin = i.error ? [] : (i.data || []);
     applied = g.error ? [] : (g.data || []);
     bookings = b.error ? [] : (b.data || []); payments = p.error ? [] : (p.data || []); packages = k.error ? [] : (k.data || []);
-    if (studio) { claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); accounts = a.error ? [] : (a.data || []); reqs = rq.error ? [] : (rq.data || []); }
+    if (studio) { claims = x.error ? [] : (x.data || []); dels = d.error ? [] : (d.data || []); accounts = a.error ? [] : (a.data || []); reqs = rq.error ? [] : (rq.data || []); reviewJobs = rv.error ? [] : (rv.data || []); peopleList = pp.error ? [] : (pp.data || []); }
   }
   const ACC_KEY = 'mutos-pay-account';
   const lastAcc = () => { try { return localStorage.getItem(ACC_KEY) || ''; } catch (e) { return ''; } };
@@ -109,7 +112,7 @@
   function summary() {
     if (!api) return null; const ws = weddings(), keys = new Set(ws.map(w => w.key));
     const all = bookings.map(b => money(b.wedding_key)).filter(Boolean);
-    return { expired: expiredDels().length, requests: reqs.filter(r => r.status === 'new').length, payToCheck: claims.filter(x => x.status === 'pending').length, toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
+    return { review: canApprove() ? reviewJobs.length : 0, expired: expiredDels().length, requests: reqs.filter(r => r.status === 'new').length, payToCheck: claims.filter(x => x.status === 'pending').length, toCheck: ws.filter(w => stateOf(w).fresh).length, noLink: ws.filter(w => !stateOf(w).l).length, overdue: all.filter(m => m.overdue > 0).length, dueSoon: all.filter(m => m.soon && keys.has(m.b.wedding_key)).length };
   }
 
   // shoots of the same family left out of a wedding (12 Nov 2026, Ravi: "I filled the Gmail … but it only shows in a single
@@ -343,6 +346,54 @@
       if (errs.length) { api.toast(errs[0]); btn.disabled = false; btn.textContent = 'Save'; return; }
       api.toast('Saved. The family sees it on their page.'); afterWin(w);
     });
+  }
+  // editors' handed-over work (047): watch it, link it to the family's delivery line, approve → the family gets it, or ask for changes
+  const canApprove = () => ['owner', 'manager'].includes(window.__mutosRole);
+  const JOBK = { reel: 'Reel', teaser: 'Teaser', trailer: 'Trailer', highlight: 'Highlight', full: 'Full video', top: 'Top selection', lr: 'Photo editing', album_sel: 'Album selection', album: 'Album design', other: 'Other' };
+  const jobLabel = j => (j.title || JOBK[j.kind] || j.kind) + (j.fn_label ? ' · ' + j.fn_label : '');
+  async function reviewWin() {
+    if (!api || sup()) return;
+    try { await load(); } catch (e) { api.toast('Could not load: ' + (e.message || e)); return; }
+    const all = weddings(true), nameOf = k => { const w = all.find(x => x.key === k), l = links.find(x => x.wedding_key === k); return (w && w.title) || (l && l.title) || k.replace(/^[a-z]:/, ''); };
+    const who = j => { const p = peopleList.find(x => x.id === j.assignee) || peopleList.find(x => x.email === j.hand_by); return p ? p.name : String(j.hand_by || '').split('@')[0]; };
+    const when = t => t ? new Date(t).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+    const opts = j => '<option value="">— not on the family\'s page —</option>' + dels.filter(d => d.wedding_key === j.wedding_key).map(d => '<option value="' + d.id + '"' + (d.id === j.delivery ? ' selected' : '') + '>' + esc(d.title) + ' (' + esc(({ waiting: 'Not started', editing: 'Being edited', ready: 'Ready', delivered: 'Delivered' })[d.status] || d.status) + ')</option>').join('');
+    const modal = api.makeModal(api.modalHead('Ready to check', 'Work the editors handed over. Watch it, then Approve: it becomes Ready on the family\'s page with the link (paid 90% or opened by hand). Or ask for changes: it goes back to the editor.') +
+      '<div class="sb-modal-list" id="rv-list">' + (reviewJobs.length ? reviewJobs.map(j => '<div class="sb-manage-row rv-row" data-rv="' + j.id + '" style="display:block;padding:10px">' +
+        '<b>' + esc(nameOf(j.wedding_key)) + '</b> · ' + esc(jobLabel(j)) + (j.round > 1 ? ' · round ' + j.round : '') +
+        '<div class="sb-manage-sub">From ' + esc(who(j)) + ' · ' + esc(when(j.hand_at)) + ' · ' + (j.hand_upload ? 'uploaded file' : 'link') + (j.hand_note ? ' · "' + esc(j.hand_note) + '"' : '') + '</div>' +
+        '<div class="sb-btn-row" style="margin-top:6px;flex-wrap:wrap"><button type="button" class="sb-btn-sm secondary" data-rvp="' + j.id + '">▶ Watch</button>' +
+          (canApprove() ? '<label class="sb-manage-sub" style="display:flex;gap:6px;align-items:center">Family\'s line<select class="sb-field rv-del" style="width:auto;max-width:220px">' + opts(j) + '</select></label>' : '') + '</div>' +
+        (canApprove() ? '<div class="sb-btn-row" style="margin-top:6px;flex-wrap:wrap"><button type="button" class="sb-btn-sm" data-rvok="' + j.id + '">Approve → send to family</button>' +
+          '<input class="sb-field rv-note" placeholder="What needs to change?" maxlength="300" style="flex:1 1 180px" data-nosuggest><button type="button" class="sb-btn-sm secondary" data-rvno="' + j.id + '">Changes needed</button></div>' : '') + '</div>').join('')
+        : '<p class="sb-modal-empty">Nothing waiting. 🎉</p>') + '</div><div class="sb-modal-foot"><button type="button" id="rv-done">Done</button></div>', true);
+    modal.querySelector('#rv-done').addEventListener('click', api.closeModal);
+    const c = await app.client(), D = window.MutosDeliver;
+    modal.querySelectorAll('[data-rvp]').forEach(b => b.addEventListener('click', async () => {
+      const j = reviewJobs.find(x => x.id === b.dataset.rvp); const w = window.open('', '_blank');
+      try { const u = j.hand_upload ? await D.peek(c, j.hand_upload) : j.link; if (w) w.location = u; else location.assign(u); }
+      catch (e) { if (w) w.close(); api.toast(e.message || String(e)); }
+    }));
+    const row = id => modal.querySelector('.rv-row[data-rv="' + id + '"]');
+    modal.querySelectorAll('[data-rvok]').forEach(b => b.addEventListener('click', async () => {
+      const j = reviewJobs.find(x => x.id === b.dataset.rvok), r = row(j.id), del = r.querySelector('.rv-del').value || null;
+      if (!del && !confirm('This is not linked to a line on the family\'s page, so they will not see it. Approve anyway?')) return;
+      b.disabled = true; b.textContent = 'Sending…';
+      try {
+        if (del !== (j.delivery || null)) { const { error } = await c.from('work_jobs').update({ delivery: del }).eq('id', j.id); if (error) throw error; }
+        const link = j.hand_upload && del ? await D.share(c, j.id) : null;
+        const { data, error } = await c.rpc('job_review', { p_job: j.id, p_ok: true, p_note: null, p_link: link });
+        if (error || (data && data.error)) throw new Error((data && data.error) || error.message);
+        api.toast(del ? jobLabel(j) + ' is Ready on ' + nameOf(j.wedding_key) + '\'s page.' : 'Approved.'); reviewWin();
+      } catch (e) { b.disabled = false; b.textContent = 'Approve → send to family'; api.toast(e.message || String(e)); }
+    }));
+    modal.querySelectorAll('[data-rvno]').forEach(b => b.addEventListener('click', async () => {
+      const j = reviewJobs.find(x => x.id === b.dataset.rvno), note = row(j.id).querySelector('.rv-note').value.trim();
+      if (note.length < 3) { api.toast('Write what needs to change for the editor.'); row(j.id).querySelector('.rv-note').focus(); return; }
+      const { data, error } = await c.rpc('job_review', { p_job: j.id, p_ok: false, p_note: note, p_link: null });
+      if (error || (data && data.error)) { api.toast((data && data.error) || error.message); return; }
+      api.toast('Sent back to ' + who(j) + ' with your note (round ' + ((j.round || 1) + 1) + ').'); reviewWin();
+    }));
   }
   // links past their date that are still saved (Home → Needs you → Expired download links)
   async function expiredWin() {
@@ -776,7 +827,7 @@
   window.MUTOS_CLIENTS = {
     attach(a) { const first = !api; api = a; if (first) { load().then(() => { sync(); document.dispatchEvent(new Event('mutos:updates')); }).catch(() => {}); setInterval(() => load().then(sync).catch(() => {}), 10 * 60 * 1000); } },
     changed() { clearTimeout(this._t); this._t = setTimeout(sync, 3500); },
-    open, summary, money, payments: () => payWin(), requests: () => reqWin(), expired: () => expiredWin(), _afterWin: k => afterWin(weddings(true).find(w => w.key === k)), data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
+    open, summary, money, payments: () => payWin(), requests: () => reqWin(), expired: () => expiredWin(), review: () => reviewWin(), _afterWin: k => afterWin(weddings(true).find(w => w.key === k)), data: () => { if (!api) { alert('The board is still loading.'); return; } findData(null); }, _dataWin: (k) => dataWin(weddings(true).find(w => w.key === k), null), _weddings: () => weddings(), _sync: sync, _load: load,
     packages() { if (!api) { alert('The board is still loading.'); return; } load().then(packagesWin).catch(e => api.toast('Could not load packages: ' + (e.message || e))); }
   };
 })();

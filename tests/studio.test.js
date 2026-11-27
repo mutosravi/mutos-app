@@ -347,6 +347,27 @@ function rpc(fn, a, e) {
       dlog(it.drive, e, (a.p_copy ? 'Copied ' : 'Moved ') + it.title + ' to ' + dst.name); dlog(dst.id, e, it.title + (a.p_copy ? ' copied' : ' moved') + ' here'); return { data: { ok: true, id }, error: null };
     }
   }
+  if (fn === 'job_handover' || fn === 'job_review') {   // 047 (same rules as the SQL; the SQL itself is tested in rls_job_handover.sql)
+    const j = T.work_jobs.get(a.p_job); if (!j) return { data: { error: 'Unknown job.' }, error: null };
+    const no = m => ({ data: { error: m }, error: null });
+    if (fn === 'job_handover') {
+      if (!(staff(e) || (j.assignee && j.assignee === myPerson(e)))) return no('Only the editor this job is assigned to can hand it over.');
+      if (['final', 'paused', 'sent'].includes(j.status)) return no('This job was already sent to the family.');
+      if (a.p_upload) { const u = deliverUploads.get(a.p_upload); if (!u || !u.ok) return no('The upload is not finished.'); }
+      else if (!/^https?:\/\//i.test(a.p_link || '')) return no('Upload the file or paste a link that starts with https://');
+      if (!j.delivery) { const m = [...T.client_deliveries.values()].filter(d => d.wedding_key === j.wedding_key && d.title.toLowerCase() === String(j.title || '').toLowerCase()); if (m.length === 1) j.delivery = m[0].id; }
+      Object.assign(j, { status: 'rendered', progress: 100, link: a.p_upload ? j.link : a.p_link, hand_upload: a.p_upload || null, hand_note: a.p_note || null, hand_at: new Date().toISOString(), hand_by: e, review: 'waiting', review_note: null });
+      return { data: { ok: true, delivery: j.delivery || null }, error: null };
+    }
+    if (!staff(e)) return no('Only the admin or the manager can approve work.');
+    if (j.review !== 'waiting') return no('Nothing is waiting for a check on this job.');
+    if (!a.p_ok) { if (String(a.p_note || '').trim().length < 3) return no('Write what needs to change for the editor.'); Object.assign(j, { status: 'changes', round: (j.round || 1) + 1, review: 'changes', review_note: a.p_note }); return { data: { ok: true }, error: null }; }
+    const lnk = a.p_link || (j.hand_upload ? null : j.link);
+    if (j.delivery && !lnk) return no('The file could not be shared from Google Drive. Try again.');
+    Object.assign(j, { status: 'sent', review: 'approved' });
+    if (j.delivery) Object.assign(T.client_deliveries.get(j.delivery), { status: 'ready', link: lnk, job: j.id, upload: j.hand_upload, shared: !!j.hand_upload });
+    return { data: { ok: true, delivery: j.delivery }, error: null };
+  }
   if (fn === 'job_data') {   // 027
     const j = T.work_jobs.get(a.p_job); if (!j) return { data: { error: 'Unknown job.' }, error: null };
     if (!(staff(e) || role(e) === 'supervisor' || (j.assignee && j.assignee === myPerson(e)))) return { data: { error: 'Only the person this job is assigned to can see where its data is.' }, error: null };
@@ -422,13 +443,21 @@ function handle(e, d) {
 function seed(dir, coll) { const p = path.join(DATA, dir); if (!fs.existsSync(p)) return 0; let n = 0; fs.readdirSync(p).forEach(f => { const data = JSON.parse(fs.readFileSync(path.join(p, f))); const id = data.id || f.replace(/\.json$/, ''); delete data.id; T.docs.set(coll + '/' + id, { collection: coll, id, data }); n++; }); return n; }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 // the Worker's photo routes (worker/photos.js), faked: off until driveOn (then a family's photos "go to Drive" = kept in uploads)
-let driveOn = false, photoUser = null; const uploads = new Map();
+let driveOn = false, photoUser = null; const uploads = new Map(), deliverUploads = new Map(), deliverShared = [];
 const TINY = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 function photoApi(q, s) {
   const send = (o, st = 200) => { s.writeHead(st, { 'content-type': 'application/json' }); s.end(JSON.stringify(o)); };
   const u = new URL(q.url, 'http://x'), chunks = []; q.on('data', x => chunks.push(x));
   q.on('end', () => {
     if (u.pathname === '/api/photos/status') return send({ configured: true, connected: driveOn });
+    // 047: editors' files (worker/deliver.js), faked; "Google" is /fake-google/<id> on this server
+    if (u.pathname === '/api/deliver/begin') { const b = JSON.parse(Buffer.concat(chunks).toString() || '{}'), id = crypto.randomUUID(); deliverUploads.set(id, { id, job: b.job, name: b.name, size: b.size, got: 0 }); return send({ id, upload_url: '/fake-google/' + id }); }
+    if (u.pathname === '/api/deliver/done') { const b = JSON.parse(Buffer.concat(chunks).toString() || '{}'), r = deliverUploads.get(b.id); if (!r || b.file !== 'DF-' + b.id) return send({ error: 'The file did not reach Google Drive.' }, 400); r.ok = true; return send({ ok: true }); }
+    if (u.pathname === '/api/deliver/peek') { const b = JSON.parse(Buffer.concat(chunks).toString() || '{}'); return send({ url: '/api/deliver/stream/' + b.id + '?e=1&s=x' }); }
+    if (u.pathname === '/api/deliver/share') { const b = JSON.parse(Buffer.concat(chunks).toString() || '{}'); deliverShared.push(b.job); return send({ link: 'https://drive.google.com/file/d/DF-shared-' + b.job + '/view' }); }
+    if (u.pathname.startsWith('/fake-google/')) { const id = u.pathname.slice(13), r = deliverUploads.get(id), rg = /bytes (\d+)-(\d+)\/(\d+)/.exec(q.headers['content-range'] || '');
+      r.got += Buffer.concat(chunks).length; if (rg && Number(rg[2]) + 1 < Number(rg[3])) { s.writeHead(308, { Range: 'bytes=0-' + rg[2] }); return s.end(); }
+      return send({ id: 'DF-' + id }); }
     if (!driveOn) return send({ error: 'Google Drive is not connected yet.' }, 503);
     if (u.pathname === '/api/photos/upload' && u.searchParams.get('thumb')) return send({ ok: true });
     if (u.pathname === '/api/photos/upload') { const info = JSON.parse(decodeURIComponent(q.headers['x-mutos-photo'] || '{}')), id = crypto.randomUUID(); uploads.set(id, Object.assign({ id, size: Buffer.concat(chunks).length, mime: q.headers['content-type'] }, info)); if (info.kind === 'person' && photoUser) { const p = [...T.people.values()].find(x => x.email === photoUser), n = String(T.team_photos.size + 1); T.team_photos.set(n, { id: +n, upload: id, person: p ? p.id : null, names: [String(p ? p.name : photoUser).trim().toLowerCase()], name: p ? p.name : photoUser, status: 'pending', by_email: photoUser, at: new Date().toISOString() }); } return send({ id }); }
@@ -438,7 +467,7 @@ function photoApi(q, s) {
     send({ error: 'Not found' }, 404);
   });
 }
-const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/')) return photoApi(q, s); let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(s); });
+const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/') || q.url.startsWith('/api/deliver/') || q.url.startsWith('/fake-google/')) return photoApi(q, s); let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/index.html'; const f = path.join(ROOT, p); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'content-type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(s); });
 const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
 
 (async () => {
@@ -844,8 +873,9 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   await cr.click('.bnav .tab[data-tab="jobs"]'); await cr.reload(); await cr.waitForSelector('.job.chg [data-st="editing"]');
   ok((await cr.textContent('.job.chg')).includes('Round 2') && await cr.isVisible('#nav-chg'), 'editor sees the changes first, marked Round 2');
   await cr.click('.job.chg [data-st="editing"]'); await cr.waitForFunction(() => /Started/.test(document.getElementById('toast').textContent));
-  await cr.click('.job[data-j="' + reel.id + '"] [data-st="rendered"]'); await cr.waitForFunction(() => /rendered/.test(document.getElementById('toast').textContent));
-  ok(reel.status === 'rendered' && reel.progress === 100, 'editor marks it rendered (100%)');
+  await cr.click('.job[data-j="' + reel.id + '"] [data-hand]'); await cr.waitForSelector('#ho-link');
+  await cr.fill('#ho-link', 'https://drive.google.com/reel-r2'); await cr.click('#ho-go'); await cr.waitForFunction(() => /Handed over/.test(document.getElementById('toast').textContent));
+  ok(reel.status === 'rendered' && reel.progress === 100, 'editor hands it over (rendered, 100%)');
   await owner.click('[data-job="' + reel.id + '"]'); await owner.waitForSelector('#fin');
   ok(/60%.*4 h/.test(await owner.textContent('#hist')) || /4 h/.test(await owner.textContent('#hist')), 'the job shows its report history');
   await owner.click('#fin'); await owner.waitForFunction(() => /Final/.test(document.getElementById('toast').textContent));
@@ -1203,6 +1233,44 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     ok(!reel.link, '"Files deleted" clears the link');
     reel.link = 'https://drive.google.com/reel'; reel.expires_on = null; await owner.evaluate(() => window.MUTOS_CLIENTS.expired && document.querySelector('#xl-done') && document.querySelector('#xl-done').click());
     await fam.reload(); await fam.waitForSelector('[data-open="deliv"]');
+  }
+  { // 047: the editor hands over (upload straight to "Google", then a link), Muto's checks it, the family gets it
+    const hamza = [...T.people.values()].find(p => p.email === CREWE), rid = crypto.randomUUID();
+    const rd = crypto.randomUUID(); T.client_deliveries.set(rd, { id: rd, wedding_key: wed.key, title: 'Wedding Reel', status: 'waiting', sort: 9, link: null, note: null });
+    T.work_jobs.set(rid, { id: rid, wedding_key: wed.key, wedding_title: wed.title, kind: 'reel', title: 'Wedding Reel', assignee: hamza.id, status: 'editing', progress: 50, count_done: 0, round: 1, event_ids: [] });
+    await cr.goto(B + '/mywork.html'); await cr.waitForSelector('.job[data-j="' + rid + '"] [data-hand]');
+    await cr.click('.job[data-j="' + rid + '"] [data-hand]'); await cr.waitForSelector('#ho-file');
+    const big = Buffer.alloc(Math.round(2.5 * 1024 * 1024), 7);
+    await cr.evaluate(() => { window.MutosDeliver.CHUNK = 1024 * 1024; });   // 1 MB pieces: 3 pieces
+    await cr.setInputFiles('#ho-file', { name: 'Sharma reel v1.mp4', mimeType: 'video/mp4', buffer: big }); await cr.fill('#ho-note', 'Music as discussed');
+    await cr.click('#ho-go'); await cr.waitForFunction(() => /Handed over/.test(document.getElementById('toast').textContent), null, { timeout: 15000 });
+    const job = T.work_jobs.get(rid), up = deliverUploads.get(job.hand_upload);
+    ok(up && up.ok && up.got === big.length && job.status === 'rendered' && job.review === 'waiting' && job.delivery === rd && job.hand_note === 'Music as discussed', 'editor uploads the reel from the app (sent straight to Google Drive, all of it), it waits for a check, linked by itself to the family\'s "Wedding Reel"');
+    ok(/Muto's is checking/.test(await cr.textContent('.job[data-j="' + rid + '"] .hand-st')), 'his job card says Muto\'s is checking it');
+    ok(T.client_deliveries.get(rd).link === null, 'the family has no link yet');
+    // the admin asks for changes
+    await owner.goto(B + '/board.html'); await owner.waitForSelector('[data-need="review"]', { timeout: 20000 });
+    ok(/Ready to check/.test(await owner.textContent('[data-need="review"]')), 'admin Home → Needs you: "Ready to check"');
+    await owner.click('[data-need="review"]'); await owner.waitForSelector('#rv-list .rv-row[data-rv="' + rid + '"]');
+    const rvt = await owner.textContent('#rv-list .rv-row[data-rv="' + rid + '"]');
+    ok(/Wedding Reel/.test(rvt) && /From Hamza/.test(rvt) && /uploaded file/.test(rvt) && /Music as discussed/.test(rvt) && await owner.inputValue('#rv-list .rv-row[data-rv="' + rid + '"] .rv-del') === rd, 'the check list: client, job, who, the note, and the family\'s line picked');
+    const [pop] = await Promise.all([owner.waitForEvent('popup'), owner.click('[data-rvp="' + rid + '"]')]); await pop.waitForURL(/\/api\/deliver\/stream\//, { timeout: 5000 }).catch(() => {});
+    ok(/\/api\/deliver\/stream\//.test(pop.url()), '▶ Watch opens the file through a preview link'); await pop.close();
+    await owner.click('[data-rvno="' + rid + '"]'); await owner.waitForFunction(() => /Write what needs/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    await owner.fill('#rv-list .rv-row[data-rv="' + rid + '"] .rv-note', 'Shorter intro please'); await owner.click('[data-rvno="' + rid + '"]');
+    await owner.waitForFunction(() => /Sent back to Hamza/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(job.status === 'changes' && job.round === 2 && job.review_note === 'Shorter intro please', 'Changes needed (note required): back to the editor as round 2');
+    await cr.reload(); await cr.waitForSelector('.job[data-j="' + rid + '"] .hand-st');
+    ok(/asked for changes: Shorter intro please/.test(await cr.textContent('.job[data-j="' + rid + '"] .hand-st')), 'the editor sees what to change');
+    // round 2 as a Drive link; the admin approves
+    await cr.click('.job[data-j="' + rid + '"] [data-hand]'); await cr.waitForSelector('#ho-link');
+    await cr.fill('#ho-link', 'https://drive.google.com/reel-v2'); await cr.click('#ho-go'); await cr.waitForFunction(() => /Handed over/.test(document.getElementById('toast').textContent));
+    ok(job.review === 'waiting' && job.link === 'https://drive.google.com/reel-v2' && !job.hand_upload, 'round 2 handed over as a link');
+    await owner.evaluate(() => window.MUTOS_CLIENTS.review()); await owner.waitForSelector('[data-rvok="' + rid + '"]');
+    await owner.click('[data-rvok="' + rid + '"]'); await owner.waitForFunction(() => /is Ready on/.test((document.getElementById('sb-toast') || {}).textContent || ''));
+    ok(job.status === 'sent' && T.client_deliveries.get(rd).status === 'ready' && T.client_deliveries.get(rd).link === 'https://drive.google.com/reel-v2' && !deliverShared.includes(rid), 'Approve: the family\'s Wedding Reel is Ready with the link (a link is not re-shared)');
+    await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
+    ok((await fam.$$eval('[data-card="deliv"] .dl-go', x => x.map(a => a.href))).includes('https://drive.google.com/reel-v2'), 'the family opens it from their page');
   }
   { // 044: once a function's day is over it cannot be changed; when all are over the page shows deliveries, payments, bills and "Need something?"
     const fd = T.client_feed.get(wed.key).data, keepDates = fd.functions.map(x => x.date);

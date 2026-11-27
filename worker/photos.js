@@ -27,7 +27,7 @@ const MAX = 25 * 1024 * 1024;
 const json = (o, status = 200) => Response.json(o, { status });
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-async function hmac(secret, text) {
+export async function hmac(secret, text) {
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return b64u(await crypto.subtle.sign('HMAC', key, enc.encode(text)));
 }
@@ -35,7 +35,7 @@ const sbBase = env => String(env.SUPABASE_URL).replace(/\/+$/, '');
 const tokenOf = request => (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
 
 // the signed-in person (Supabase) and their role
-async function whoIs(request, env, fetchFn) {
+export async function whoIs(request, env, fetchFn) {
   const token = tokenOf(request);
   if (!token) return null;
   const u = await fetchFn(sbBase(env) + '/auth/v1/user', { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token } });
@@ -45,22 +45,22 @@ async function whoIs(request, env, fetchFn) {
   const m = r.ok ? (await r.json())[0] : null;
   return { email, token, role: m ? m.role : null };
 }
-function serverHeaders(env) {
+export function serverHeaders(env) {
   const key = env.SUPABASE_SECRET_KEY;
   return Object.assign({ apikey: key, 'Content-Type': 'application/json' }, String(key).startsWith('eyJ') ? { Authorization: 'Bearer ' + key } : {});
 }
 // a database function called AS the person (their own rules apply)
-async function rpcAs(env, fetchFn, token, fn, args) {
+export async function rpcAs(env, fetchFn, token, fn, args) {
   const r = await fetchFn(sbBase(env) + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
   const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch (e) {}
   if (!r.ok) return { error: (d && (d.message || d.error)) || 'database ' + r.status + (r.status === 404 ? ' (run 026_photos.sql in Supabase)' : '') };
   return d || {};
 }
-async function rowPatch(env, fetchFn, id, body) {
+export async function rowPatch(env, fetchFn, id, body) {
   const r = await fetchFn(sbBase(env) + '/rest/v1/uploads?id=eq.' + id, { method: 'PATCH', headers: Object.assign(serverHeaders(env), { Prefer: 'return=minimal' }), body: JSON.stringify(body) });
   if (!r.ok) throw new Error('database ' + r.status + ' ' + (await r.text()).slice(0, 200));
 }
-async function rowGet(env, fetchFn, id) {
+export async function rowGet(env, fetchFn, id) {
   const r = await fetchFn(sbBase(env) + '/rest/v1/uploads?select=*&id=eq.' + id, { headers: serverHeaders(env) });
   return r.ok ? (await r.json())[0] || null : null;
 }
@@ -81,7 +81,7 @@ export async function driveToken(env, fetchFn = fetch) {
 }
 export function _resetTokenCache() { tokenCache = null; }
 
-async function gdrive(env, fetchFn, url, init = {}) {
+export async function gdrive(env, fetchFn, url, init = {}) {
   const t = await driveToken(env, fetchFn);
   return fetchFn(url, Object.assign({}, init, { headers: Object.assign({ Authorization: 'Bearer ' + t }, init.headers || {}) }));
 }

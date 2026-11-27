@@ -66,6 +66,7 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
 <script src="/team-photos.js"></script>
 <script src="/work-core.js"></script>
 <script src="/drives-ui.js"></script>
+<script src="/deliver.js"></script>
 </head>
 <body>
 <main class="wrap">
@@ -135,20 +136,55 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     // open that drive at the folder (Drives tab)
     box.querySelectorAll('.jd-open').forEach(b => b.addEventListener('click', async () => { bg.remove(); showTab('drives'); await drv.openAt({ driveName: b.dataset.dn, title: b.dataset.t }); }));
   }
+  // 047: hand over finished work (Editor → Muto's approves → the family); selections and album design stay in the studio: Rendered ✓
+  const INTERNAL = ['top', 'lr', 'album_sel', 'album'];
+  function handState(j) {
+    if (j.review === 'waiting') return '<div class="ans wait hand-st" style="margin-top:8px">⏳ Handed over ' + esc(W.dayShort(String(j.hand_at).slice(0, 10))) + '. Muto\'s is checking it before the family sees it.' + (j.hand_note ? '<div class="meta">Your note: ' + esc(j.hand_note) + '</div>' : '') + '</div>';
+    if (j.review === 'changes' && j.status === 'changes') return '<div class="ans no hand-st" style="margin-top:8px">✎ Muto\'s asked for changes: <b>' + esc(j.review_note || '') + '</b></div>';
+    if (j.review === 'approved') return '<div class="ans ok hand-st" style="margin-top:8px">✓ Approved and sent to the family.</div>';
+    return '';
+  }
+  function handSheet(j) {
+    const bg = W.sheet('<h3>Hand over · ' + esc(W.jobName(j)) + '</h3><p class="sub">' + esc(j.wedding_title) + (j.round > 1 ? ' · round ' + j.round : '') + '. Muto\'s checks it before the family sees it.</p>' +
+      '<label style="display:block;margin-top:10px;font-weight:600">Upload the file<input class="in" type="file" id="ho-file" style="display:block;width:100%;margin-top:4px"></label>' +
+      '<div id="ho-prog" hidden style="margin-top:8px"><div style="height:10px;border-radius:6px;background:var(--surface,#eee);overflow:hidden"><i id="ho-bar" style="display:block;height:100%;width:0;background:var(--rose,#9e4f62)"></i></div><div class="meta" id="ho-pct">Starting…</div></div>' +
+      '<p class="meta" style="margin:12px 0 4px">or paste a link (Google Drive), best for full films</p><input class="in" id="ho-link" type="url" placeholder="https://drive.google.com/…" value="' + esc(/^https?:/.test(j.link || '') ? j.link : '') + '" style="width:100%">' +
+      '<textarea class="in" id="ho-note" maxlength="300" rows="2" placeholder="Note for Muto\'s (optional)" style="width:100%;margin-top:10px"></textarea>' +
+      '<div class="pillrow" style="margin-top:14px"><button type="button" class="pillbtn light" id="ho-x">Close</button><button type="button" class="pillbtn" id="ho-go">Hand over</button></div>');
+    const q = id => bg.querySelector('#' + id); let busy = false;
+    q('ho-x').addEventListener('click', () => { if (busy && !confirm('The upload is still going. Stop it?')) return; busy = false; bg.remove(); });
+    q('ho-go').addEventListener('click', async () => {
+      if (busy) return;
+      const f = q('ho-file').files[0], link = q('ho-link').value.trim(), note = q('ho-note').value.trim();
+      if (!f && !/^https?:\/\//i.test(link)) { toast('Pick the file, or paste a link that starts with https://', true); return; }
+      busy = true; q('ho-go').disabled = true; q('ho-go').textContent = f ? 'Uploading…' : 'Handing over…';
+      try {
+        let upload = null;
+        if (f) {
+          q('ho-prog').hidden = false;
+          const mb = n => n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : Math.round(n / 1048576) + ' MB';
+          upload = await window.MutosDeliver.upload(c, j.id, f, (done, total) => { q('ho-bar').style.width = Math.floor(done / total * 100) + '%'; q('ho-pct').textContent = mb(done) + ' of ' + mb(total) + ' · keep this page open'; });
+        }
+        await window.MutosDeliver.handover(c, j.id, { upload, link: f ? null : link, note });
+        busy = false; bg.remove(); await load(); renderJobs(); toast('Handed over. Muto\'s will check it and send it to the family.');
+      } catch (e) { busy = false; q('ho-go').disabled = false; q('ho-go').textContent = 'Hand over'; toast(e.message || String(e), true); }
+    });
+  }
   function renderJobs() {
     const list = myOpen(), done = jobs.filter(x => x.status === 'final').sort((a, b) => String(b.done_at).localeCompare(String(a.done_at))).slice(0, 5);
     $('tab-jobs').innerHTML = (list.length ? list.map(j => {
       const photo = W.isPhoto(j.kind), mine = ['todo', 'editing', 'rendered', 'changes'].includes(j.status);
       return '<article class="job' + (j.status === 'changes' ? ' chg' : '') + '" data-j="' + j.id + '"><div class="job-h"><div><b>' + esc(j.wedding_title) + '</b><div class="meta">' + esc(W.jobName(j)) + (j.round > 1 ? ' · Round ' + j.round : '') + '</div></div>' + W.pill(j.status) + '</div>' +
         '<div class="meta">' + (j.due ? (W.overdue(j) ? '<span class="late">Due ' + esc(W.dayLong(j.due)) + '</span>' : 'Due ' + esc(W.dayLong(j.due))) : 'No due date') + ' · ' + esc(W.progressText(j)) + (j.wedding_date ? ' · shot ' + esc(W.dayShort(j.wedding_date)) : '') + '</div>' +
-        (j.note ? '<div class="ans wait" style="margin-top:8px">' + esc(j.note) + '</div>' : '') +
+        (j.note ? '<div class="ans wait" style="margin-top:8px">' + esc(j.note) + '</div>' : '') + handState(j) +
         W.bar(j).replace('class="wbar"', 'class="wbar" style="width:auto"') +
         (mine ? '<div class="mini">' + (photo ? '<label>Photos done<input class="in" type="number" min="0" data-f="count_done" value="' + (j.count_done || 0) + '"></label><label>In total<input class="in" value="' + (j.count_total == null ? '–' : j.count_total) + '" disabled></label>'
           : '<label>Progress (%)<input class="in" type="number" min="0" max="100" data-f="progress" value="' + (j.progress || 0) + '"></label><label>&nbsp;<span></span></label>') + '</div>' +
           '<details' + (j.drive ? '' : ' open') + '><summary>Drives and link</summary><div class="mini"><label>Project on drive<input class="in" data-f="drive" maxlength="80" value="' + esc(j.drive || '') + '" placeholder="e.g. M 5"></label><label>Rendered to drive<input class="in" data-f="render_drive" maxlength="80" value="' + esc(j.render_drive || '') + '"></label>' +
           '<label class="wide">Link<input class="in" type="url" data-f="link" maxlength="500" value="' + esc(j.link || '') + '" placeholder="Drive / YouTube link"></label></div></details>' +
           '<div class="acts">' + (j.status === 'todo' || j.status === 'changes' ? '<button type="button" class="pillbtn light" data-st="editing">' + (j.status === 'changes' ? 'Start the changes' : 'Start') + '</button>' : '') +
-          (j.status === 'editing' ? '<button type="button" class="pillbtn light" data-st="rendered">Rendered ✓</button>' : '') + '<button type="button" class="pillbtn" data-save>Save</button></div>' +
+          (j.status === 'editing' && INTERNAL.includes(j.kind) ? '<button type="button" class="pillbtn light" data-st="rendered">Rendered ✓</button>' : '') +
+          (j.status !== 'todo' && !INTERNAL.includes(j.kind) ? '<button type="button" class="pillbtn light" data-hand>' + (j.review === 'waiting' ? 'Hand over again' : '⬆ Hand over') + '</button>' : '') + '<button type="button" class="pillbtn" data-save>Save</button></div>' +
           (canUndo(j) ? '<p style="margin:8px 0 0"><button type="button" class="x" data-undo="' + esc(j.prev_status) + '">Tapped by mistake? Back to ' + esc((W.STATUS[j.prev_status] || [j.prev_status])[0]) + '</button></p>' : '')
           : '<p class="meta" style="margin-top:8px">' + (j.status === 'sent' ? 'With the client. The studio marks it Final or Changes asked.' : 'Paused by the studio.') + '</p>') +
         '<p style="margin:8px 0 0"><button type="button" class="x" data-data>📁 Where is the data?</button></p></article>';
@@ -171,6 +207,7 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
         await load(); renderJobs(); toast('Put back to ' + (W.STATUS[u.dataset.undo] || [u.dataset.undo])[0] + '.');
       });
       const dd = card.querySelector('[data-data]'); if (dd) dd.addEventListener('click', () => dataSheet(j));
+      const hb = card.querySelector('[data-hand]'); if (hb) hb.addEventListener('click', () => handSheet(j));
       const s = card.querySelector('[data-save]'); if (s) s.addEventListener('click', () => save(null));
     });
   }

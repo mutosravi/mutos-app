@@ -252,6 +252,7 @@
     if (phoneChanges.length && !sup()) needs.push(['phones', 'sand', phoneChanges.length, 'Phone numbers changed', 'by the team themselves']);
     if (csum && csum.payToCheck && !sup()) needs.splice(0, 0, ['paycheck', 'lilac', csum.payToCheck, 'Payments to check', 'families said "we paid"']);
     if (csum && csum.requests && !sup()) needs.splice(0, 0, ['requests', 'peach', csum.requests, 'Service requests', 'families asked for something more']);
+    if (csum && csum.review && !sup()) needs.splice(0, 0, ['review', 'lilac', csum.review, 'Ready to check', 'work the editors handed over']);
     if (csum && csum.expired && !sup()) needs.push(['explinks', 'sand', csum.expired, 'Expired download links', 'delete the files on Drive, then clear the link']);
     if (csum && csum.overdue && !sup()) needs.splice(0, 0, ['clients', 'peach', csum.overdue, 'Payments overdue', 'from families']);
     if (csum && csum.dueSoon && !sup()) needs.push(['clients', 'sand', csum.dueSoon, 'Payments due', 'in the next 7 days']);
@@ -290,7 +291,7 @@
     body.querySelectorAll('[data-go-date]').forEach(b => b.addEventListener('click', () => toBoard(() => { if (b.dataset.goDate) a.goToDate(b.dataset.goDate); })));
     body.querySelectorAll('[data-need]').forEach(b => b.addEventListener('click', () => {
       const k = b.dataset.need;
-      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'requests') window.MUTOS_CLIENTS.requests(); else if (k === 'explinks') window.MUTOS_CLIENTS.expired(); else if (k === 'phones') phonesWin(); else if (k === 'teamphotos') photosWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
+      if (k === 'updates') openUpdates(); else if (k === 'inbox') a.openInbox(); else if (k === 'rentals') a.openRentals(); else if (k === 'clients') window.MUTOS_CLIENTS.open(); else if (k === 'paycheck') window.MUTOS_CLIENTS.payments(); else if (k === 'requests') window.MUTOS_CLIENTS.requests(); else if (k === 'explinks') window.MUTOS_CLIENTS.expired(); else if (k === 'review') window.MUTOS_CLIENTS.review(); else if (k === 'phones') phonesWin(); else if (k === 'teamphotos') photosWin(); else if (k === 'cards') (window.MUTOS_GO || (u => location.assign(u)))(cardSum && cardSum.holdOld && !cardSum.toOffice ? '/cards.html?tab=copy' : '/cards.html');
       else toBoard(() => { const f = document.querySelector('#sb-filter-chips [data-filter="' + (k === 'short' ? 'short' : 'clash') + '"]'); if (f) f.click(); window.scrollTo(0, 0); });
     }));
     const na = document.getElementById('mh-needs-all'); if (na) na.addEventListener('click', () => { body.querySelectorAll('#mh-needs [hidden]').forEach(x => { x.hidden = false; }); na.remove(); });
