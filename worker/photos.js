@@ -134,17 +134,48 @@ export async function moveBatch(env, fetchFn, offset, batch) {
   if (!r.ok) throw new Error('database ' + r.status + ' ' + (await r.text()).slice(0, 160));
   const rows = await r.json(), total = Number(String(r.headers.get('Content-Range') || '').split('/')[1]) || null;
   const out = { moved: 0, already: 0, missing: 0, total, next: offset + rows.length, done: rows.length < batch || (total != null && offset + rows.length >= total) }, titles = new Map();
+  out.failed = 0;
   for (const row of rows) {
-    if (await inThisDrive(env, fetchFn, row.drive_id)) { out.already++; continue; }
-    const parent = await folderFor(env, fetchFn, await folderOf(env, fetchFn, row, titles));
-    const nid = await copyOver(env, fetchFn, row.drive_id, parent);
-    if (!nid) { out.missing++; continue; }
-    const patch = { drive_id: nid };
-    if (row.thumb_id) { const t = await copyOver(env, fetchFn, row.thumb_id, await folderFor(env, fetchFn, ['.small copies'])); patch.thumb_id = t || null; }
-    await rowPatch(env, fetchFn, row.id, patch);
-    out.moved++;
+    try {
+      if (await inThisDrive(env, fetchFn, row.drive_id)) { out.already++; continue; }
+      const parent = await folderFor(env, fetchFn, await folderOf(env, fetchFn, row, titles));
+      const nid = await copyOver(env, fetchFn, row.drive_id, parent);
+      if (!nid) { out.missing++; continue; }
+      const patch = { drive_id: nid };
+      if (row.thumb_id) { const t = await copyOver(env, fetchFn, row.thumb_id, await folderFor(env, fetchFn, ['.small copies'])).catch(() => null); patch.thumb_id = t || null; }
+      await rowPatch(env, fetchFn, row.id, patch);
+      out.moved++;
+    } catch (e) { out.failed++; out.lastError = e.message || String(e); }   // one bad photo never stops the rest; running again tries it again
   }
   return out;
+}
+
+// 27 Nov 2026 (Ravi: "wants me keep that window open which I cant"): the move runs on the server. The button only starts it
+// (KV gdrive:move); every 5-minute cron goes on for up to ~3 minutes (lock: until), so nobody has to keep a page open.
+const MOVE_KEY = 'gdrive:move';
+export async function moveJob(env) { const raw = env.BACKUPS && await env.BACKUPS.get(MOVE_KEY); try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+async function saveJob(env, j) { j.at = new Date().toISOString(); await env.BACKUPS.put(MOVE_KEY, JSON.stringify(j)); return j; }
+export async function moveTick(env, fetchFn = fetch, o = {}) {
+  let j = await moveJob(env);
+  if (!j || j.state !== 'running') return { idle: true };
+  const now = o.now || Date.now;
+  if (j.until && j.until > now()) return { busy: true };   // another run is still at it
+  const budget = o.budgetMs || 180000, stop = now() + budget;
+  j.until = now() + budget + 30000; await saveJob(env, j);
+  try {
+    if (!(await oldAuth(env) || {}).refresh) { j.state = 'stopped'; j.error = 'The earlier Gmail is not remembered any more (Disconnect or Forget was pressed).'; return await saveJob(env, j); }
+    while (now() < stop) {
+      let r;
+      try { r = await moveBatch(env, fetchFn, j.offset, o.batch || 5); j.fails = 0; }
+      catch (e) { j.fails = (j.fails || 0) + 1; j.error = e.message || String(e); if (j.fails >= 6) { j.state = 'stopped'; } break; }
+      ['moved', 'already', 'missing', 'failed'].forEach(k => { j[k] = (j[k] || 0) + (r[k] || 0); });
+      if (r.lastError) j.error = r.lastError;
+      j.total = r.total || j.total; j.offset = r.next;
+      if (r.done) { j.state = 'done'; j.done_at = new Date().toISOString(); break; }
+      await saveJob(env, j);
+    }
+  } finally { j.until = 0; await saveJob(env, j); }
+  return j;
 }
 
 export async function gdrive(env, fetchFn, url, init = {}) {
@@ -234,7 +265,8 @@ export async function photosApi(request, env, fetchFn = fetch) {
   if (p === '/api/photos/status' && request.method === 'GET') {
     const a = await auth(env);
     const o = desk ? await oldAuth(env) : null;
-    return json({ configured, connected: !!(a && a.refresh), account: desk && a ? a.account : undefined, since: desk && a ? a.at : undefined, old: o && o.refresh ? { account: o.account } : undefined });
+    const mv = me.role === 'owner' ? await moveJob(env) : null;
+    return json({ configured, connected: !!(a && a.refresh), account: desk && a ? a.account : undefined, since: desk && a ? a.at : undefined, old: o && o.refresh ? { account: o.account } : undefined, move: mv || undefined });
   }
   if (p === '/api/photos/connect' && request.method === 'POST') {
     if (me.role !== 'owner') return json({ error: 'Only the admin can connect Google Drive.' }, 403);
@@ -259,11 +291,22 @@ export async function photosApi(request, env, fetchFn = fetch) {
     try { return json(await moveBatch(env, fetchFn, Math.max(0, Number(b.offset) || 0), Math.min(10, Math.max(1, Number(b.batch) || 3)))); }
     catch (e) { return json({ error: e.message || String(e) }, 502); }
   }
+  // start (or go on with) the move on the server; it runs by itself every 5 minutes until done
+  if (p === '/api/photos/move/start' && request.method === 'POST') {
+    if (me.role !== 'owner') return json({ error: 'Only the admin can move the photos.' }, 403);
+    const o = await oldAuth(env); if (!o || !o.refresh) return json({ error: 'No earlier Gmail to move from.' }, 400);
+    const prev = await moveJob(env), again = prev && prev.state === 'done';
+    const j = prev && !again && prev.from === o.account ? Object.assign(prev, { state: 'running', fails: 0, error: null })
+      : { state: 'running', from: o.account, by: me.email, started: new Date().toISOString(), offset: 0, moved: 0, already: 0, missing: 0, failed: 0, total: null };
+    await saveJob(env, j);
+    const first = await moveTick(env, fetchFn, { budgetMs: 20000 }).catch(e => ({ error: String(e.message || e) }));
+    return json({ move: first && first.state ? first : await moveJob(env) });
+  }
   if (p === '/api/photos/forget-old' && request.method === 'POST') {
     if (me.role !== 'owner') return json({ error: 'Only the admin can do this.' }, 403);
     const o = await oldAuth(env);
     if (o && o.refresh) await fetchFn('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(o.refresh), { method: 'POST' }).catch(() => {});
-    await env.BACKUPS.delete('gdrive:auth:old'); oldCache = null;
+    await env.BACKUPS.delete('gdrive:auth:old'); await env.BACKUPS.delete(MOVE_KEY); oldCache = null;
     return json({ ok: true });
   }
 

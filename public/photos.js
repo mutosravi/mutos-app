@@ -118,20 +118,33 @@
     if (st.connected && st.old) {
       $('#gd-body').insertAdjacentHTML('beforeend', '<div id="gd-mv" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:#f7e9d0">Photos added while <b>' + esc(st.old.account) + '</b> was connected are still in that Drive, so the app cannot show them now.' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="pillbtn" id="gd-mv-go">Move them into this Drive</button></div><div id="gd-mv-st" style="margin-top:6px;font-size:13px"></div></div>');
-      $('#gd-mv-go').addEventListener('click', async () => {
-        const b = $('#gd-mv-go'); b.disabled = true; b.textContent = 'Moving… keep this open';
-        let off = 0, tot = { moved: 0, already: 0, missing: 0 }, total = null, fails = 0;
-        for (;;) {
-          const r = await api(c, '/api/photos/move', 'POST', { offset: off, batch: 3 });
-          if (r.error) { if (++fails > 3) { $('#gd-mv-st').textContent = 'Stopped: ' + r.error + ' Tap again to go on from here.'; b.disabled = false; b.textContent = 'Go on moving'; return; } await new Promise(x => setTimeout(x, 2000)); continue; }
-          fails = 0; ['moved', 'already', 'missing'].forEach(k => { tot[k] += r[k] || 0; }); total = r.total || total; off = r.next;
-          $('#gd-mv-st').textContent = (total ? Math.min(off, total) + ' of ' + total : off) + ' checked · ' + tot.moved + ' moved' + (tot.already ? ' · ' + tot.already + ' already here' : '') + (tot.missing ? ' · ' + tot.missing + ' not found in either Drive' : '');
-          if (r.done) break;
+      // the move runs on the server (every 5 minutes until done); this window only starts it and shows where it is
+      const words = m => { const n = (m.total ? Math.min(m.offset, m.total) + ' of ' + m.total : m.offset) + ' checked · ' + (m.moved || 0) + ' moved' + (m.already ? ' · ' + m.already + ' already here' : '') + (m.missing ? ' · ' + m.missing + ' not found in either Drive' : '') + (m.failed ? ' · ' + m.failed + ' could not be copied' : ''); return n; };
+      let timer = null;
+      const show = m => {
+        const b = $('#gd-mv-go'), t = $('#gd-mv-st'); if (!b || !t) return;
+        if (!m) { b.disabled = false; b.textContent = 'Move them into this Drive'; t.textContent = ''; return; }
+        if (m.state === 'running') {
+          b.disabled = true; b.textContent = 'Moving in the background…';
+          t.innerHTML = esc(words(m)) + '<div style="margin-top:4px;opacity:.8">You can close this window or the app. It goes on by itself every few minutes until all are done.</div>';
+          clearTimeout(timer); timer = setTimeout(async () => { if (!document.body.contains(ov)) return; const s2 = await status(c); show(s2 && s2.move); }, 8000);
+          return;
         }
-        b.remove();
-        $('#gd-mv-st').insertAdjacentHTML('beforeend', '<div style="margin-top:6px"><b>Done ✓</b> The photos show again. The old Drive was not changed (a backup).</div><button type="button" class="pillbtn light" id="gd-forget" style="margin-top:8px">Forget ' + esc(st.old.account) + '</button>');
+        if (m.state === 'stopped') { b.disabled = false; b.textContent = 'Go on moving'; t.innerHTML = esc(words(m)) + '<div style="margin-top:4px">Stopped: ' + esc(m.error || 'unknown problem') + '</div>'; return; }
+        // done
+        b.disabled = false; b.textContent = (m.failed ? 'Try the rest again' : 'Check again');
+        t.innerHTML = esc(words(m)) + '<div style="margin-top:6px"><b>Done ✓</b> The photos show again. The old Drive was not changed (a backup).</div>' +
+          (m.failed ? '<div style="margin-top:4px">' + esc(m.failed + ' could not be copied' + (m.error ? ' (' + m.error + ')' : '') + '.') + '</div>' : '') +
+          '<button type="button" class="pillbtn light" id="gd-forget" style="margin-top:8px">Forget ' + esc(st.old.account) + '</button>';
         $('#gd-forget').addEventListener('click', async () => { if (!confirm('The app stops using ' + st.old.account + '. Its Drive keeps everything. Forget it?')) return; await api(c, '/api/photos/forget-old', 'POST'); $('#gd-mv').remove(); });
         if (window.MutosPhotos && window.MutosPhotos._cache && window.MutosPhotos._cache.clear) window.MutosPhotos._cache.clear();
+      };
+      show(st.move);
+      $('#gd-mv-go').addEventListener('click', async () => {
+        const b = $('#gd-mv-go'); b.disabled = true; b.textContent = 'Starting…';
+        const r = await api(c, '/api/photos/move/start', 'POST');
+        if (r.error) { b.disabled = false; b.textContent = 'Move them into this Drive'; $('#gd-mv-st').textContent = r.error; return; }
+        show(r.move);
       });
     }
     $('#gd-off').hidden = !st.connected;

@@ -4,7 +4,7 @@
 import { sendPush } from './push.js';
 import { runBackup, listAll } from './backup.js';
 import { parseServiceAccount, exportSheetXlsx } from './google.js';
-import { photosApi } from './photos.js';
+import { photosApi, moveTick } from './photos.js';
 import { deliverApi, unshareExpired } from './deliver.js';
 import { runDailyLogs } from './logs.js';
 
@@ -389,7 +389,8 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled(event, env, ctx) {
-    if (event.cron === NOTICE_CRON) {   // every 5 minutes: only the shoot notices (swaps, changes, family venues)
+    if (event.cron === NOTICE_CRON) {   // every 5 minutes: the shoot notices (swaps, changes, family venues) + a photo move if one is running
+      if (env.SUPABASE_SECRET_KEY && env.BACKUPS) ctx.waitUntil(moveTick(env).then(r => { if (!r.idle) console.log('photo move', JSON.stringify(r)); }).catch(e => console.log('photo move failed', e)));
       if (!env.SUPABASE_SECRET_KEY || !env.VAPID_PRIVATE_KEY) return;
       ctx.waitUntil(flushShootNotices(env).then(r => { if (r.people) console.log('shoot notices', JSON.stringify(r)); }).catch(e => console.log('shoot notices failed', e)));
       return;

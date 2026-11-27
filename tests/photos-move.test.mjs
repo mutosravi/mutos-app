@@ -1,6 +1,6 @@
 // Switching the studio Gmail keeps the earlier Drive, and "Move photos" copies the app's photos into the new one (worker/photos.js).
 // Run: node tests/photos-move.test.mjs
-import { photosApi, _resetTokenCache } from '../worker/photos.js';
+import { photosApi, _resetTokenCache, moveTick } from '../worker/photos.js';
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const SB = 'https://sb.test', kv = new Map();
 const env = { SUPABASE_URL: SB, SUPABASE_PUBLISHABLE_KEY: 'pub', SUPABASE_SECRET_KEY: 'sb_secret_x', GDRIVE_CLIENT_ID: 'cid', GDRIVE_CLIENT_SECRET: 'csecret',
@@ -75,7 +75,29 @@ await connect('old');
 ok(JSON.parse(kv.get('gdrive:auth')).root === oldRoot && [...drives.old.values()].filter(f => f.folder && f.name === "Muto's app photos").length === before, 'connecting a Gmail again uses its existing "Muto\'s app photos" folder');
 await connect('new');
 ok(JSON.parse(kv.get('gdrive:auth')).account === 'new.studio@gmail.com', 'back to the new Gmail');
+// the move on the server (nobody keeps a page open): more photos added under the old Gmail, then switch again
+await connect('old');
+for (let i = 0; i < 7; i++) addOld('client');
+await connect('new');
+r = await call('/api/photos/move/start', { tok: 'tok-man', method: 'POST' });
+ok(r.status === 403, 'only the admin can start the move');
+kv.set('gdrive:move', JSON.stringify({ state: 'running', from: 'old.studio@gmail.com', offset: 0, moved: 0, already: 0, missing: 0, failed: 0 }));
+let clock = 1e12; const now = () => (clock += 60000);
+let j = await moveTick(env, fakeFetch, { now, budgetMs: 150000, batch: 3 });
+ok(j.state === 'running' && j.offset > 0 && j.offset < rows.length, 'a cron run moves some and stops at its time limit (' + j.offset + ' of ' + rows.length + ' checked)');
+const mid = JSON.parse(kv.get('gdrive:move')); kv.set('gdrive:move', JSON.stringify(Object.assign(mid, { until: Date.now() + 60000 })));
+ok((await moveTick(env, fakeFetch)).busy === true, 'a second run while one is going leaves it alone');
+kv.set('gdrive:move', JSON.stringify(Object.assign(mid, { until: 0 })));
+for (let k = 0; k < 10 && JSON.parse(kv.get('gdrive:move')).state === 'running'; k++) await moveTick(env, fakeFetch, { now, budgetMs: 150000, batch: 3 });
+j = JSON.parse(kv.get('gdrive:move'));
+ok(j.state === 'done' && j.moved === 7 && j.missing === 1 && rows.filter(x => x.id.startsWith('row')).every(x => drives.new.has(x.drive_id)), 'the next cron runs go on until all are moved, then it is Done');
+ok((await moveTick(env, fakeFetch)).idle === true, 'when done the cron does nothing');
+r = await call('/api/photos/status', { tok: 'tok-owner' });
+ok(r.data.move && r.data.move.state === 'done' && r.data.move.moved === 7, 'Settings sees how far the move got');
+r = await call('/api/photos/move/start', { tok: 'tok-owner', method: 'POST' });
+ok(r.data.move.state === 'done' && r.data.move.moved === 0 && r.data.move.already === 12, 'starting again checks all from the start and finds everything here');
 r = await call('/api/photos/forget-old', { tok: 'tok-owner', method: 'POST' });
+ok(!kv.has('gdrive:move'), 'Forget also clears the move');
 r = await call('/api/photos/status', { tok: 'tok-owner' });
 ok(!r.data.old, '"Forget" removes the old Gmail from Settings');
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);
