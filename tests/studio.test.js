@@ -993,8 +993,27 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(/✓ \d more cop/.test(await owner.textContent('.dfolder[data-fo="' + raw.id + '"]')), 'on M 1 the item now shows "✓ … more copies"');
   if (SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'drive-folders.png') });
   ok(handle(CREWE, { op: 'rpc', fn: 'drive_backup_item', args: { p_item: raw.id, p_to: DRV('M 5').id } }).data.error, 'only the admin or manager records a backup');
+  // 27 Nov 2026 (Ravi): a backup folder whose subfolder's original was deleted is "partly backed up", not a green tick
+  { const srcId = crypto.randomUUID(), bkId = crypto.randomUUID();
+    T.drive_items.set(srcId, { id: srcId, drive: DRV('M 1').id, title: 'Client 59 · Mehndi', what: 'raw', path: 'Client 59/Mehndi', size_label: '200 GB', files: 400, added_at: '2026-11-20T00:00:00Z', removed_at: null });
+    T.drive_items.set(bkId, { id: bkId, drive: DRV('Red').id, title: 'Client 59 · Mehndi', what: 'backup', path: 'Client 59/Mehndi', size_label: '200 GB', files: 400, from_item: srcId, added_at: '2026-11-21T00:00:00Z', removed_at: null });
+    await owner.click('#dclose'); await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + DRV('Red').id + '"]');
+    await owner.click('[data-d="' + DRV('Red').id + '"]'); await owner.waitForSelector('.dsub[data-cd="Client 59"]');
+    ok(/✓ backed up|✓ copies/.test(await owner.textContent('.dsub[data-cd="Client 59"]')) && !/Partly/.test(await owner.textContent('.dsub[data-cd="Client 59"]')), 'on Red, Client 59 (Haldi + Mehndi, both originals still on M 1) shows a green tick');
+    T.drive_items.get(srcId).removed_at = new Date().toISOString(); T.drive_items.get(srcId).removed_why = 'deleted from M 1';
+    await owner.click('#dclose'); await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + DRV('Red').id + '"]');
+    await owner.click('[data-d="' + DRV('Red').id + '"]'); await owner.waitForSelector('.dsub[data-cd="Client 59"]');
+    const top = await owner.textContent('.dsub[data-cd="Client 59"]');
+    ok(/⚠ Partly backed up · 1 of 2/.test(top) && !/✓/.test(top), 'the Mehndi original deleted from M 1: on Red, Client 59 says "⚠ Partly backed up · 1 of 2" (no green tick)');
+    await owner.click('.dsub[data-cd="Client 59"]'); await owner.waitForSelector('.dsub[data-cd="Client 59/Mehndi"]');
+    ok(/only copy/.test(await owner.textContent('.dsub[data-cd="Client 59/Mehndi"]')) && /✓/.test(await owner.textContent('.dsub[data-cd="Client 59/Haldi"]')), 'inside: Mehndi says "only copy", Haldi keeps its tick');
+    await owner.click('.dsub[data-cd="Client 59/Mehndi"]'); await owner.click('.dfolder[data-fo="' + bkId + '"]'); await owner.waitForSelector('#fo-to');
+    ok(/the only copy/.test(await owner.evaluate(() => [...document.querySelectorAll('.sheet')].map(x => x.textContent).join(' '))), 'its panel explains: the original is not on any drive now, back it up');
+    if (SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'drive-partly.png') });
+    T.drive_items.delete(srcId); T.drive_items.delete(bkId);
+    await owner.click('#dclose').catch(() => {}); await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + DRV('M 1').id + '"]');
+  }
   T.drive_items.delete(bkF.id);   // leave the rest of the story as it was
-  await owner.click('#dclose');
   // a big drive (18 Nov 2026, Ravi: "I cannot see all the cards I copied in M6"): Supabase sends 1000 rows per read, so every line must be read in pages
   { const d6 = crypto.randomUUID(); T.drives.set(d6, { id: d6, name: 'M 6', kind: 'SSD', status: 'in_use', owner_type: 'studio', holder: null, size_label: '4 TB' });
     for (let i = 0; i < 1205; i++) { const id = crypto.randomUUID(); T.drive_items.set(id, { id, drive: i < 5 ? d6 : DRV('Dibba 2').id, title: 'Old ' + i, what: 'raw', path: i < 5 ? 'Late/Haldi' : 'Old', size_label: '1 GB', files: 1, added_at: '2026-01-01T00:00:00Z', removed_at: null }); }

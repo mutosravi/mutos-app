@@ -153,11 +153,16 @@
     const pathOf = it => it.path || clientOf(it) || 'Not in a folder';
     const under = (it, P) => !P || pathOf(it) === P || pathOf(it).startsWith(P + '/');
     const sumGb = list => list.reduce((n, it) => n + gbOf(it.size_label), 0), sumFiles = list => list.reduce((n, it) => n + (filesOf(it) || 0), 0);
+    // 27 Nov 2026 (Ravi): a folder is "backed up" only when EVERY raw line and every backup copy in it (subfolders too) has a copy on another drive;
+    // a backup copy whose original was deleted is the only copy left, so the folder says "partly backed up" instead of a green tick
+    const needsCopy = it => (it.what === 'raw' || it.what === 'backup') && !it.no_backup;
     function backupBadge(list) {
-      const raw = list.filter(it => it.what === 'raw'), safe = raw.filter(it => copiesOf(it).length || it.no_backup);
-      if (!raw.length) return list.some(it => copiesOf(it).length) ? '<span class="pill ok">✓ copies</span>' : '';
-      if (safe.length === raw.length && raw.every(it => it.no_backup && !copiesOf(it).length)) return '<span class="pill mute">no backup needed</span>';
-      return safe.length === raw.length ? '<span class="pill ok">✓ backed up</span>' : safe.length ? '<span class="pill wait">' + (raw.length - safe.length) + ' without backup</span>' : '<span class="pill wait">no backup</span>';
+      const need = list.filter(needsCopy), safe = need.filter(it => copiesOf(it).length);
+      if (!need.length) return list.some(it => it.no_backup) && list.filter(it => it.what === 'raw').every(it => it.no_backup) && list.some(it => it.what === 'raw') ? '<span class="pill mute">no backup needed</span>'
+        : list.some(it => copiesOf(it).length) ? '<span class="pill ok">✓ copies</span>' : '';
+      if (safe.length === need.length) return '<span class="pill ok">✓ backed up</span>';
+      if (safe.length) return '<span class="pill wait" title="' + (need.length - safe.length) + ' item' + (need.length - safe.length === 1 ? '' : 's') + ' inside with no other copy">⚠ Partly backed up · ' + safe.length + ' of ' + need.length + '</span>';
+      return need.some(it => it.what === 'raw') ? '<span class="pill wait">no backup</span>' : '<span class="pill wait">only copy</span>';
     }
     function drawTree(bg, d, its, P) {
       const box = bg.querySelector('#dtree'); if (!box) return;
@@ -177,7 +182,7 @@
       const itemRow = it => { const f = filesOf(it), cp = copiesOf(it);
         return wrap('i:' + it.id, '<button type="button" class="rep dfolder" data-fo="' + it.id + '" style="display:flex;width:100%;text-align:left;justify-content:space-between;gap:8px;align-items:center;border:0;background:none;font:inherit;color:inherit;cursor:pointer;padding:8px 2px">' +
           '<span><span aria-hidden="true">🗂</span> ' + esc(it.title) + '<br><span class="meta" style="display:inline">' + esc([whatLabel(it.what), f != null ? f + ' files' : '', it.size_label || ''].filter(Boolean).join(' · ')) + '</span></span>' +
-          '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : it.no_backup ? '<span class="pill mute">no backup needed</span>' : it.what === 'raw' ? '<span class="pill wait">no backup</span>' : '') + ' ›</span></button>'); };
+          '<span style="flex:0 0 auto">' + (cp.length ? '<span class="pill ok">✓ ' + cp.length + ' more cop' + (cp.length > 1 ? 'ies' : 'y') + '</span>' : it.no_backup ? '<span class="pill mute">no backup needed</span>' : it.what === 'raw' ? '<span class="pill wait">no backup</span>' : it.what === 'backup' ? '<span class="pill wait">only copy</span>' : '') + ' ›</span></button>'); };
       const others = drives.filter(x => x.id !== d.id && x.status === 'in_use');
       box.innerHTML = head + (its.length ? crumbs : '') +
         (!its.length ? '<p class="sub">Nothing listed yet.</p>' : !here.length ? '<p class="sub">This folder is empty.</p>' :
@@ -253,7 +258,7 @@
         '<div class="form-grid"><label class="wide">Folder<input class="in" id="fo-p" maxlength="200" value="' + esc(it.path || '') + '" placeholder="e.g. Sharma/Haldi/Candid"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Files<input class="in" id="fo-f" type="number" min="0" inputmode="numeric" value="' + (f != null ? f : '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label><label>Size<input class="in" id="fo-s" maxlength="20" value="' + esc(it.size_label || '') + '" placeholder="e.g. 120 GB"' + (canEdit(d) ? '' : ' disabled') + '></label>' +
         '<label class="wide">Note<input class="in" id="fo-n" maxlength="300" value="' + esc(it.note || '') + '"' + (canEdit(d) ? '' : ' disabled') + '></label></div>' +
         (canEdit(d) ? '<button type="button" class="pillbtn light" id="fo-save" style="width:100%">Save</button>' : '') +
-        '<h4>Copies</h4>' + (cp.length ? cp.map(x => { const dd = drives.find(y => y.id === x.drive) || {}; return '<div class="rep">✓ <b>' + esc(dd.name || '?') + '</b> · ' + esc(whatLabel(x.what)) + ' · ' + esc(holderText(dd)) + '</div>'; }).join('') : '<p class="sub">' + (it.what === 'raw' ? 'Only here. Back it up to another drive.' : 'Only here.') + '</p>') +
+        '<h4>Copies</h4>' + (cp.length ? cp.map(x => { const dd = drives.find(y => y.id === x.drive) || {}; return '<div class="rep">✓ <b>' + esc(dd.name || '?') + '</b> · ' + esc(whatLabel(x.what)) + ' · ' + esc(holderText(dd)) + '</div>'; }).join('') : '<p class="sub">' + (it.what === 'raw' ? 'Only here. Back it up to another drive.' : it.what === 'backup' ? 'Only here: the original it was copied from is not on any drive now, so this is the only copy. Back it up to another drive.' : 'Only here.') + '</p>') +
         (ks.length ? '<h4>Cards in this folder</h4>' + ks.map(k => { const st = ST[k.data] || ['mute', k.data]; return '<span class="pill ' + st[0] + '" style="margin:0 6px 6px 0;display:inline-block">' + esc(k.code) + ' · ' + esc(st[1]) + '</span>'; }).join('') : '') +
         // no backup needed (032): the folder shows it, and its cards with one copy turn copied or free
         (opts.staff && it.what === 'raw' && !cp.length ? (it.no_backup ? '<div class="ans" style="margin:10px 0 0">No backup needed' + (it.no_backup_why ? ': ' + esc(it.no_backup_why) : '') + ' <button type="button" class="x" id="fo-needbk">Needs a backup after all</button></div>'
