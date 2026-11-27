@@ -113,6 +113,27 @@
       : st.connected ? 'Connected ✓ Photos go to the folder <b>Muto\'s app photos</b> in the Drive of <b>' + esc(st.account || '') + '</b>' + (st.since ? ' (since ' + esc(new Date(st.since).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })) + ')' : '') + '.<br><span style="opacity:.7">Card photos: Cards / month. Family photos: Families / wedding. The app can only see the files it made there.</span>'
       : 'Not connected. Tap Connect and sign in with the <b>studio Gmail</b> that should keep the photos (not your personal one). Team and families can add photos once it is connected.';
     $('#gd-go').hidden = !st.configured; $('#gd-go').textContent = st.connected ? 'Connect a different Gmail' : 'Connect Google Drive';
+    if (st.connected) $('#gd-body').insertAdjacentHTML('beforeend', '<p style="margin:8px 0 0;font-size:13px;opacity:.8">To change the Gmail, use "Connect a different Gmail" (not Disconnect): the app then remembers the earlier Drive so its photos can be moved.</p>');
+    // 27 Nov 2026 (Ravi): photos added while another Gmail was connected live in that Drive; copy them here and point the app at the copies
+    if (st.connected && st.old) {
+      $('#gd-body').insertAdjacentHTML('beforeend', '<div id="gd-mv" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:#f7e9d0">Photos added while <b>' + esc(st.old.account) + '</b> was connected are still in that Drive, so the app cannot show them now.' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="pillbtn" id="gd-mv-go">Move them into this Drive</button></div><div id="gd-mv-st" style="margin-top:6px;font-size:13px"></div></div>');
+      $('#gd-mv-go').addEventListener('click', async () => {
+        const b = $('#gd-mv-go'); b.disabled = true; b.textContent = 'Moving… keep this open';
+        let off = 0, tot = { moved: 0, already: 0, missing: 0 }, total = null, fails = 0;
+        for (;;) {
+          const r = await api(c, '/api/photos/move', 'POST', { offset: off, batch: 3 });
+          if (r.error) { if (++fails > 3) { $('#gd-mv-st').textContent = 'Stopped: ' + r.error + ' Tap again to go on from here.'; b.disabled = false; b.textContent = 'Go on moving'; return; } await new Promise(x => setTimeout(x, 2000)); continue; }
+          fails = 0; ['moved', 'already', 'missing'].forEach(k => { tot[k] += r[k] || 0; }); total = r.total || total; off = r.next;
+          $('#gd-mv-st').textContent = (total ? Math.min(off, total) + ' of ' + total : off) + ' checked · ' + tot.moved + ' moved' + (tot.already ? ' · ' + tot.already + ' already here' : '') + (tot.missing ? ' · ' + tot.missing + ' not found in either Drive' : '');
+          if (r.done) break;
+        }
+        b.remove();
+        $('#gd-mv-st').insertAdjacentHTML('beforeend', '<div style="margin-top:6px"><b>Done ✓</b> The photos show again. The old Drive was not changed (a backup).</div><button type="button" class="pillbtn light" id="gd-forget" style="margin-top:8px">Forget ' + esc(st.old.account) + '</button>');
+        $('#gd-forget').addEventListener('click', async () => { if (!confirm('The app stops using ' + st.old.account + '. Its Drive keeps everything. Forget it?')) return; await api(c, '/api/photos/forget-old', 'POST'); $('#gd-mv').remove(); });
+        if (window.MutosPhotos && window.MutosPhotos._cache && window.MutosPhotos._cache.clear) window.MutosPhotos._cache.clear();
+      });
+    }
     $('#gd-off').hidden = !st.connected;
     $('#gd-go').addEventListener('click', async () => { const r = await api(c, '/api/photos/connect', 'POST'); if (r.url) location.href = r.url; else $('#gd-body').textContent = r.error || 'Could not start.'; });
     $('#gd-off').addEventListener('click', async () => { if (!confirm('Disconnect Google Drive? Nobody can add or open photos until it is connected again. The photos stay in that Drive.')) return; const r = await api(c, '/api/photos/disconnect', 'POST'); $('#gd-body').textContent = r.error || 'Disconnected.'; $('#gd-off').hidden = true; });

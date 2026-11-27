@@ -26,7 +26,7 @@ async function fakeFetch(u, init = {}) {
     if (p.get('grant_type') === 'authorization_code') return J({ access_token: 'at1', refresh_token: 'rt1', expires_in: 3600 });
     return p.get('refresh_token') === 'rt1' ? J({ access_token: 'at2', expires_in: 3600 }) : J({ error: 'invalid_grant' }, 400); }
   if (u === 'https://www.googleapis.com/oauth2/v2/userinfo') return J({ email: 'mutos.media@gmail.com' });
-  if (u.startsWith('https://www.googleapis.com/drive/v3/files?fields=files')) return J({ files: [] });
+  if (u.startsWith('https://www.googleapis.com/drive/v3/files?fields=files') || u.startsWith('https://www.googleapis.com/drive/v3/files?orderBy=')) return J({ files: [] });
   if (u === 'https://www.googleapis.com/drive/v3/files?fields=id' && init.method === 'POST') { const m = JSON.parse(init.body); const id = 'F' + nextId++; driveFiles.set(id, m); return J({ id }); }
   if (u.startsWith('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable')) { const m = JSON.parse(init.body); const id = 'P' + nextId++; driveFiles.set(id, Object.assign({ mime: h.get('X-Upload-Content-Type') }, m)); return new Response(null, { status: 200, headers: { Location: 'https://up.test/' + id } }); }
   if (u.startsWith('https://up.test/')) { const id = u.slice(16); driveFiles.get(id).bytes = init.body.byteLength; return J({ id }); }

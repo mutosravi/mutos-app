@@ -79,7 +79,73 @@ export async function driveToken(env, fetchFn = fetch) {
   tokenCache = { token: d.access_token, exp: Date.now() + (d.expires_in || 3000) * 1000 };
   return tokenCache.token;
 }
-export function _resetTokenCache() { tokenCache = null; }
+export function _resetTokenCache() { tokenCache = null; oldCache = null; }
+
+// ---------- the Gmail connected before (kept when switching, so its photos can be moved) ----------
+let oldCache = null;
+export async function oldAuth(env) { const raw = env.BACKUPS && await env.BACKUPS.get('gdrive:auth:old'); try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+async function oldToken(env, fetchFn) {
+  if (oldCache && oldCache.exp > Date.now() + 60e3) return oldCache.token;
+  const o = await oldAuth(env);
+  if (!o || !o.refresh) throw new Error('The earlier Gmail is not remembered. Connect it again, then connect the new one (without Disconnect in between).');
+  const r = await fetchFn('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: env.GDRIVE_CLIENT_ID, client_secret: env.GDRIVE_CLIENT_SECRET, refresh_token: o.refresh, grant_type: 'refresh_token' }) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.access_token) throw new Error('The earlier Gmail (' + o.account + ') no longer lets the app in. Connect it again, then the new one.');
+  oldCache = { token: d.access_token, exp: Date.now() + (d.expires_in || 3000) * 1000 };
+  return oldCache.token;
+}
+const FILES = 'https://www.googleapis.com/drive/v3/files/';
+// which folder a photo belongs in (the same as when it was added)
+async function folderOf(env, fetchFn, row, titles) {
+  const title = async () => { const k = row.wedding_key || ''; if (!titles.has(k)) { let t = k.replace(/^[a-z]:/, '') || 'Other';
+      try { const r = await fetchFn(sbBase(env) + '/rest/v1/client_links?select=title&wedding_key=eq.' + encodeURIComponent(k), { headers: serverHeaders(env) }); const x = r.ok ? (await r.json())[0] : null; if (x && x.title) t = x.title; } catch (e) {}
+      titles.set(k, String(t).replace(/[/\\]/g, '-').slice(0, 100)); } return titles.get(k); };
+  if (row.kind === 'card') return ['Cards', new Date(Date.parse(row.at) + 330 * 60e3).toISOString().slice(0, 7)];
+  if (row.kind === 'person') return ['Team photos'];
+  if (row.kind === 'job') return ['Families', await title(), 'Deliveries'];
+  if (row.purpose === 'pay') return ['Families', await title(), 'Payments'];
+  return ['Families', await title()];
+}
+// copy one Drive file from the earlier Gmail into this Drive (streamed, nothing kept here); null when it is gone from there too
+async function copyOver(env, fetchFn, id, parent) {
+  const ot = await oldToken(env, fetchFn);
+  const m = await fetchFn(FILES + encodeURIComponent(id) + '?fields=name,mimeType,size,description,appProperties', { headers: { Authorization: 'Bearer ' + ot } });
+  if (m.status === 404) return null;
+  const meta = await m.json().catch(() => ({}));
+  if (!m.ok) throw new Error('The earlier Drive did not answer (' + m.status + ').');
+  const body = await fetchFn(FILES + encodeURIComponent(id) + '?alt=media', { headers: { Authorization: 'Bearer ' + ot } });
+  if (!body.ok) throw new Error('Could not read a file from the earlier Drive (' + body.status + ').');
+  const size = String(meta.size || body.headers.get('Content-Length') || '');
+  const init = await gdrive(env, fetchFn, 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id', { method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': meta.mimeType || 'application/octet-stream' }, size ? { 'X-Upload-Content-Length': size } : {}),
+    body: JSON.stringify({ name: meta.name || 'photo', parents: [parent], description: meta.description || undefined, appProperties: meta.appProperties || undefined }) });
+  const at = init.headers.get('Location');
+  if (!init.ok || !at) throw new Error('This Drive did not accept the copy (' + init.status + ').');
+  const r = await fetchFn(at, { method: 'PUT', headers: Object.assign({ 'Content-Type': meta.mimeType || 'application/octet-stream' }, size ? { 'Content-Length': size } : {}), body: body.body });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || !d.id) throw new Error('Copying into this Drive failed (' + r.status + ').');
+  return d.id;
+}
+async function inThisDrive(env, fetchFn, id) { const r = await gdrive(env, fetchFn, FILES + encodeURIComponent(id) + '?fields=id'); return r.ok; }
+export async function moveBatch(env, fetchFn, offset, batch) {
+  await driveToken(env, fetchFn); await oldToken(env, fetchFn);
+  const r = await fetchFn(sbBase(env) + '/rest/v1/uploads?select=*&status=eq.ok&drive_id=not.is.null&order=at.asc,id.asc&offset=' + offset + '&limit=' + batch, { headers: Object.assign(serverHeaders(env), { Prefer: 'count=exact' }) });
+  if (!r.ok) throw new Error('database ' + r.status + ' ' + (await r.text()).slice(0, 160));
+  const rows = await r.json(), total = Number(String(r.headers.get('Content-Range') || '').split('/')[1]) || null;
+  const out = { moved: 0, already: 0, missing: 0, total, next: offset + rows.length, done: rows.length < batch || (total != null && offset + rows.length >= total) }, titles = new Map();
+  for (const row of rows) {
+    if (await inThisDrive(env, fetchFn, row.drive_id)) { out.already++; continue; }
+    const parent = await folderFor(env, fetchFn, await folderOf(env, fetchFn, row, titles));
+    const nid = await copyOver(env, fetchFn, row.drive_id, parent);
+    if (!nid) { out.missing++; continue; }
+    const patch = { drive_id: nid };
+    if (row.thumb_id) { const t = await copyOver(env, fetchFn, row.thumb_id, await folderFor(env, fetchFn, ['.small copies'])); patch.thumb_id = t || null; }
+    await rowPatch(env, fetchFn, row.id, patch);
+    out.moved++;
+  }
+  return out;
+}
 
 export async function gdrive(env, fetchFn, url, init = {}) {
   const t = await driveToken(env, fetchFn);
@@ -140,14 +206,23 @@ export async function photosApi(request, env, fetchFn = fetch) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.refresh_token) return page('Google did not give a lasting sign-in (' + (d.error || 'no refresh token') + '). Remove "Muto\'s" from the Gmail\'s Google Account → Security → Third-party access, then connect again.', false);
     const ui = await (await fetchFn('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: 'Bearer ' + d.access_token } })).json().catch(() => ({}));
-    const old = await auth(env) || {};
-    const a = { refresh: d.refresh_token, account: String(ui.email || ''), by: decodeURIComponent(who), at: new Date().toISOString(), root: old.account === ui.email ? old.root : null };
+    const old = await auth(env) || {}, acct = String(ui.email || '');
+    const a = { refresh: d.refresh_token, account: acct, by: decodeURIComponent(who), at: new Date().toISOString(), root: old.account === acct ? old.root : await env.BACKUPS.get('gdrive:root:' + acct) };
     tokenCache = { token: d.access_token, exp: Date.now() + (d.expires_in || 3000) * 1000 };
-    if (!a.root) {   // the app's own folder in that Drive
+    if (!a.root) {   // the app's own folder in that Drive: the one made before (when this Gmail was connected earlier), else a new one
+      const q = "name = 'Muto''s app photos' and mimeType = 'application/vnd.google-apps.folder' and 'root' in parents and trashed = false".replace("Muto''s", "Muto\\'s");
+      const found = await (await fetchFn('https://www.googleapis.com/drive/v3/files?orderBy=createdTime&fields=files(id)&q=' + encodeURIComponent(q), { headers: { Authorization: 'Bearer ' + d.access_token } })).json().catch(() => ({}));
+      a.root = found.files && found.files[0] && found.files[0].id;
+    }
+    if (!a.root) {
       const f = await fetchFn('https://www.googleapis.com/drive/v3/files?fields=id', { method: 'POST', headers: { Authorization: 'Bearer ' + d.access_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: "Muto's app photos", mimeType: 'application/vnd.google-apps.folder' }) });
       a.root = (await f.json().catch(() => ({}))).id;
       if (!a.root) return page('Signed in, but could not make the folder "Muto\'s app photos" (' + f.status + '). Is the Google Drive API enabled in Google Cloud?', false);
     }
+    await env.BACKUPS.put('gdrive:root:' + acct, a.root);
+    // switching to another Gmail: the earlier Drive is kept (as "old") so its photos can be moved here (Settings → Move photos)
+    if (old.refresh && old.account && old.account !== acct) { await env.BACKUPS.put('gdrive:auth:old', JSON.stringify(old)); oldCache = null; }
+    else { const prev = await oldAuth(env); if (prev && prev.account === acct) await env.BACKUPS.delete('gdrive:auth:old'); }
     await env.BACKUPS.put('gdrive:auth', JSON.stringify(a));
     return page('Photos now go to the folder <b>Muto\'s app photos</b> in the Google Drive of <b>' + a.account.replace(/[<>&]/g, '') + '</b>. You can close this page.', true);
   }
@@ -158,7 +233,8 @@ export async function photosApi(request, env, fetchFn = fetch) {
 
   if (p === '/api/photos/status' && request.method === 'GET') {
     const a = await auth(env);
-    return json({ configured, connected: !!(a && a.refresh), account: desk && a ? a.account : undefined, since: desk && a ? a.at : undefined });
+    const o = desk ? await oldAuth(env) : null;
+    return json({ configured, connected: !!(a && a.refresh), account: desk && a ? a.account : undefined, since: desk && a ? a.at : undefined, old: o && o.refresh ? { account: o.account } : undefined });
   }
   if (p === '/api/photos/connect' && request.method === 'POST') {
     if (me.role !== 'owner') return json({ error: 'Only the admin can connect Google Drive.' }, 403);
@@ -173,6 +249,21 @@ export async function photosApi(request, env, fetchFn = fetch) {
     if (a && a.refresh) await fetchFn('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(a.refresh), { method: 'POST' }).catch(() => {});
     await env.BACKUPS.put('gdrive:auth', JSON.stringify({ account: a && a.account, root: a && a.root, refresh: null, at: new Date().toISOString() }));
     tokenCache = null;
+    return json({ ok: true });
+  }
+
+  // move every photo the app knows from the earlier Gmail's Drive into this one (a few per call; the page calls again until done)
+  if (p === '/api/photos/move' && request.method === 'POST') {
+    if (me.role !== 'owner') return json({ error: 'Only the admin can move the photos.' }, 403);
+    const b = await request.json().catch(() => ({}));
+    try { return json(await moveBatch(env, fetchFn, Math.max(0, Number(b.offset) || 0), Math.min(10, Math.max(1, Number(b.batch) || 3)))); }
+    catch (e) { return json({ error: e.message || String(e) }, 502); }
+  }
+  if (p === '/api/photos/forget-old' && request.method === 'POST') {
+    if (me.role !== 'owner') return json({ error: 'Only the admin can do this.' }, 403);
+    const o = await oldAuth(env);
+    if (o && o.refresh) await fetchFn('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(o.refresh), { method: 'POST' }).catch(() => {});
+    await env.BACKUPS.delete('gdrive:auth:old'); oldCache = null;
     return json({ ok: true });
   }
 
