@@ -227,6 +227,9 @@ button.sb-pill:hover { border-color: var(--gold); color: var(--gold); }
 .sb-travel-title { font-size: 16px; font-weight: 700; margin-top: 2px; }
 .sb-travel-sub { color: #6b5a85; margin-bottom: 6px; }
 .sb-travel-row { margin-top: 4px; }
+.sb-travel-who { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.sb-travel-name { background: #fff; border: 1px solid #c9b8e0; color: #3b2a58; border-radius: 999px; padding: 2px 10px; font-weight: 600; }
+.sb-travel-need { color: #8a4b2a; font-weight: 600; }
 .sb-travel-go { margin-top: 8px; background: #fff; color: #4a3470; border: 1px solid #c9b8e0; border-radius: 6px; padding: 6px 10px; font: inherit; font-weight: 600; cursor: pointer; }
 .sb-flash { outline: 3px solid #d4a64a; outline-offset: 2px; }
 .sb-same-team:hover { border-style: solid; background: var(--ok-soft); }
@@ -4757,10 +4760,17 @@ body.mh-view-board #mutos-home { display: none; }
     ev.assignments.forEach(a => { const p = findShooter(a.memberId); if (p) { const t = teamTake(a); who.push(p.name + (t ? ' (team of ' + (t.photo + t.video) + ')' : '')); } });
     ev.assistantIds.forEach(id => { const p = findAssistantPerson(id); if (p) who.push(p.name + ' (assistant)'); });
     const gear = [...new Set(allGearIds(ev))].map(findEquip).filter(Boolean).map(eq => eq.name);
+    // 27 Nov 2026 (Ravi: "team names should also be visible … specifically for checking for a booking"): when the crew is not
+    // (fully) assigned yet, say how many more people that shoot will take away on this day
+    const pc = parseCoverage(ev.coverage), need = crewNeeded(ev.coverage), have = crewCount(ev);
+    const covTxt = pc ? [pc.photo ? pc.photo + ' photo' : '', pc.video ? pc.video + ' video' : '', pc.director ? pc.director + ' director' : '', pc.drone ? pc.drone + ' drone' : ''].filter(Boolean).join(' + ') : String(ev.coverage || '');
+    const needTxt = need === null ? (who.length ? '' : 'Nobody assigned yet.') : have >= need ? '' : !have ? 'Nobody assigned yet: ' + need + (need === 1 ? ' person' : ' people') + ' will be away (' + covTxt + ').' : (need - have) + ' more still to assign (' + covTxt + ').';
     el.innerHTML = '<div class="sb-travel-head">🛫 Travelling · ' + (side === 'before' ? 'day before' : 'day after') + '</div>' +
       '<div class="sb-travel-title">' + (side === 'before' ? 'Going to ' : 'Coming back from ') + escapeHtml(placeName(ev)) + '</div>' +
       '<div class="sb-travel-sub">for ' + escapeHtml(ev.name) + ' · ' + escapeHtml(formatDay(ev.date)) + ' · ' + escapeHtml(ev.slot || '') + '</div>' +
-      '<div class="sb-travel-row"><b>Not available today:</b> ' + (who.length ? escapeHtml(who.join(', ')) : '<i>nobody assigned yet</i>') + '</div>' +
+      '<div class="sb-travel-row"><b>Not available today' + (who.length ? ' (' + who.length + ')' : '') + ':</b></div>' +
+      (who.length ? '<div class="sb-travel-who">' + who.map(n => '<span class="sb-travel-name">' + escapeHtml(n) + '</span>').join('') + '</div>' : '') +
+      (needTxt ? '<div class="sb-travel-row sb-travel-need">' + escapeHtml(needTxt) + '</div>' : '') +
       (gear.length ? '<div class="sb-travel-row"><b>Gear away:</b> ' + escapeHtml(gear.join(', ')) + '</div>' : '') +
       '<button type="button" class="sb-travel-go" data-action="opentravel">Open ' + escapeHtml(ev.name) + ' ›</button>';
     el.querySelector('.sb-travel-go').addEventListener('click', () => {

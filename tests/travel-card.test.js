@@ -38,9 +38,14 @@ const server = http.createServer((q, s) => { const p = q.url.split('?')[0], f = 
   ok(/1 travelling/.test(await p.textContent('#sec-' + set.before + ' .sb-date-count')), 'the date head counts "🛫 1 travelling"');
   const after = '#sec-' + set.after + ' .sb-travel-card[data-ev="' + set.G + '"][data-side="after"]';
   ok(!!(await card(after)) && !!(await card('#sec-' + set.after + ' #card-' + set.N)) && /Coming back from Goa/.test(await p.textContent(after)), 'the day after: the Lucknow shoot and the "Coming back from Goa" card side by side');
-  if (process.env.SHOTS) await (await p.$('#sec-' + set.after)).screenshot({ path: process.env.SHOTS + '/travel-card-day.png' });
+  if (process.env.SHOTS) await (await p.$('#sec-' + set.after)).screenshot({ path: process.env.SHOTS + '/travel-card-day.png', timeout: 8000, animations: 'disabled' }).catch(() => {});
   await p.click(after + ' .sb-travel-go'); await sleep(400);
   ok(await p.evaluate(id => document.getElementById('card-' + id).classList.contains('sb-flash'), set.G), '"Open Goa Wedding" goes to the shoot and lights it up');
+  ok((await p.$$eval(after + ' .sb-travel-name', x => x.map(e => e.textContent))).includes(set.x), 'each person away is a name chip (' + set.x + ')');
+  await p.evaluate(s => { const A = window.__boardApi, G = A.state().events.find(e => e.id === s.G); G.coverage = '2+1'; A.save(); A.renderBoard(); }, set);
+  ok(/2 more still to assign \(2 photo \+ 1 video\)/.test(await p.textContent(after)), 'crew not full yet: "2 more still to assign (2 photo + 1 video)"');
+  await p.evaluate(s => { const A = window.__boardApi, G = A.state().events.find(e => e.id === s.G); G.assignments = []; A.save(); A.renderBoard(); }, set);
+  ok(/Nobody assigned yet: 3 people will be away \(2 photo \+ 1 video\)/.test(await p.textContent(after)), 'nobody assigned: "3 people will be away (2 photo + 1 video)"');
   // travel day off → card gone
   await p.evaluate(s => { const A = window.__boardApi, G = A.state().events.find(e => e.id === s.G); G.farBefore = false; A.save(); A.renderBoard(); }, set);
   ok(!(await card(before)) && !(await card('#sec-' + set.before)), 'travel day before switched off: that card (and the empty date) are gone');
