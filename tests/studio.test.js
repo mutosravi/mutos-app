@@ -629,6 +629,16 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   // ── 6. owner decides, marks a holiday, runs last month's salary ──
   await owner.goto(B + '/attendance.html'); await owner.waitForSelector('#tab-today .card');
   ok((await owner.textContent('#tab-today')).includes('Neha Office'), 'Today shows who is in');
+  { // 27 Nov 2026: back-date attendance (‹ Previous day, a date box, Next day ›, Today)
+    ok(await owner.isDisabled('#td-next') && !(await owner.$('#td-today')), 'Today: "Next day" is off and there is no "Today" button');
+    await owner.click('#td-prev'); await owner.waitForFunction(() => /Yesterday/.test(document.querySelector('#tab-today h1').textContent));
+    ok(await owner.inputValue('#td-date') === istDay(-1) && !(await owner.isDisabled('#td-next')) && /absent/.test(await owner.textContent('#tab-today .statgrid')), '‹ Previous day shows yesterday (date box, "absent" instead of "not in yet")');
+    await owner.fill('#td-date', istDay(-40)); await owner.dispatchEvent('#td-date', 'change');
+    await owner.waitForFunction(d => document.getElementById('td-date').value === d && /Attendance/.test(document.querySelector('#tab-today h1').textContent), istDay(-40));
+    ok(true, 'the date box opens any earlier day (40 days back, another month)');
+    await owner.click('#td-today'); await owner.waitForFunction(() => /^Today$/.test(document.querySelector('#tab-today h1').textContent));
+    ok((await owner.textContent('#tab-today')).includes('Neha Office'), '"Today" comes back to today');
+  }
   await owner.click('.tab[data-tab="req"]'); await owner.waitForSelector('[data-ok]');
   const adv = reqs.find(r => r.kind === 'advance'), lv = reqs.find(r => r.kind === 'leave');
   owner.nextPrompt = '3000'; await owner.click('[data-ok="' + adv.id + '"]'); await owner.waitForTimeout(400);

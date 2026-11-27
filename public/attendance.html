@@ -104,15 +104,37 @@
   document.addEventListener('click', ev => { const b = ev.target.closest('[data-prof]'); if (!b) return; const e = emps.find(x => x.email === b.dataset.prof); if (e) window.MutosAttProfile.open({ c, emp: e, shoots: shootsBy.get(e.person_key) || [], month: b.dataset.month || undefined }); });
   const pill = st => { const s = A.STATUS[st] || [st, '#fff', '#000']; return '<span class="pill" style="background:' + s[1] + ';color:' + s[2] + '">' + esc(s[0]) + '</span>'; };
 
-  // ---------- today ----------
+  // ---------- today (or any day: 27 Nov 2026, Ravi: "options to shift to previous days to see back date attendance. Also a date selector") ----------
+  let viewDay = today; const monthData = new Map();
+  const dayShift = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  async function dataFor(day) {
+    const m = A.monthOf(day); if (m === A.monthOf(today)) return cur;
+    if (!monthData.has(m)) monthData.set(m, await A.loadMonth(c, m));
+    return monthData.get(m);
+  }
+  async function goDay(d) {
+    if (!d) return; if (d > today) d = today;
+    viewDay = d; try { await dataFor(d); } catch (e) { toast('Could not load ' + d + ': ' + (e.message || e), true); viewDay = today; }
+    renderToday();
+  }
   function renderToday() {
-    const rows = active().map(e => { const r = A.calcFor(e, cur, shootsBy.get(e.person_key) || [], { upto: today }); return { e, d: r.days.find(x => x.date === today) || {} }; });
+    const isToday = viewDay === today, data = A.monthOf(viewDay) === A.monthOf(today) ? cur : (monthData.get(A.monthOf(viewDay)) || cur);
+    const rows = active().map(e => { const r = A.calcFor(e, data, shootsBy.get(e.person_key) || [], { upto: isToday ? today : null }); return { e, d: r.days.find(x => x.date === viewDay) || {} }; }).filter(x => x.d.status !== 'before');
     const count = st => rows.filter(x => st.includes(x.d.status)).length;
-    const flagged = cur.punches.filter(p => p.day === today && p.flag === 'holiday_unasked');
-    $('tab-today').innerHTML = '<section class="hello" style="display:block"><h1>Today</h1><p class="sub">' + esc(new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })) + ' · ' + active().length + ' employees</p></section>' +
-      '<div class="statgrid" style="margin-top:14px;grid-template-columns:repeat(4,minmax(0,1fr))"><div class="stat"><b>' + count(['open', 'present', 'late', 'half', 'short', 'shoot_office']) + '</b><span>in office</span></div><div class="stat honey"><b>' + count(['late', 'half']) + '</b><span>late</span></div><div class="stat lilac"><b>' + count(['shoot', 'shoot_paid']) + '</b><span>on shoot</span></div><div class="stat peach"><b>' + count(['today']) + '</b><span>not in yet</span></div></div>' +
+    const flagged = data.punches.filter(p => p.day === viewDay && p.flag === 'holiday_unasked');
+    const dayTxt = new Date(viewDay + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: viewDay.slice(0, 4) === today.slice(0, 4) ? undefined : 'numeric' });
+    $('tab-today').innerHTML = '<section class="hello" style="display:block"><h1>' + (isToday ? 'Today' : viewDay === dayShift(today, -1) ? 'Yesterday' : 'Attendance') + '</h1><p class="sub">' + esc(dayTxt) + ' · ' + rows.length + ' employees</p>' +
+      '<div class="daynav" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" class="chip" id="td-prev" aria-label="Previous day">‹ Previous day</button>' +
+        '<input type="date" class="in" id="td-date" value="' + viewDay + '" max="' + today + '" style="flex:0 1 170px;min-width:0">' +
+        '<button type="button" class="chip" id="td-next"' + (isToday ? ' disabled style="opacity:.4"' : '') + ' aria-label="Next day">Next day ›</button>' +
+        (isToday ? '' : '<button type="button" class="chip yes" id="td-today">Today</button>') + '</div></section>' +
+      '<div class="statgrid" style="margin-top:14px;grid-template-columns:repeat(4,minmax(0,1fr))"><div class="stat"><b>' + count(['open', 'present', 'late', 'half', 'short', 'shoot_office']) + '</b><span>in office</span></div><div class="stat honey"><b>' + count(['late', 'half']) + '</b><span>late</span></div><div class="stat lilac"><b>' + count(['shoot', 'shoot_paid']) + '</b><span>on shoot</span></div><div class="stat peach"><b>' + (isToday ? count(['today']) : count(['absent', 'missing'])) + '</b><span>' + (isToday ? 'not in yet' : 'absent / no check-out') + '</span></div></div>' +
       (flagged.length ? '<div class="ans wait">' + flagged.length + ' came in on today\'s holiday without being asked. Add them to the holiday\'s "asked to come in" list (Holidays tab) if you want to pay them for it.</div>' : '') +
       '<div style="margin-top:12px">' + (rows.length ? rows.map(({ e, d }) => '<div class="card row2">' + whoBtn(e, '<b>' + esc(e.name) + '</b><div class="meta">' + esc([A.t12(e.start_time) + ' start', d.inAt ? 'in ' + d.inAt : '', d.outAt ? 'out ' + d.outAt : '', d.note].filter(Boolean).join(' · ')) + '</div>') + pill(d.status || 'today') + '</div>').join('') : '<div class="empty">No employees yet. Add them in People.</div>') + '</div>';
+    $('td-prev').addEventListener('click', () => goDay(dayShift(viewDay, -1)));
+    $('td-next').addEventListener('click', () => { if (viewDay < today) goDay(dayShift(viewDay, 1)); });
+    $('td-date').addEventListener('change', e => goDay(e.target.value));
+    if ($('td-today')) $('td-today').addEventListener('click', () => goDay(today));
   }
 
   // ---------- requests ----------
