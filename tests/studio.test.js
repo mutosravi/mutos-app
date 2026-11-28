@@ -990,7 +990,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
   ok(bkM5 && bkM5.path === 'Client 59/Haldi/', 'Back up "Client 59" (the whole folder) → M 5 gets the same folders');
   T.drive_items.delete(bkM5.id);
   await owner.waitForSelector('.dsub[data-cd="Client 59/Haldi"]'); await owner.click('.dsub[data-cd="Client 59/Haldi"]'); await owner.waitForSelector('.dfolder[data-fo="' + raw.id + '"] .pill.ok');
-  ok(/✓ \d more cop/.test(await owner.textContent('.dfolder[data-fo="' + raw.id + '"]')), 'on M 1 the item now shows "✓ … more copies"');
+  ok(/✓ \d more cop/.test(await owner.textContent('.dfolder[data-fo="' + raw.id + '"]')) && /on M 5, Red|on Red, M 5/.test(await owner.textContent('.dfolder[data-fo="' + raw.id + '"] .bk-on')), 'on M 1 the item now shows "✓ … more copies" and under it which drives (on M 5, Red)');
   if (SHOTS) await owner.screenshot({ path: path.join(SHOTS, 'drive-folders.png') });
   ok(handle(CREWE, { op: 'rpc', fn: 'drive_backup_item', args: { p_item: raw.id, p_to: DRV('M 5').id } }).data.error, 'only the admin or manager records a backup');
   // 27 Nov 2026 (Ravi): a backup folder whose subfolder's original was deleted is "partly backed up", not a green tick
@@ -999,7 +999,7 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     T.drive_items.set(bkId, { id: bkId, drive: DRV('Red').id, title: 'Client 59 · Mehndi', what: 'backup', path: 'Client 59/Mehndi', size_label: '200 GB', files: 400, from_item: srcId, added_at: '2026-11-21T00:00:00Z', removed_at: null });
     await owner.click('#dclose'); await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + DRV('Red').id + '"]');
     await owner.click('[data-d="' + DRV('Red').id + '"]'); await owner.waitForSelector('.dsub[data-cd="Client 59"]');
-    ok(/✓ backed up|✓ copies/.test(await owner.textContent('.dsub[data-cd="Client 59"]')) && !/Partly/.test(await owner.textContent('.dsub[data-cd="Client 59"]')), 'on Red, Client 59 (Haldi + Mehndi, both originals still on M 1) shows a green tick');
+    ok(/✓ backed up|✓ copies/.test(await owner.textContent('.dsub[data-cd="Client 59"]')) && !/Partly/.test(await owner.textContent('.dsub[data-cd="Client 59"]')) && /on M 1/.test(await owner.textContent('.dsub[data-cd="Client 59"] .bk-on')), 'on Red, Client 59 (Haldi + Mehndi, both originals still on M 1) shows a green tick with "on M 1" under it');
     T.drive_items.get(srcId).removed_at = new Date().toISOString(); T.drive_items.get(srcId).removed_why = 'deleted from M 1';
     await owner.click('#dclose'); await owner.reload(); await owner.waitForSelector('#tab-drives [data-d="' + DRV('Red').id + '"]');
     await owner.click('[data-d="' + DRV('Red').id + '"]'); await owner.waitForSelector('.dsub[data-cd="Client 59"]');
