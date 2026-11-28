@@ -294,7 +294,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
         const k = cards.find(x => x.id === u.card) || { code: '?' }, cp = copies.filter(x => x.card === u.card && x.cycle === u.cycle);
         const first = cp.find(x => !x.backup), bk = cp.find(x => x.backup);
         return '<div class="card"><b>' + esc(k.code) + '</b> · ' + esc(u.shoot || '') + ' <span class="meta" style="display:inline">(' + esc(useText(u).replace((u.shoot || '') + ' · ', '')) + ')</span><div class="meta" style="margin-top:4px">' +
-          (first ? '✓ Copied to <b>' + esc(first.drive_name) + '</b> / ' + esc(first.folder || '') + ' · ' + first.files + ' files · ' + esc(when(first.at)) + openLink(first) + (bk ? '<br>✓ Backup on <b>' + esc(bk.drive_name) + '</b>' + openLink(bk) : '<br>Backup not done yet') : '<span class="old">Not copied yet</span>') + '</div></div>';
+          (first ? '✓ Copied to <b>' + esc(first.drive_name) + '</b> / ' + esc(first.folder || '') + ' · ' + esc(filesText(first)) + ' · ' + esc(when(first.at)) + openLink(first) + (bk ? '<br>✓ Backup on <b>' + esc(bk.drive_name) + '</b>' + openLink(bk) : '<br>Backup not done yet') : '<span class="old">Not copied yet</span>') + '</div></div>';
       }).join('') + '</div>';
     }
     $('tab-mine').innerHTML = h + selBar('mine');
@@ -390,7 +390,7 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
           (x.by_email === me.email || staff ? ' <button type="button" class="x" data-phx="' + x.id + '">remove</button>' : '') + '</div>'; }).join('') + '</div>' +
         (canPhoto() ? '<label class="pillbtn light" style="display:inline-flex;cursor:pointer;margin:0 0 6px">📷 Add photos<input type="file" accept="image/*" multiple id="k-phin" hidden></label>' : '') : '') +
       (!canPhoto() && drive && !drive.connected && staff ? '<p class="sub">Card photos: connect Google Drive first (Home → Settings → Photos on Google Drive).</p>' : '') +
-      '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + x.files + ' files' + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span>' + openLink(x) + '</div>').join('') : '<p class="sub">Not copied yet.</p>') +
+      '<h4>Copied to</h4>' + (cps.length ? cps.map(x => '<div class="rep">' + (x.backup ? 'Backup · ' : '') + '<b>' + esc(x.drive_name) + '</b> / ' + esc(x.folder || '') + ' · ' + esc(filesText(x)) + (x.size_label ? ' · ' + esc(x.size_label) : '') + '<br><span class="meta" style="display:inline">' + esc(when(x.at)) + ' · ' + esc(x.by_email) + (x.cycle !== k.cycle ? ' · earlier round' : '') + '</span>' + openLink(x) + '</div>').join('') : '<p class="sub">Not copied yet.</p>') +
       '<h4>History</h4><div id="k-hist" class="sub">Loading…</div>' +
       '<div class="acts" style="margin-top:14px">' +
         ((k.holder && k.holder === myId) || desk ? (k.condition === 'ok' ? '<button type="button" class="pillbtn light" id="k-prob">Report a problem</button>' : '') : '') +
@@ -469,10 +469,15 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     });
     if (!miss.length) return;
     miss.sort((a, b) => a.name.localeCompare(b.name));
-    host.innerHTML = '<div class="ans wait" style="margin:4px 0 10px"><b>On the board but not on People (' + miss.length + ')</b>: they cannot receive cards yet. Add them here (name and board name; their Gmail from the board if it is there), then pick them above.' +
-      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + miss.map((m, i) => '<button type="button" class="pillbtn light" data-addp="' + i + '" style="min-height:34px">＋ ' + esc(m.name) + (m.off ? ' (inactive: turn on)' : '') + (m.email ? '' : ' · no Gmail') + '</button>').join('') + '</div></div>';
-    host.querySelectorAll('[data-addp]').forEach(btn => btn.addEventListener('click', async () => {
-      const m = miss[+btn.dataset.addp]; btn.disabled = true;
+    // 28 Nov 2026 (Ravi: "list of other people takes the whole page … Give a dropdown instead"): one dropdown + Add, not a button per person
+    host.innerHTML = '<div class="ans wait" style="margin:4px 0 10px;font-size:13px"><b>Not in the list above?</b> ' + miss.length + ' on the board ' + (miss.length === 1 ? 'is' : 'are') + ' not on People yet, so they cannot receive cards. Add one:' +
+      '<div style="display:flex;gap:8px;margin-top:8px;align-items:center"><select class="in" id="g-miss-sel" style="flex:1 1 auto;min-width:0"><option value="">Pick from the board</option>' +
+      miss.map((m, i) => '<option value="' + i + '">' + esc(m.name) + (m.off ? ' (inactive: turn on)' : '') + (m.email ? '' : ' · no Gmail') + '</option>').join('') + '</select>' +
+      '<button type="button" class="pillbtn light" id="g-miss-add" style="flex:0 0 auto;min-height:40px">＋ Add</button></div></div>';
+    const msel = host.querySelector('#g-miss-sel');
+    host.querySelector('#g-miss-add').addEventListener('click', async () => {
+      if (msel.value === '') { toast('Pick a name from the board first.', true); return; }
+      const btn = host.querySelector('#g-miss-add'), m = miss[+msel.value]; btn.disabled = true;
       let id = m.off && m.off.id, error = null;
       if (m.off) ({ error } = await c.from('people').update({ active: true, crew_keys: [...new Set([...(m.off.crew_keys || []), ...m.ids])] }).eq('id', m.off.id));
       else {
@@ -480,14 +485,15 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
         const email = m.email && !people.some(p => p.email === m.email) ? m.email : null;
         ({ error } = await c.from('people').insert({ id, name: m.name, email, crew_keys: m.ids }));
       }
-      if (error) { btn.disabled = false; toast('Could not add: ' + error.message, true); return; }
+      btn.disabled = false;
+      if (error) { toast('Could not add: ' + error.message, true); return; }
       const d = await c.rpc('people_directory'); if (d && !d.error) dir = d.data || [];
       const selEl = bg.querySelector('#g-to');
       if (!selEl.querySelector('option[value="' + id + '"]')) { const o = document.createElement('option'); o.value = id; o.textContent = m.name; selEl.appendChild(o); }
-      selEl.value = id; btn.remove();
-      if (!host.querySelector('[data-addp]')) host.remove();
-      toast(m.name + ' added to People' + (m.off ? ' again' : '') + '. ' + (m.email || (m.off && m.off.email) ? 'They accept the cards in the app with their Gmail.' : 'Add their Gmail on People so they can sign in and accept.'));
-    }));
+      selEl.value = id; msel.querySelector('option[value="' + msel.value + '"]').remove(); msel.value = '';
+      if (!msel.querySelector('option[value]:not([value=""])')) host.remove();
+      toast(m.name + ' added to People' + (m.off ? ' again' : '') + ' and picked. ' + (m.email || (m.off && m.off.email) ? 'They accept the cards in the app with their Gmail.' : 'Add their Gmail on People so they can sign in and accept.'));
+    });
   }
 
   // ---------- the team leader's notes ----------
@@ -549,6 +555,10 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
     });
   }
 
+  // 28 Nov 2026 (Ravi): a card with photos AND videos is copied with both counts and sizes (048)
+  const filesText = x => x.photos != null && x.videos != null ? x.photos + ' photos' + (x.photo_size ? ' (' + x.photo_size + ')' : '') + ' + ' + x.videos + ' videos' + (x.video_size ? ' (' + x.video_size + ')' : '') : x.files + ' files';
+  const gbIn = t => { const m = String(t || '').replace(',', '.').match(/(\d+(?:\.\d+)?)\s*(tb|gb|mb)/i); return m ? Number(m[1]) * (m[2].toLowerCase() === 'tb' ? 1000 : m[2].toLowerCase() === 'mb' ? 0.001 : 1) : null; };
+  const gbOut = n => n >= 1000 ? (Math.round(n / 100) / 10) + ' TB' : (Math.round(n * 10) / 10) + ' GB';
   // ---------- copying (owner, manager) ----------
   function copyForm(k) {
     const backup = k.data === 'single', first = copies.find(x => x.card === k.id && x.cycle === k.cycle && !x.backup);
@@ -558,10 +568,14 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       if (seen.has(t)) return; seen.add(t); lines.push({ title: t, wedding_key: w ? w.key : '' });
     });
     const others = drives.filter(d => !first || d.id !== first.drive);
-    const bg = W.sheet('<h3>' + (backup ? 'Backup of ' : 'Copied ') + esc(k.code) + '</h3><p class="sub">' + (backup ? 'First copy: ' + esc(first ? first.drive_name + ' / ' + (first.folder || '') + ' (' + first.files + ' files)' : '?') + '. The backup must go on a different drive.' : 'Count the files on the drive after copying and write the number: it is the proof that everything came across.') + '</p>' +
+    const both = used.some(u => u.media === 'both') || !!(first && first.photos != null);   // only cards whose notes say photo AND video
+    const bg = W.sheet('<h3>' + (backup ? 'Backup of ' : 'Copied ') + esc(k.code) + '</h3><p class="sub">' + (backup ? 'First copy: ' + esc(first ? first.drive_name + ' / ' + (first.folder || '') + ' (' + filesText(first) + ')' : '?') + '. The backup must go on a different drive.' : 'Count the files on the drive after copying and write the number: it is the proof that everything came across.') + '</p>' +
       '<div class="form-grid"><label class="wide">Drive<input class="in" id="cp-drive" list="dl-drv" placeholder="Type the drive name (e.g. M 5)" autocomplete="off"></label>' +
       '<label class="wide">Folder on the drive<input class="in" id="cp-folder" list="dl-fold" maxlength="200" value="' + esc(backup && first ? first.folder || '' : '') + '" placeholder="e.g. Sharma/Haldi/Candid"><span class="hint">Folder/subfolder, as in Finder. The drive shows its folders the same way.</span></label>' +
-      '<label>Number of files<input class="in" id="cp-files" type="number" inputmode="numeric" min="1" value="' + (backup && first ? first.files : '') + '"></label><label>Size<input class="in" id="cp-size" maxlength="20" placeholder="e.g. 120 GB"></label></div>' +
+      (both ? '<label>Photos (files)<input class="in" id="cp-ph" type="number" inputmode="numeric" min="1" value="' + (backup && first && first.photos != null ? first.photos : '') + '"></label><label>Photos size<input class="in" id="cp-phs" maxlength="20" placeholder="e.g. 64 GB" value="' + esc(backup && first && first.photo_size || '') + '"></label>' +
+        '<label>Videos (files)<input class="in" id="cp-vd" type="number" inputmode="numeric" min="1" value="' + (backup && first && first.videos != null ? first.videos : '') + '"></label><label>Videos size<input class="in" id="cp-vds" maxlength="20" placeholder="e.g. 210 GB" value="' + esc(backup && first && first.video_size || '') + '"></label>' +
+        '<p class="hint wide" id="cp-tot" style="margin:0">This card has photos and videos: write both.</p>'
+      : '<label>Number of files<input class="in" id="cp-files" type="number" inputmode="numeric" min="1" value="' + (backup && first ? first.files : '') + '"></label><label>Size<input class="in" id="cp-size" maxlength="20" placeholder="e.g. 120 GB"></label>') + '</div>' +
       '<datalist id="dl-drv">' + others.map(d => '<option value="' + esc(d.name) + '">').join('') + '</datalist><datalist id="dl-fold"></datalist>' +
       (backup ? '' : '<label class="sub" style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="cp-nobk"> No backup needed for this card <select class="in" id="cp-nbmode" style="width:auto;padding:4px 8px"><option value="copied">mark Copied ✓</option><option value="free">mark Free</option></select></label>') +
       '<h4>Goes on the drive\'s list as</h4>' + (lines.length ? lines.map(l => '<div class="rep">' + esc(l.title) + ' · ' + (backup ? 'Backup copy' : 'Raw') + '</div>').join('') : '<div class="rep">Card ' + esc(k.code) + ' (no notes from the team)</div>') +
@@ -576,11 +590,24 @@ textarea.in { min-height: 120px; font-family: ui-monospace, Menlo, monospace; fo
       g('#dl-fold').innerHTML = [...set].sort().map(x => '<option value="' + esc(x) + '/">').join('');
     };
     g('#cp-drive').addEventListener('change', fillFolders); g('#cp-drive').addEventListener('input', fillFolders);
+    // photos + videos: the total files and size as you type
+    const splitNow = () => { const ph = parseInt(g('#cp-ph').value, 10), vd = parseInt(g('#cp-vd').value, 10), phs = g('#cp-phs').value.trim(), vds = g('#cp-vds').value.trim();
+      const a = gbIn(phs), b = gbIn(vds), size = a != null && b != null ? gbOut(a + b) : (phs && vds ? (phs + ' + ' + vds).slice(0, 20) : phs || vds || '');
+      return { ph, vd, phs, vds, size, files: (isNaN(ph) ? 0 : ph) + (isNaN(vd) ? 0 : vd) }; };
+    if (both) { const tot = () => { const x = splitNow(); g('#cp-tot').textContent = x.files ? 'Total ' + x.files + ' files' + (x.size ? ' · ' + x.size : '') : 'This card has photos and videos: write both.'; };
+      ['#cp-ph', '#cp-vd', '#cp-phs', '#cp-vds'].forEach(id => g(id).addEventListener('input', tot)); tot(); }
     g('#cp-go').addEventListener('click', async () => {
       const t = g('#cp-drive').value.trim().toLowerCase(), d = others.find(x => x.name.toLowerCase() === t);
       if (!d) { toast(first && first.drive_name.toLowerCase() === t ? 'The backup must go on a different drive from the first copy.' : 'Pick a drive from the list (add it in Drives first if it is new).', true); return; }
-      const files = parseInt(g('#cp-files').value, 10);
-      const r = await rpc('card_copy', { p_card: k.id, p_drive: d.id, p_folder: g('#cp-folder').value.trim(), p_files: isNaN(files) ? 0 : files, p_size: g('#cp-size').value.trim() || null, p_items: lines });
+      let r;
+      if (both) {
+        const x = splitNow();
+        if (!(x.ph >= 1) || !(x.vd >= 1)) { toast('Write how many photos AND how many videos were copied.', true); return; }
+        r = await rpc('card_copy', { p_card: k.id, p_drive: d.id, p_folder: g('#cp-folder').value.trim(), p_files: x.files, p_size: x.size || null, p_items: lines, p_split: { photos: x.ph, videos: x.vd, photo_size: x.phs || null, video_size: x.vds || null } });
+      } else {
+        const files = parseInt(g('#cp-files').value, 10);
+        r = await rpc('card_copy', { p_card: k.id, p_drive: d.id, p_folder: g('#cp-folder').value.trim(), p_files: isNaN(files) ? 0 : files, p_size: g('#cp-size').value.trim() || null, p_items: lines });
+      }
       if (!r) return;
       const nb = g('#cp-nobk') && g('#cp-nobk').checked, free = nb && g('#cp-nbmode').value === 'free';
       if (nb && !r.backup) { const r2 = await rpc('card_no_backup', { p_card: k.id, p_why: 'one copy is enough (marked when copying)', p_free: free }); if (r2) { bg.remove(); await refresh(); toast(k.code + ' copied to ' + d.name + ', no backup needed: ' + (free ? 'free.' : 'Copied ✓.')); return; } }

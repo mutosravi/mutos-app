@@ -404,12 +404,13 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
   const SLOT_LABEL = { photo: 'Photo', video: 'Video', director: 'Director', drone: 'Drone' };
   // What kind of client (17 Nov 2026, Ravi: "add not only wedding, instead a client with their functions like wedding, anniversary,
   // birthday, event, others"). Kept on every shoot of the client as ev.occasion (no field = wedding, as before).
-  const OCCASIONS = [['wedding', 'Wedding', '💍'], ['anniversary', 'Anniversary', '💞'], ['birthday', 'Birthday', '🎂'], ['event', 'Event', '🎉'], ['other', 'Other', '📷']];
+  const OCCASIONS = [['wedding', 'Wedding', '💍'], ['engagement', 'Engagement', '💐'], ['anniversary', 'Anniversary', '💞'], ['birthday', 'Birthday', '🎂'], ['event', 'Event', '🎉'], ['other', 'Other', '📷']];
   const occOf = ev => (ev && OCCASIONS.some(o => o[0] === ev.occasion)) ? ev.occasion : 'wedding';
   const occLabel = k => (OCCASIONS.find(o => o[0] === k) || OCCASIONS[0])[1], occIcon = k => (OCCASIONS.find(o => o[0] === k) || OCCASIONS[0])[2];
   const occOptions = sel => OCCASIONS.map(o => '<option value="' + o[0] + '"' + (o[0] === sel ? ' selected' : '') + '>' + o[2] + ' ' + o[1] + '</option>').join('');
   // the functions each kind starts with (name, coverage, slot); all count as short events for billing (change it on the shoot if not)
   const OCC_FUNCTIONS = {
+    engagement: [['Engagement', '2+2', 'Evening'], ['Roka / Sagan', '1+1', 'Morning'], ['Pre-engagement shoot', '1+1', 'Morning']],   // 28 Nov 2026 (Ravi)
     anniversary: [['Anniversary party', '1+1', 'Evening'], ['Couple shoot', '1+1', 'Morning'], ['Puja', '1+0', 'Morning']],
     birthday: [['Birthday party', '1+1', 'Evening'], ['Pre-birthday shoot', '1+0', 'Morning'], ['Puja / Havan', '1+0', 'Morning']],
     event: [['Event', '1+1', 'Evening'], ['Setup / decor', '1+0', 'Morning']],
@@ -2978,7 +2979,7 @@ textarea.sb-field { resize: vertical; min-height: 54px; }
       fns.innerHTML = list.map(f => fnRow(f[0], f[1], false)).join('');
       fns.querySelectorAll('.sb-fn-row').forEach((r, i) => { wire(r); const f = list[i]; if (f[2]) r.querySelector('.fn-slot').value = f[2]; const k = keep.get(r.dataset.fn); if (k) { r.querySelector('.fn-date').value = k.d; r.querySelector('.fn-on').checked = k.on; } });
       if (list.length === 1) fns.querySelector('.fn-on').checked = true;
-      modal.querySelector('#nw-client').placeholder = occ === 'wedding' ? 'e.g. Akriti' : occ === 'birthday' ? 'e.g. Aarav (1st birthday)' : occ === 'anniversary' ? 'e.g. Sharma 25th' : 'e.g. Scarlet launch';
+      modal.querySelector('#nw-client').placeholder = occ === 'wedding' ? 'e.g. Akriti' : occ === 'birthday' ? 'e.g. Aarav (1st birthday)' : occ === 'anniversary' ? 'e.g. Sharma 25th' : occ === 'engagement' ? 'e.g. Rohan & Priya' : 'e.g. Scarlet launch';
     }));
     { const on = modal.querySelector('#nw-occ .on'); if (on) { on.style.background = 'var(--accent-soft, #f3e3dc)'; on.style.fontWeight = '700'; } }
     modal.querySelector('#nw-add-fn').addEventListener('click', () => { customCount++; fns.insertAdjacentHTML('beforeend', fnRow('', '2+2', true)); const r = fns.lastElementChild; wire(r); r.querySelector('.fn-name').focus(); });

@@ -452,7 +452,7 @@
   }
   // ── link myBillBook parties to the board's clients (24 Nov 2026, Ravi: "Most of the clients have already paid 90% … it is not showing
   // in their deliveries"): a client's deliveries open when its bills are 90 % paid (043), which needs its party linked ──
-  const STOPW = new Set(['mr', 'mrs', 'miss', 'ms', 'shri', 'smt', 'sri', 'ji', 'dr', 'the', 'and', 'wedding', 'family', 'birthday', 'anniversary', 'event', 'events', 'function', 'shoot', 'pre', 'post', 'party', 'ceremony']);
+  const STOPW = new Set(['mr', 'mrs', 'miss', 'ms', 'shri', 'smt', 'sri', 'ji', 'dr', 'the', 'and', 'wedding', 'engagement', 'family', 'birthday', 'anniversary', 'event', 'events', 'function', 'shoot', 'pre', 'post', 'party', 'ceremony']);
   const toks = t => String(t || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !STOPW.has(w));
   const last10 = t => String(t || '').replace(/\D/g, '').slice(-10);
   function billStats(pid) { const ds = docs.filter(d => d.party === pid && isBill(d) && live(d)); const t = ds.reduce((a, d) => a + Number(d.total), 0), pd = ds.reduce((a, d) => a + Number(d.paid), 0); return { n: ds.length, t, pd, pct: t > 0 ? Math.floor(pd / t * 100) : 0 }; }

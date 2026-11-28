@@ -44,7 +44,7 @@
       .filter(w => all || w.last >= today).sort((a, b) => all ? b.first.localeCompare(a.first) : a.first.localeCompare(b.first));
   }
   // kind of client (17 Nov 2026): wedding (default) / anniversary / birthday / event / other, kept on the board's shoots
-  const OCC = { wedding: ['Wedding', '💍'], anniversary: ['Anniversary', '💞'], birthday: ['Birthday', '🎂'], event: ['Event', '🎉'], other: ['Other', '📷'] };
+  const OCC = { wedding: ['Wedding', '💍'], engagement: ['Engagement', '💐'], anniversary: ['Anniversary', '💞'], birthday: ['Birthday', '🎂'], event: ['Event', '🎉'], other: ['Other', '📷'] };
   const occTag = w => { const o = OCC[w.occasion] || OCC.wedding; return '<span class="pill cl-occ" style="font-size:10.5px;margin-left:6px;vertical-align:2px">' + o[1] + ' ' + o[0] + '</span>'; };
   // team per function (name, role, number): kept beside the functions; the family gets it only through client_team() (038),
   // which hands it out from the day before each function

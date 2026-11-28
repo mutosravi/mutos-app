@@ -102,12 +102,14 @@ function rpc(fn, a, e) {
     if (!staff(e)) return err('Only the admin or the manager can mark a card copied.');
     const k = T.cards.get(a.p_card), d = T.drives.get(a.p_drive);
     if (!['hold', 'single'].includes(k.data)) return err('nothing to copy');
+    let sp = null;
+    if (a.p_split) { const ph = +a.p_split.photos || 0, vd = +a.p_split.videos || 0; if (ph < 1 || vd < 1) return err('Write how many photos AND how many videos were copied (count them on the drive).'); a.p_files = ph + vd; sp = { photos: ph, videos: vd, photo_size: a.p_split.photo_size || null, video_size: a.p_split.video_size || null }; }
     if (!(a.p_files >= 1)) return err('Write how many files were copied (count them on the drive).');
     if (!String(a.p_folder || '').trim()) return err('Write the folder on the drive.');
     const backup = k.data === 'single';
     if (backup) { const f = [...T.card_copies.values()].find(x => x.card === k.id && x.cycle === k.cycle && !x.backup); if (f && f.drive === d.id) return err('The backup must be on a different drive from the first copy.'); }
     const items = (a.p_items && a.p_items.length ? a.p_items : [{ title: 'Card ' + k.code }]).map(it => { const id = uid(); T.drive_items.set(id, { id, drive: d.id, wedding_key: it.wedding_key || null, title: it.title, what: backup ? 'backup' : 'raw', note: 'from card ' + k.code + ' · ' + a.p_folder + ' · ' + a.p_files + ' files' }); return id; });
-    const id = uid(); T.card_copies.set(id, { id, card: k.id, cycle: k.cycle, backup, drive: d.id, drive_name: d.name, folder: a.p_folder, files: a.p_files, size_label: a.p_size, items, by_email: e, at: now() });
+    const id = uid(); T.card_copies.set(id, { id, card: k.id, cycle: k.cycle, backup, drive: d.id, drive_name: d.name, folder: a.p_folder, files: a.p_files, size_label: a.p_size, items, by_email: e, at: now(), photos: sp ? sp.photos : null, videos: sp ? sp.videos : null, photo_size: sp ? sp.photo_size : null, video_size: sp ? sp.video_size : null });
     Object.assign(k, { data: backup ? 'copied' : 'single', data_since: null }); log(k.id, e, (backup ? 'Backup copied to ' : 'Copied to ') + d.name); return { ok: true, backup };
   }
   if (fn === 'card_no_backup') { if (!staff(e)) return err('Only the admin or the manager can decide that no backup is needed.'); const k = T.cards.get(a.p_card); if (k.data !== 'single') return err('not single');
@@ -222,10 +224,11 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   for (const c of ['C01', 'C02', 'C03', 'C04']) await pick(o, c);
   ok(/4 picked/.test(await o.textContent('#selbar')), 'four cards picked');
   // a shooter on the board but not on People can be added right from the Give window (20 Nov 2026, Ravi: "Few of the shooters are not listed in card handover list")
-  await o.click('#sel-give'); await o.waitForSelector('#g-miss [data-addp]');
-  const missT = await o.textContent('#g-miss');
-  ok(/On the board but not on People \(1\)/.test(missT) && /Naveen/.test(missT) && !/Shrey|Team Alpha|Old Guy/.test(missT), 'Give window: "On the board but not on People (1)" lists Naveen (not Shrey, a team or someone who left)');
-  await o.click('#g-miss [data-addp]'); await o.waitForFunction(() => !document.getElementById('g-miss'));
+  await o.click('#sel-give'); await o.waitForSelector('#g-miss #g-miss-sel');
+  const missT = await o.textContent('#g-miss'), missOpts = await o.$$eval('#g-miss-sel option', os => os.map(x => x.textContent));
+  ok(/1 on the board is not on People/.test(missT) && missOpts.length === 2 && /Naveen/.test(missOpts[1]) && !/Shrey|Team Alpha|Old Guy/.test(missOpts.join()) && !(await o.$('#g-miss [data-addp]')), 'Give window: the people missing from People are one dropdown (Naveen; not Shrey, a team or someone who left), not a button each');
+  await o.click('#g-miss-add'); ok(/Pick a name from the board/.test(await o.textContent('#toast')), 'Add with nothing picked asks to pick');
+  await o.selectOption('#g-miss-sel', '0'); await o.click('#g-miss-add'); await o.waitForFunction(() => !document.getElementById('g-miss'));
   const nv = [...T.people.values()].find(x => x.name === 'Naveen');
   ok(nv && nv.email === 'naveen@x.com' && nv.crew_keys.join() === 'sh-naveen,sh-naveen2' && nv.active, 'one tap adds Naveen to People with his board Gmail and both board names');
   ok(await o.inputValue('#g-to') === nv.id, 'and picks him as the receiver');
@@ -344,7 +347,21 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await open(o); await o.click('[data-acc]'); await sleep(300);
   ok(K('C02').data === 'hold', 'C02 is still red in the office until copied');
   // single-copy warning when giving out
-  await open(o, 'copy'); await o.click('[data-c="' + K('C02').id + '"]'); await o.click('#k-copy'); await o.fill('#cp-drive', 'M 5'); await o.fill('#cp-folder', 'Sharma/Haldi/Cine'); await o.fill('#cp-files', '40'); await o.click('#cp-go'); await sleep(300);
+  // a card with photos AND videos (28 Nov 2026, Ravi): both counts and both sizes, only for "Both" cards
+  [...T.card_uses.values()].filter(u => u.card === K('C02').id && u.cycle === K('C02').cycle).forEach(u => { u.media = 'both'; });
+  await open(o, 'copy'); await o.click('[data-c="' + K('C02').id + '"]'); await o.click('#k-copy');
+  ok(await o.$('#cp-ph') && await o.$('#cp-vd') && await o.$('#cp-phs') && await o.$('#cp-vds') && !(await o.$('#cp-files')), 'a "Both" card: the copy form asks photos (files + size) and videos (files + size) instead of one number');
+  await o.fill('#cp-drive', 'M 5'); await o.fill('#cp-folder', 'Sharma/Haldi/Cine'); await o.fill('#cp-ph', '1240'); await o.fill('#cp-phs', '64 GB'); await o.click('#cp-go');
+  ok(/photos AND how many videos/.test(await o.textContent('#toast')), 'videos left empty: it asks for both');
+  await o.fill('#cp-vd', '86'); await o.fill('#cp-vds', '210 GB');
+  ok(/Total 1326 files · 274 GB/.test(await o.textContent('#cp-tot')), 'the total adds up as you type: 1326 files · 274 GB');
+  await o.click('#cp-go'); await sleep(300);
+  { const cp = [...T.card_copies.values()].find(x => x.card === K('C02').id && x.cycle === K('C02').cycle);
+    ok(cp && cp.photos === 1240 && cp.videos === 86 && cp.photo_size === '64 GB' && cp.video_size === '210 GB' && cp.files === 1326 && cp.size_label === '274 GB', 'saved: 1240 photos (64 GB) + 86 videos (210 GB), 1326 files, 274 GB'); }
+  await o.click('[data-c="' + K('C02').id + '"]');
+  ok(/1240 photos \(64 GB\) \+ 86 videos \(210 GB\)/.test(await o.textContent('.sheet')), 'the card sheet shows photos and videos separately');
+  await o.click('#k-close');
+  { const k1 = [...T.card_uses.values()].find(u => u.card === K('C01').id); ok(k1 && k1.media === 'photo', '(a photo-only card kept the one-number form above)'); }
   await open(o, 'all'); await pick(o, 'C02'); await o.click('#sel-give');
   ok(/only one copy, backup not done yet/.test(await o.textContent('.sheet')), 'giving out a single-copy card shows a gentle warning');
   await o.click('#g-cx');
@@ -430,7 +447,7 @@ const server = http.createServer((q, s) => { if (q.url.startsWith('/api/photos/'
   await o.click('[data-desk="clients"]'); await o.click('[data-tile="clientdata"]'); await o.waitForSelector('#fd-q');
   await o.fill('#fd-q', 'sharma'); await o.click('[data-dw]'); await o.waitForSelector('#dw-sum');
   const dw = await o.textContent('#dw-body');
-  ok(/No backup of Sharma · Haldi \(Photo candid\) · card C02 \(M 5\)/.test(dw) && !/card C01 \(M 5\)/.test(dw) && !/✓ raw \+ backup/.test(dw) && /needs? attention/.test(dw), 'the cine card (C02) has only one copy: "⚠ No backup" on Haldi');
+  ok(/No backup of Sharma · Haldi \([^)]*candid\) · card C02 \(M 5\)/.test(dw) && !/card C01 \(M 5\)/.test(dw) && !/✓ raw \+ backup/.test(dw) && /needs? attention/.test(dw), 'the cine card (C02) has only one copy: "⚠ No backup" on Haldi');
   ok(/Haldi/.test(dw) && /Raw · M 5/.test(dw) && /Backup · Dibba 2/.test(dw) && /812 files/.test(dw), 'Client data → Sharma: Haldi has raw on M 5 and a backup on Dibba 2 (with the folder and file count)');
   ok(/Other data for Sharma/.test(dw) && /from the drive sheet/.test(dw), 'lines typed before the app (no wedding link) are found by the name');
   ok(/in the office/.test(dw), '… and it says where each drive is right now');

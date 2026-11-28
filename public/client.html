@@ -167,7 +167,7 @@
   const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
   const fns = (got.functions || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   // kind of client (17 Nov 2026): wedding / anniversary / birthday / event / other, sent with each function by the studio's board
-  const occ = (fns.find(f => f.occasion) || {}).occasion || 'wedding', couple = occ === 'wedding' || occ === 'anniversary';
+  const occ = (fns.find(f => f.occasion) || {}).occasion || 'wedding', couple = occ === 'wedding' || occ === 'engagement' || occ === 'anniversary';
   const occWord = 'Your event';   // one word for every client (24 Nov 2026, Ravi: "Write Your event instead of wedding. That is generic and go with everyone.")
   const CPL = occ === 'anniversary' ? { b: 'Wife\'s name', g: 'Husband\'s name', hint: 'Wife\'s and husband\'s names' } : { b: 'Bride\'s name', g: 'Groom\'s name', hint: 'Bride\'s and groom\'s names' };
   const ans = Object.assign({ extra: [] }, got.answers || {});

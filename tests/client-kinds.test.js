@@ -22,8 +22,11 @@ const server = http.createServer((q, s) => { const p = q.url.split('?')[0], f = 
   const day = n => p.evaluate(n => { const A = window.__boardApi, d = new Date(A.todayStr() + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }, n);
   ok(/New client/.test(await p.textContent('#sb-new-wedding')), 'the button says "＋ New client"');
   await p.click('#sb-new-wedding'); await p.waitForSelector('#nw-occ [data-occ]');
-  ok((await p.$$eval('#nw-occ [data-occ]', l => l.map(x => x.dataset.occ).join(','))) === 'wedding,anniversary,birthday,event,other', 'kinds: wedding, anniversary, birthday, event, other');
+  ok((await p.$$eval('#nw-occ [data-occ]', l => l.map(x => x.dataset.occ).join(','))) === 'wedding,engagement,anniversary,birthday,event,other', 'kinds: wedding, engagement, anniversary, birthday, event, other');
   ok(/Mehndi/.test(await p.textContent('#nw-fns')), 'wedding starts with the wedding functions');
+  // Engagement (28 Nov 2026, Ravi): its own functions
+  await p.click('#nw-occ [data-occ="engagement"]');
+  { const fnsE = await p.$$eval('.sb-fn-row', l => l.map(r => r.dataset.fn)); ok(fnsE.join('|') === 'Engagement|Roka / Sagan|Pre-engagement shoot' && /Rohan & Priya/.test(await p.getAttribute('#nw-client', 'placeholder')), 'Engagement: Engagement, Roka / Sagan, Pre-engagement shoot'); }
   await p.click('#nw-occ [data-occ="birthday"]');
   const fnNames = await p.$$eval('#nw-fns .sb-fn-row', l => l.map(r => r.dataset.fn).join('|'));
   ok(fnNames === 'Birthday party|Pre-birthday shoot|Puja / Havan', 'Birthday: the list becomes ' + fnNames);
