@@ -61,6 +61,7 @@
 <script src="/team-photos.js"></script>
 <script src="/work-core.js"></script>
 <script src="/drives-ui.js"></script>
+<script src="/deliver.js"></script>
 </head>
 <body>
 <main class="wrap wide">
@@ -234,6 +235,7 @@
       '<label class="wide">Link (Drive / YouTube / WeTransfer)<input class="in" id="el" type="url" maxlength="500" value="' + esc(j.link || '') + '"></label>' +
       '<label class="wide">Note<input class="in" id="en" maxlength="500" value="' + esc(j.note || '') + '"></label></div>' +
       '<div class="pillrow" style="margin-bottom:8px"><button type="button" class="pillbtn light" id="chg">Client asked for changes</button><button type="button" class="pillbtn light" id="fin">Mark final ✓</button></div>' +
+      (!sup && !['final', 'paused', 'sent'].includes(j.status) ? '<div class="pillrow" style="margin-bottom:8px"><button type="button" class="pillbtn light" id="up">⬆ Upload the work (editor not here)</button></div>' : '') +
       '<div class="pillrow"><button type="button" class="pillbtn light" id="cx">Close</button><button type="button" class="pillbtn" id="go">Save</button></div>' +
       '<h4>Reports on this job</h4><div id="hist" class="sub">Loading…</div>' +
       '<p style="margin-top:14px"><button type="button" class="pillbtn light" id="del" style="min-height:36px;color:var(--no-ink)">Delete this job</button></p>');
@@ -247,6 +249,7 @@
       bg.remove(); await load(); renderJobs(); return true;
     };
     g('#cx').addEventListener('click', () => bg.remove());
+    if (g('#up')) g('#up').addEventListener('click', () => { bg.remove(); window.MutosDeliver.sheet(c, j, { W, toast, staff: true, onDone: async () => { await load(); renderJobs(); } }); });
     g('#go').addEventListener('click', () => save().then(ok => ok && toast('Saved.')));
     g('#chg').addEventListener('click', () => save({ status: 'changes' }).then(ok => ok && toast('Changes asked: round ' + (j.status === 'changes' ? j.round : j.round + 1) + '. ' + pname(j.assignee) + ' sees it on My work.')));
     g('#fin').addEventListener('click', () => save({ status: 'final' }).then(ok => ok && toast('Final ✓')));

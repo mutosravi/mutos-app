@@ -144,32 +144,7 @@ details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-
     if (j.review === 'approved') return '<div class="ans ok hand-st" style="margin-top:8px">✓ Approved and sent to the family.</div>';
     return '';
   }
-  function handSheet(j) {
-    const bg = W.sheet('<h3>Hand over · ' + esc(W.jobName(j)) + '</h3><p class="sub">' + esc(j.wedding_title) + (j.round > 1 ? ' · round ' + j.round : '') + '. Muto\'s checks it before the family sees it.</p>' +
-      '<label style="display:block;margin-top:10px;font-weight:600">Upload the file<input class="in" type="file" id="ho-file" style="display:block;width:100%;margin-top:4px"></label>' +
-      '<div id="ho-prog" hidden style="margin-top:8px"><div style="height:10px;border-radius:6px;background:var(--surface,#eee);overflow:hidden"><i id="ho-bar" style="display:block;height:100%;width:0;background:var(--rose,#9e4f62)"></i></div><div class="meta" id="ho-pct">Starting…</div></div>' +
-      '<p class="meta" style="margin:12px 0 4px">or paste a link (Google Drive), best for full films</p><input class="in" id="ho-link" type="url" placeholder="https://drive.google.com/…" value="' + esc(/^https?:/.test(j.link || '') ? j.link : '') + '" style="width:100%">' +
-      '<textarea class="in" id="ho-note" maxlength="300" rows="2" placeholder="Note for Muto\'s (optional)" style="width:100%;margin-top:10px"></textarea>' +
-      '<div class="pillrow" style="margin-top:14px"><button type="button" class="pillbtn light" id="ho-x">Close</button><button type="button" class="pillbtn" id="ho-go">Hand over</button></div>');
-    const q = id => bg.querySelector('#' + id); let busy = false;
-    q('ho-x').addEventListener('click', () => { if (busy && !confirm('The upload is still going. Stop it?')) return; busy = false; bg.remove(); });
-    q('ho-go').addEventListener('click', async () => {
-      if (busy) return;
-      const f = q('ho-file').files[0], link = q('ho-link').value.trim(), note = q('ho-note').value.trim();
-      if (!f && !/^https?:\/\//i.test(link)) { toast('Pick the file, or paste a link that starts with https://', true); return; }
-      busy = true; q('ho-go').disabled = true; q('ho-go').textContent = f ? 'Uploading…' : 'Handing over…';
-      try {
-        let upload = null;
-        if (f) {
-          q('ho-prog').hidden = false;
-          const mb = n => n >= 1073741824 ? (n / 1073741824).toFixed(2) + ' GB' : Math.round(n / 1048576) + ' MB';
-          upload = await window.MutosDeliver.upload(c, j.id, f, (done, total) => { q('ho-bar').style.width = Math.floor(done / total * 100) + '%'; q('ho-pct').textContent = mb(done) + ' of ' + mb(total) + ' · keep this page open'; });
-        }
-        await window.MutosDeliver.handover(c, j.id, { upload, link: f ? null : link, note });
-        busy = false; bg.remove(); await load(); renderJobs(); toast('Handed over. Muto\'s will check it and send it to the family.');
-      } catch (e) { busy = false; q('ho-go').disabled = false; q('ho-go').textContent = 'Hand over'; toast(e.message || String(e), true); }
-    });
-  }
+  function handSheet(j) { window.MutosDeliver.sheet(c, j, { W, toast, onDone: async () => { await load(); renderJobs(); } }); }
   function renderJobs() {
     const list = myOpen(), done = jobs.filter(x => x.status === 'final').sort((a, b) => String(b.done_at).localeCompare(String(a.done_at))).slice(0, 5);
     $('tab-jobs').innerHTML = (list.length ? list.map(j => {

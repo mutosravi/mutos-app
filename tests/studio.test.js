@@ -1291,6 +1291,24 @@ const MOCK = fs.readFileSync(path.join(__dirname, 'mock-supabase.js'), 'utf8');
     await fam.reload(); await fam.waitForSelector('[data-open="deliv"]'); await fam.click('[data-open="deliv"]');
     ok((await fam.$$eval('[data-card="deliv"] .dl-go', x => x.map(a => a.href))).includes('https://drive.google.com/reel-v2'), 'the family opens it from their page');
   }
+  { // 28 Nov 2026 (Ravi): the client asked for changes, the editor is away: the admin uploads the corrected file from the Work desk and sends it
+    const hamza = [...T.people.values()].find(p => p.email === CREWE), tid = crypto.randomUUID(), td = crypto.randomUUID();
+    T.client_deliveries.set(td, { id: td, wedding_key: wed.key, title: 'Wedding Trailer', status: 'editing', sort: 10, link: null, note: null });
+    T.work_jobs.set(tid, { id: tid, wedding_key: wed.key, wedding_title: wed.title, kind: 'trailer', title: 'Wedding Trailer', assignee: hamza.id, status: 'changes', progress: 80, count_done: 0, round: 2, event_ids: [], review: 'changes', review_note: 'Change the song' });
+    await owner.goto(B + '/desk.html'); await owner.waitForSelector('.jrow[data-job="' + tid + '"]', { timeout: 20000 }); await owner.click('.jrow[data-job="' + tid + '"]'); await owner.waitForSelector('#up');
+    ok(/Upload the work/.test(await owner.textContent('#up')), 'Work desk → the job: "⬆ Upload the work (editor not here)"');
+    await owner.click('#up'); await owner.waitForSelector('#ho-file');
+    ok(await owner.isChecked('#ho-send') && /handed over in your name/.test(await owner.textContent('.sheet')), 'the upload sheet, with "Send it to the family now" ticked');
+    await owner.evaluate(() => { window.MutosDeliver.CHUNK = 1024 * 1024; });
+    await owner.setInputFiles('#ho-file', { name: 'Sharma trailer v2.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(1500000, 3) });
+    await owner.click('#ho-go'); await owner.waitForFunction(() => /Uploaded and sent/.test(document.getElementById('toast').textContent), null, { timeout: 15000 });
+    const tj = T.work_jobs.get(tid), td2 = T.client_deliveries.get(td);
+    ok(tj.status === 'sent' && tj.hand_by === OWNER && deliverUploads.get(tj.hand_upload).ok && deliverShared.includes(tid) && td2.status === 'ready' && td2.link === 'https://drive.google.com/file/d/DF-shared-' + tid + '/view', 'uploaded in the admin\'s name, shared and sent: the family\'s "Wedding Trailer" is Ready with the file');
+    const sj = crypto.randomUUID(); T.work_jobs.set(sj, { id: sj, wedding_key: wed.key, wedding_title: wed.title, kind: 'reel', title: 'Wedding Reel', assignee: hamza.id, status: 'sent', progress: 100, round: 1, event_ids: [] });
+    await owner.reload(); await owner.waitForSelector('.jrow[data-job="' + sj + '"]'); await owner.click('.jrow[data-job="' + sj + '"]'); await owner.waitForSelector('#go');
+    ok(!(await owner.$('#up')), 'a job already with the family has no upload button');
+    await owner.click('#cx'); T.work_jobs.delete(sj);
+  }
   { // 044: once a function's day is over it cannot be changed; when all are over the page shows deliveries, payments, bills and "Need something?"
     const fd = T.client_feed.get(wed.key).data, keepDates = fd.functions.map(x => x.date);
     fd.functions.forEach((x, i) => { x.date = istDay(-5 + i * 0); });
